@@ -1,0 +1,336 @@
+/* =========================================================================
+ * LightQuery - lq-ui-shell.js
+ * 画面の外枠：上部バー（読み込み状況・次の一歩・主要動作）、左のアイコン列、設定パネルの入れ物、
+ *   画面全体へのドラッグ＆ドロップ、Ctrl+V の貼り付け、キーボード操作
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+  const Dom = LQ.Dom;
+  const Util = LQ.Util;
+  const h = Dom.h;
+
+  const STATUS_ICON = { ok: 'circle-check', warn: 'triangle-exclamation', error: 'circle-exclamation', info: 'circle-info' };
+
+  /* ---------------------------------------------------------------------
+   * TopBar
+   * ------------------------------------------------------------------- */
+  class TopBar {
+    constructor(ctx, root) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.app = ctx.app;
+      this.root = root;
+      this._ctaId = null;
+      this.chips = h('div', { class: 'lq-topbar__chips' });
+      this.statusIcon = Dom.icon('circle-info');
+      this.statusText = h('span', { class: 'lq-topbar__status-text' });
+      this.progressFill = h('div', { class: 'lq-progress__fill' });
+      this.progress = h('div', { class: 'lq-progress', hidden: true }, this.progressFill);
+      this.status = h('div', { class: 'lq-topbar__status lq-status' }, [this.statusIcon, this.statusText, this.progress]);
+      this.ctaIcon = Dom.icon('file-import');
+      this.ctaLabel = h('span');
+      this.cta = h('button', { class: 'lq-btn lq-btn--primary lq-cta', type: 'button', onclick: () => this.app.runCta(this.cta) }, [this.ctaIcon, this.ctaLabel]);
+      this.helpBtn = h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', title: '使い方（取扱説明書）を表示／非表示', onclick: () => this.app.manual.toggle() },
+        [Dom.icon('circle-question'), '使い方']);
+      this.menuBtn = h('button', { class: 'lq-btn lq-btn--ghost lq-btn--icon', type: 'button', title: 'その他の操作（サンプル・保存・クリア）', 'aria-label': 'その他の操作',
+        onclick: () => this.app.dialogs.openAppMenu(this.menuBtn) }, Dom.icon('ellipsis-vertical'));
+      Dom.append(root, [
+        h('div', { class: 'lq-brand' }, [
+          h('span', { class: 'lq-brand__mark' }, Dom.icon('magnifying-glass')),
+          h('div', {}, [h('div', { class: 'lq-brand__name', text: 'LightQuery' }), h('div', { class: 'lq-brand__sub', text: '簡易クエリ' })])
+        ]),
+        this.chips,
+        h('div', { class: 'lq-topbar__spacer' }),
+        this.status,
+        this.cta,
+        h('div', { class: 'lq-topbar__tools' }, [this.helpBtn, this.menuBtn])
+      ]);
+      ctx.bus.on('change', () => this.render());
+      this.render();
+    }
+
+    render() {
+      this._renderChips();
+      const c = this.app.cta();
+      this.cta.disabled = !!c.disabled;
+      this.cta.classList.toggle('lq-btn--primary', c.variant !== 'stop');
+      this.cta.classList.toggle('is-stop', c.variant === 'stop');
+      this.ctaIcon.className = 'fa-solid fa-' + c.icon + (c.spin ? ' fa-spin' : '');
+      this.ctaLabel.textContent = c.label;
+      this.cta.title = c.status ? c.status.text : '';
+      if (this._ctaId !== null && this._ctaId !== c.id && c.id !== 'busy' && c.id !== 'cancel') LQ.Flash.el(this.cta);
+      if (this._ctaId !== c.id && (c.id === 'run' || c.id === 'export')) {
+        this.cta.classList.remove('is-attn');
+        void this.cta.offsetWidth;
+        this.cta.classList.add('is-attn');
+      }
+      this._ctaId = c.id;
+      const st = c.status || { kind: 'info', text: '' };
+      this.status.className = 'lq-topbar__status lq-status lq-status--' + st.kind;
+      this.statusIcon.className = 'fa-solid fa-' + (STATUS_ICON[st.kind] || STATUS_ICON.info);
+      this.statusText.textContent = st.text;
+      this.status.title = st.text;
+      this.progress.hidden = c.progress === undefined;
+      if (c.progress !== undefined) this.progressFill.style.width = Math.round(c.progress * 100) + '%';
+    }
+
+    _renderChips() {
+      Dom.clear(this.chips);
+      ['source', 'condition'].forEach((role) => {
+        const ds = this.state.datasets[role];
+        const isSrc = role === 'source';
+        const badge = LQ.UI.badge(isSrc ? 'src' : 'cond', isSrc ? '①' : '②');
+        if (!ds) {
+          this.chips.appendChild(h('button', {
+            class: 'lq-chip lq-chip--empty', type: 'button', title: (isSrc ? '① 元データ' : '② 条件データ') + 'を読み込む',
+            onclick: () => this.state.openPanel(role)
+          }, [badge, h('span', { class: 'lq-chip__name', text: isSrc ? '元データ 未読み込み' : '条件データ 未読み込み' })]));
+          return;
+        }
+        this.chips.appendChild(h('button', {
+          class: 'lq-chip ' + (isSrc ? 'lq-chip--src' : 'lq-chip--cond'), type: 'button',
+          title: ds.name + '（' + ds.source.kindLabel + '）— クリックで読み込み設定を開く',
+          onclick: () => this.state.togglePanel(role)
+        }, [
+          badge,
+          h('span', { class: 'lq-chip__name', text: ds.name }),
+          h('span', { class: 'lq-chip__meta', text: Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列' }),
+          ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample', text: 'サンプル' }) : null
+        ]));
+      });
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * Rail：機能ごとの設定パネルを開くアイコン（アイコン＋短いラベル＋状態の印）
+   * ------------------------------------------------------------------- */
+  const RAIL_ITEMS = [
+    { id: 'source', icon: 'table', label: '①元データ', title: '① 元データ：読み込み・ヘッダー・範囲の設定' },
+    { id: 'condition', icon: 'list-check', label: '②条件データ', title: '② 条件データ：読み込み・ヘッダー・範囲の設定', role: 'condition' },
+    { id: 'query', icon: 'filter', label: '条件', title: '条件：① と ② の対応・比較方法・組み合わせ・出力する行' },
+    { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：空白・全角半角・大文字小文字・数値・日付' },
+    { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' }
+  ];
+
+  class Rail {
+    constructor(ctx, root) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.app = ctx.app;
+      this.items = new Map();
+      const group = h('div', { class: 'lq-rail__group' });
+      RAIL_ITEMS.forEach((item) => {
+        const mark = h('span', { class: 'lq-rail__mark', hidden: true });
+        const btn = h('button', {
+          class: 'lq-rail__item', type: 'button', title: item.title, 'aria-label': item.title,
+          dataset: item.role ? { role: item.role } : null,
+          onclick: () => this.state.togglePanel(item.id)
+        }, [Dom.icon(item.icon), h('span', { class: 'lq-rail__label', text: item.label }), mark]);
+        this.items.set(item.id, { btn: btn, mark: mark });
+        group.appendChild(btn);
+      });
+      const sampleBtn = h('button', {
+        class: 'lq-rail__item', type: 'button', title: 'サンプルデータで動作を確認する',
+        onclick: () => this.app.dialogs.openSamples(sampleBtn, 'right-end')
+      }, [Dom.icon('flask'), h('span', { class: 'lq-rail__label', text: 'サンプル' })]);
+      Dom.append(root, [group, h('div', { class: 'lq-rail__spacer' }), h('div', { class: 'lq-rail__divider' }), sampleBtn]);
+      ctx.bus.on('change', () => this.render());
+      this.render();
+    }
+
+    render() {
+      const s = this.state;
+      this.items.forEach((item, id) => item.btn.classList.toggle('is-active', s.panel === id));
+      this._mark('source', s.datasets.source ? { kind: 'ok', icon: 'check', title: '読み込み済み' } : null);
+      this._mark('condition', s.datasets.condition ? { kind: 'ok', icon: 'check', title: '読み込み済み' } : null);
+      let queryMark = null;
+      if (s.query.conditions.length && s.datasets.source) {
+        const v = this.app.validation();
+        queryMark = v.ok ? { kind: 'ok', icon: 'check', title: '条件は整っています' } : { kind: 'warn', text: String(v.errors.length), title: '要設定 ' + v.errors.length + ' 件' };
+      }
+      this._mark('query', queryMark);
+      const counts = s.columnCounts();
+      const visible = counts['s:'].visible + counts['c:'].visible + counts['m:'].visible;
+      this._mark('output', s.output.columns.length ? { kind: 'count', text: String(visible), title: '表示する列 ' + visible + ' 列' } : null);
+    }
+
+    _mark(id, spec) {
+      const item = this.items.get(id);
+      if (!spec) {
+        item.mark.hidden = true;
+        return;
+      }
+      item.mark.hidden = false;
+      item.mark.className = 'lq-rail__mark lq-rail__mark--' + spec.kind;
+      item.mark.title = spec.title;
+      Dom.clear(item.mark);
+      if (spec.icon) item.mark.appendChild(Dom.icon(spec.icon));
+      else item.mark.textContent = spec.text;
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * PanelHost：開いている設定パネルを 1 つだけ表示（他の画面操作は妨げない）
+   * ------------------------------------------------------------------- */
+  class PanelHost {
+    constructor(ctx, root, panels) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.root = root;
+      this.panels = panels;
+      this._shown = null;
+      this.icon = Dom.icon('table', 'lq-panel__icon');
+      this.title = h('h2', { class: 'lq-panel__title' });
+      this.actions = h('div', { class: 'lq-panel__actions' });
+      this.head = h('div', { class: 'lq-panel__head' }, [this.icon, this.title, this.actions]);
+      this.body = h('div', { class: 'lq-panel__body' });
+      Dom.append(root, [this.head, this.body]);
+      LQ.FormNav.attach(this.body);
+      ctx.bus.on('panel', () => this.render());
+      this.render();
+    }
+
+    render() {
+      const id = this.state.panel;
+      if (!id) {
+        this.root.hidden = true;
+        this._shown = null;
+        return;
+      }
+      const panel = this.panels[id];
+      const changed = this._shown !== id;
+      this.root.hidden = false;
+      this.root.dataset.size = panel.size || 'md';
+      this.head.dataset.role = panel.role || '';
+      this.icon.className = 'fa-solid fa-' + panel.icon + ' lq-panel__icon';
+      this.title.textContent = panel.title;
+      Dom.clear(this.actions);
+      Dom.append(this.actions, panel.headerActions ? panel.headerActions() : []);
+      this.actions.appendChild(LQ.UI.iconButton('xmark', 'パネルを閉じる（Esc）', () => this.state.closePanel()));
+      if (changed) {
+        Dom.clear(this.body);
+        this.body.appendChild(panel.el);
+        this.body.scrollTop = 0;
+        this.root.style.animation = 'none';
+        void this.root.offsetWidth;
+        this.root.style.animation = '';
+        this._shown = id;
+        if (panel.onShow) panel.onShow();
+      }
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * DropOverlay：ファイルをドラッグすると ① / ② の受け皿を大きく表示する
+   * ------------------------------------------------------------------- */
+  function hasFiles(e) {
+    return !!(e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') !== -1);
+  }
+
+  class DropOverlay {
+    constructor(ctx, root) {
+      this.ctx = ctx;
+      this.app = ctx.app;
+      this.root = root;
+      this.el = null;
+      this.depth = 0;
+      global.addEventListener('dragenter', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        this.depth++;
+        this.show();
+      });
+      global.addEventListener('dragover', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        this._highlight(e.target);
+      });
+      global.addEventListener('dragleave', (e) => {
+        if (!hasFiles(e)) return;
+        this.depth = Math.max(0, this.depth - 1);
+        if (this.depth === 0) this.hide();
+      });
+      global.addEventListener('drop', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        const zone = e.target.closest ? e.target.closest('[data-drop-role]') : null;
+        this.depth = 0;
+        this.hide();
+        const file = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!file) return;
+        if (Util.extName(file.name) === 'json') this.app.importSettingsFile(file);
+        else if (zone) this.app.loadFile(zone.dataset.dropRole, file);
+      });
+    }
+
+    show() {
+      if (this.el) return;
+      const zone = (role, icon, title, sub) => h('div', {
+        class: 'lq-dropoverlay__zone' + (role === 'condition' ? ' lq-dropoverlay__zone--cond' : ''),
+        dataset: { dropRole: role }
+      }, [Dom.icon(icon), h('div', { class: 'lq-dropoverlay__title', text: title }), h('div', { class: 'lq-dropoverlay__sub', text: sub })]);
+      this.el = h('div', { class: 'lq-dropoverlay' }, [
+        zone('source', 'table', '① 元データとして読み込む', '抽出される側のデータ（Excel・CSV）'),
+        zone('condition', 'list-check', '② 条件データとして読み込む', '条件の一覧（条件設定の .json はどちらでも可）')
+      ]);
+      this.root.appendChild(this.el);
+    }
+
+    hide() {
+      if (!this.el) return;
+      this.el.remove();
+      this.el = null;
+    }
+
+    _highlight(target) {
+      if (!this.el) return;
+      const zone = target.closest ? target.closest('[data-drop-role]') : null;
+      Dom.qsa('.lq-dropoverlay__zone', this.el).forEach((z) => z.classList.toggle('is-over', z === zone));
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * Shell：外枠の組み立てと、画面全体のキーボード・貼り付け操作
+   * ------------------------------------------------------------------- */
+  class Shell {
+    constructor(ctx, panels) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.app = ctx.app;
+      this.topbar = new TopBar(ctx, Dom.qs('#lqTopbar'));
+      this.rail = new Rail(ctx, Dom.qs('#lqRail'));
+      this.host = new PanelHost(ctx, Dom.qs('#lqPanelHost'), panels);
+      this.drop = new DropOverlay(ctx, Dom.qs('#lqOverlay'));
+      document.addEventListener('keydown', (e) => this._onKey(e));
+      document.addEventListener('paste', (e) => {
+        if (Dom.isEditable(e.target) || this.app.manual.isOpen()) return;
+        const data = e.clipboardData;
+        if (!data) return;
+        e.preventDefault();
+        this.app.handlePaste(data.getData('text/plain'), data.files);
+      });
+    }
+
+    _onKey(e) {
+      if (e.key === 'Escape') {
+        if (this.ctx.popovers.close()) return;
+        if (this.app.manual.isOpen()) {
+          this.app.manual.close();
+          return;
+        }
+        if (this.state.panel && !e.defaultPrevented) this.state.closePanel();
+        return;
+      }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+        e.preventDefault();
+        const c = this.app.cta();
+        if (c.id === 'run' || c.id === 'export') this.app.runCta(this.topbar.cta);
+      }
+    }
+  }
+
+  LQ.Shell = Shell;
+})(window);

@@ -1,0 +1,257 @@
+@charset "UTF-8";
+/* =========================================================================
+ * LightQuery - lq-tokens.css
+ * デザイントークン（色・余白・角丸・文字・高さ・影・重なり・動き）
+ * 生の px / カラーコードはこのファイルだけに書き、他の CSS は必ずここを参照する。
+ * ========================================================================= */
+:root {
+  /* ---------- 基本パレット ---------- */
+  /* メイン：落ち着いた青（色相 212°）＝ 誠実・信頼 */
+  --c-blue-900: #13304f;
+  --c-blue-800: #1a416b;
+  --c-blue-700: #215487;
+  --c-blue-600: #2a67a3;
+  --c-blue-500: #3a7cc0;
+  --c-blue-300: #93b8e0;
+  --c-blue-200: #c4d8ee;
+  --c-blue-100: #e3edf8;
+  --c-blue-50: #f1f6fc;
+  /* 補助：青緑（類似色 176°）＝ ② 条件データ */
+  --c-teal-800: #0f524e;
+  --c-teal-700: #146b66;
+  --c-teal-600: #1b7f79;
+  --c-teal-300: #8fcdc8;
+  --c-teal-200: #bfe3e0;
+  --c-teal-100: #dff1ef;
+  --c-teal-50: #f0f8f7;
+  /* アクセント：琥珀（分裂補色 38°）＝ 変更・注意の目印 */
+  --c-amber-800: #6e4708;
+  --c-amber-700: #8a5a0b;
+  --c-amber-600: #a96f0f;
+  --c-amber-500: #c98a1b;
+  --c-amber-300: #ecc77d;
+  --c-amber-200: #f4dfb3;
+  --c-amber-100: #fbeed3;
+  --c-amber-50: #fdf7ea;
+  /* 状態色 */
+  --c-green-700: #1f6b43;
+  --c-green-600: #2a8454;
+  --c-green-200: #bfe3cd;
+  --c-green-100: #e1f2e8;
+  --c-red-700: #a52a21;
+  --c-red-600: #c0392b;
+  --c-red-200: #f2c4be;
+  --c-red-100: #fbe6e3;
+  /* ニュートラル（わずかに青みを帯びたグレー） */
+  --c-gray-900: #1e2a38;
+  --c-gray-800: #2e3b4a;
+  --c-gray-700: #475466;
+  --c-gray-600: #5e6b7d;
+  --c-gray-500: #7b8797;
+  --c-gray-400: #a0aab7;
+  --c-gray-300: #c5cdd7;
+  --c-gray-200: #dde3ea;
+  --c-gray-150: #e7ecf1;
+  --c-gray-100: #eef2f6;
+  --c-gray-50: #f6f8fa;
+  --c-white: #ffffff;
+
+  /* ---------- 意味づけ（コンポーネントはこちらを参照） ---------- */
+  --color-bg: var(--c-gray-100);
+  --color-surface: var(--c-white);
+  --color-surface-alt: var(--c-gray-50);
+  --color-surface-sunken: var(--c-gray-100);
+  --color-surface-hover: var(--c-blue-50);
+  --color-surface-selected: var(--c-blue-100);
+  --color-border: var(--c-gray-200);
+  --color-border-strong: var(--c-gray-300);
+  --color-border-soft: var(--c-gray-150);
+  --color-border-focus: var(--c-blue-500);
+  --color-text: var(--c-gray-900);
+  --color-text-sub: var(--c-gray-600);
+  --color-text-muted: var(--c-gray-500);
+  --color-text-disabled: var(--c-gray-400);
+  --color-text-inverse: var(--c-white);
+
+  --color-primary: var(--c-blue-600);
+  --color-primary-hover: var(--c-blue-700);
+  --color-primary-active: var(--c-blue-800);
+  --color-primary-strong: var(--c-blue-900);
+  --color-primary-soft: var(--c-blue-100);
+  --color-primary-faint: var(--c-blue-50);
+  --color-primary-line: var(--c-blue-200);
+
+  --color-src: var(--c-blue-600);
+  --color-src-strong: var(--c-blue-800);
+  --color-src-soft: var(--c-blue-100);
+  --color-src-faint: var(--c-blue-50);
+  --color-cond: var(--c-teal-600);
+  --color-cond-strong: var(--c-teal-800);
+  --color-cond-soft: var(--c-teal-100);
+  --color-cond-faint: var(--c-teal-50);
+  --color-meta: var(--c-gray-600);
+  --color-meta-soft: var(--c-gray-150);
+
+  --color-accent: var(--c-amber-500);
+  --color-accent-strong: var(--c-amber-800);
+  --color-accent-soft: var(--c-amber-100);
+  --color-accent-faint: var(--c-amber-50);
+  --color-accent-line: var(--c-amber-300);
+
+  --color-success: var(--c-green-600);
+  --color-success-strong: var(--c-green-700);
+  --color-success-soft: var(--c-green-100);
+  --color-success-line: var(--c-green-200);
+  --color-warning: var(--c-amber-600);
+  --color-warning-strong: var(--c-amber-800);
+  --color-warning-soft: var(--c-amber-100);
+  --color-warning-line: var(--c-amber-300);
+  --color-danger: var(--c-red-600);
+  --color-danger-strong: var(--c-red-700);
+  --color-danger-soft: var(--c-red-100);
+  --color-danger-line: var(--c-red-200);
+  --color-info: var(--c-blue-600);
+  --color-info-strong: var(--c-blue-800);
+  --color-info-soft: var(--c-blue-100);
+  --color-info-line: var(--c-blue-200);
+
+  --color-flash: var(--c-amber-200);
+  --color-focus-ring: rgba(58, 124, 192, 0.35);
+  --color-overlay: rgba(19, 48, 79, 0.36);
+  --color-drop-src: rgba(42, 103, 163, 0.9);
+  --color-drop-cond: rgba(27, 127, 121, 0.9);
+  --color-scrollbar: var(--c-gray-300);
+
+  /* ---------- 余白 ---------- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 40px;
+  --space-11: 56px;
+
+  /* ---------- 角丸 ---------- */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-pill: 999px;
+
+  /* ---------- 文字 ---------- */
+  --font-family: "Segoe UI", "Yu Gothic UI", "Meiryo UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --font-mono: Consolas, "BIZ UDGothic", "MS Gothic", monospace;
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 14px;
+  --fs-xl: 16px;
+  --fs-2xl: 20px;
+  --fs-3xl: 26px;
+  --fw-regular: 400;
+  --fw-medium: 600;
+  --fw-bold: 700;
+  --lh-tight: 1.25;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.75;
+  --ls-wide: 0.04em;
+
+  /* ---------- 高さ・幅 ---------- */
+  --h-topbar: 56px;
+  --h-tabbar: 42px;
+  --h-pager: 46px;
+  --h-control-xs: 22px;
+  --h-control-sm: 28px;
+  --h-control: 32px;
+  --h-control-lg: 40px;
+  --h-row: 30px;
+  --h-rail-item: 58px;
+  --h-dropzone: 220px;
+  --w-rail: 72px;
+  --w-panel-sm: 380px;
+  --w-panel-md: 440px;
+  --w-panel-lg: 620px;
+  --w-popover: 360px;
+  --w-popover-lg: 460px;
+  --w-popover-xl: 840px;
+  --w-toast: 400px;
+  --w-modal: 960px;
+  --h-modal: 82dvh;
+  --w-chip-max: 300px;
+  --brand-sub-display: block;
+  --w-col-max: 320px;
+  --w-rownum: 64px;
+  --w-input-num: 72px;
+  --w-input-page: 56px;
+  --w-select-col: 150px;
+  --w-select-op: 124px;
+  --w-label-badge: 24px;
+  --w-status-max: 420px;
+  --w-manual-toc: 200px;
+  --w-empty-lead: 680px;
+  --w-step-text: 210px;
+  --w-progress: 160px;
+  --border-width: 1px;
+  --border-width-strong: 2px;
+  --focus-width: 3px;
+  --indicator-width: 3px;
+  --icon-xs: 10px;
+  --icon-sm: 12px;
+  --icon-md: 14px;
+  --icon-lg: 18px;
+  --icon-xl: 28px;
+  --icon-2xl: 40px;
+  --progress-height: 6px;
+
+  /* ---------- 影 ---------- */
+  --shadow-sm: 0 1px 2px rgba(19, 48, 79, 0.08);
+  --shadow-md: 0 4px 14px rgba(19, 48, 79, 0.12);
+  --shadow-lg: 0 14px 36px rgba(19, 48, 79, 0.2);
+  --shadow-sticky: 0 1px 0 var(--c-gray-200), 0 2px 4px rgba(19, 48, 79, 0.06);
+
+  /* ---------- 重なり順 ---------- */
+  --z-sticky: 5;
+  --z-sticky-corner: 6;
+  --z-panel: 20;
+  --z-topbar: 30;
+  --z-popover: 60;
+  --z-drop: 70;
+  --z-modal: 90;
+  --z-toast: 55;
+
+  /* ---------- 動き ---------- */
+  --dur-fast: 120ms;
+  --dur-normal: 200ms;
+  --dur-slow: 320ms;
+  --dur-flash: 1100ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-emphasis: cubic-bezier(0.3, 1.4, 0.5, 1);
+  --shift-sm: 4px;
+  --shift-md: 12px;
+  --scale-pop: 1.08;
+  --scale-hover: 1.01;
+  --scale-over: 1.02;
+  --w-switch: 40px;
+  --opacity-stale: 0.55;
+  --opacity-drag: 0.45;
+}
+
+/* 画面幅が狭い PC（1440px 以下）ではパネル幅を詰める */
+@media (max-width: 1440px) {
+  :root {
+    --w-panel-lg: 580px;
+    --w-panel-md: 400px;
+    --w-col-max: 260px;
+    --w-chip-max: 230px;
+    --w-status-max: 300px;
+    --w-toast: 360px;
+    --brand-sub-display: none;
+  }
+}

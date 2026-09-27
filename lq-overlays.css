@@ -1,0 +1,492 @@
+@charset "UTF-8";
+/* =========================================================================
+ * LightQuery - lq-overlays.css
+ * 重なって表示する部品と合図：進捗・反映の合図・通知・小窓とメニュー・モーダル・ドロップ領域
+ * 値はすべて lq-tokens.css のトークンを参照する。
+ * ========================================================================= */
+
+/* ---------- 進捗 ---------- */
+.lq-progress {
+  width: var(--w-progress);
+  height: var(--progress-height);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  overflow: hidden;
+}
+
+.lq-progress__fill {
+  height: 100%;
+  width: 0;
+  background: var(--color-primary);
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-fast) linear;
+}
+
+/* ---------- 反映の合図 ---------- */
+.lq-flash {
+  animation: lq-flash var(--dur-flash) var(--ease-out);
+}
+
+.lq-flash--warn {
+  animation: lq-flash-warn var(--dur-flash) var(--ease-out);
+}
+
+@keyframes lq-flash {
+  0% {
+    background-color: var(--color-flash);
+    box-shadow: 0 0 0 var(--focus-width) var(--color-accent-line);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes lq-flash-warn {
+  0%,
+  40% {
+    background-color: var(--color-warning-soft);
+    box-shadow: 0 0 0 var(--focus-width) var(--color-warning-line);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.lq-applied {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-success-strong);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  animation: lq-applied var(--dur-flash) var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+@keyframes lq-applied {
+  0% {
+    opacity: 0;
+    transform: translateY(var(--shift-sm));
+  }
+  15%,
+  70% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---------- 通知（トースト） ---------- */
+.lq-toasts {
+  position: fixed;
+  right: var(--space-7);
+  bottom: calc(var(--h-pager) + var(--space-5));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: var(--w-toast);
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+
+.lq-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  border-left: var(--indicator-width) solid var(--color-info);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  animation: lq-toast-in var(--dur-normal) var(--ease-out);
+}
+
+.lq-toast.is-leaving {
+  animation: lq-toast-out var(--dur-normal) var(--ease-standard) forwards;
+}
+
+@keyframes lq-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--shift-md));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes lq-toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(var(--shift-md));
+  }
+}
+
+.lq-toast__icon {
+  margin-top: var(--space-1);
+  font-size: var(--icon-lg);
+  color: var(--color-info);
+}
+
+.lq-toast--success {
+  border-left-color: var(--color-success);
+}
+
+.lq-toast--success .lq-toast__icon {
+  color: var(--color-success);
+}
+
+.lq-toast--warn {
+  border-left-color: var(--color-warning);
+}
+
+.lq-toast--warn .lq-toast__icon {
+  color: var(--color-warning);
+}
+
+.lq-toast--error {
+  border-left-color: var(--color-danger);
+}
+
+.lq-toast--error .lq-toast__icon {
+  color: var(--color-danger);
+}
+
+.lq-toast__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lq-toast__title {
+  font-weight: var(--fw-bold);
+}
+
+.lq-toast__msg {
+  margin-top: var(--space-1);
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
+  word-break: break-word;
+}
+
+.lq-toast__actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+/* ---------- ポップオーバー・メニュー ---------- */
+.lq-popover {
+  position: fixed;
+  z-index: var(--z-popover);
+  width: var(--w-popover);
+  max-height: calc(100dvh - var(--h-topbar) - var(--space-8));
+  display: flex;
+  flex-direction: column;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  animation: lq-pop-in var(--dur-fast) var(--ease-out);
+}
+
+.lq-popover--lg {
+  width: var(--w-popover-lg);
+}
+
+.lq-popover--xl {
+  width: var(--w-popover-xl);
+}
+
+@keyframes lq-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--shift-sm) * -1));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lq-popover__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-6) var(--space-3);
+  font-weight: var(--fw-bold);
+}
+
+.lq-popover__head .lq-btn {
+  margin-left: auto;
+}
+
+.lq-popover__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3) var(--space-6) var(--space-5);
+}
+
+.lq-popover__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-top: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-alt);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.lq-menu {
+  list-style: none;
+  padding: var(--space-3);
+}
+
+.lq-menu__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  font-size: var(--fs-md);
+}
+
+.lq-menu__item > .fa-solid {
+  margin-top: var(--space-1);
+  color: var(--color-text-sub);
+}
+
+.lq-menu__item:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.lq-menu__item:hover:not(:disabled) > .fa-solid {
+  color: var(--color-primary);
+}
+
+.lq-menu__item:disabled {
+  color: var(--color-text-disabled);
+}
+
+.lq-menu__item:disabled > .fa-solid {
+  color: var(--color-text-disabled);
+}
+
+.lq-menu__item.is-danger {
+  color: var(--color-danger-strong);
+}
+
+.lq-menu__item.is-danger > .fa-solid {
+  color: var(--color-danger);
+}
+
+.lq-menu__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lq-menu__sub {
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}
+
+.lq-menu__sep {
+  height: var(--border-width);
+  margin: var(--space-3) var(--space-2);
+  background: var(--color-border);
+}
+
+/* ---------- モーダル（取扱説明書） ---------- */
+.lq-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  background: var(--color-overlay);
+  animation: lq-fade-in var(--dur-normal) var(--ease-out);
+}
+
+@keyframes lq-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.lq-modal {
+  display: flex;
+  flex-direction: column;
+  width: var(--w-modal);
+  max-width: calc(100vw - var(--space-11));
+  height: var(--h-modal);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.lq-modal__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-8);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.lq-modal__title {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+}
+
+.lq-modal__head .lq-btn:last-child {
+  margin-left: auto;
+}
+
+.lq-modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.lq-modal__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-8);
+  border-top: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-alt);
+  font-size: var(--fs-sm);
+}
+
+/* ---------- ドロップ領域 ---------- */
+.lq-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: var(--h-dropzone);
+  padding: var(--space-8);
+  border: var(--border-width-strong) dashed var(--color-src);
+  border-radius: var(--radius-lg);
+  background: var(--color-src-faint);
+  color: var(--color-src-strong);
+  text-align: center;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+
+.lq-drop:hover,
+.lq-drop.is-over {
+  background: var(--color-src-soft);
+}
+
+.lq-drop.is-over {
+  transform: scale(var(--scale-hover));
+}
+
+.lq-drop--cond {
+  border-color: var(--color-cond);
+  background: var(--color-cond-faint);
+  color: var(--color-cond-strong);
+}
+
+.lq-drop--cond:hover,
+.lq-drop--cond.is-over {
+  background: var(--color-cond-soft);
+}
+
+.lq-drop--compact {
+  min-height: 0;
+  padding: var(--space-6);
+}
+
+.lq-drop__icon {
+  font-size: var(--icon-2xl);
+}
+
+.lq-drop--compact .lq-drop__icon {
+  font-size: var(--icon-xl);
+}
+
+.lq-drop__title {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+}
+
+.lq-drop--compact .lq-drop__title {
+  font-size: var(--fs-lg);
+}
+
+.lq-drop__sub {
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
+}
+
+/* 画面全体へのドラッグ中：① / ② のどちらに読み込むかを選ばせる */
+.lq-dropoverlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drop);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-8);
+  padding: var(--space-10);
+  background: var(--color-overlay);
+  animation: lq-fade-in var(--dur-fast) var(--ease-out);
+}
+
+.lq-dropoverlay--single {
+  grid-template-columns: 1fr;
+}
+
+.lq-dropoverlay__zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  border: var(--border-width-strong) dashed var(--color-surface);
+  border-radius: var(--radius-xl);
+  background: var(--color-drop-src);
+  color: var(--color-text-inverse);
+  text-align: center;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.lq-dropoverlay__zone--cond {
+  background: var(--color-drop-cond);
+}
+
+.lq-dropoverlay__zone.is-over {
+  transform: scale(var(--scale-over));
+  border-style: solid;
+}
+
+.lq-dropoverlay__zone > .fa-solid {
+  font-size: var(--icon-2xl);
+  pointer-events: none;
+}
+
+.lq-dropoverlay__title {
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
+  pointer-events: none;
+}
+
+.lq-dropoverlay__sub {
+  font-size: var(--fs-lg);
+  pointer-events: none;
+}
