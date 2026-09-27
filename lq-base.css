@@ -1,0 +1,446 @@
+@charset "UTF-8";
+/* =========================================================================
+ * LightQuery - lq-base.css
+ * 土台：リセット・文字・画面の骨組み（上部バー／左のアイコン列／設定パネル／メイン）と、その中の部品（読み込み状況チップ・アイコン列の項目）
+ * ページ全体はスクロールさせず 100dvh に収め、一覧などの内側だけをスクロールさせる。
+ * ========================================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  color: var(--color-text);
+  background: var(--color-bg);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+ul,
+ol {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus-ring);
+  outline-offset: var(--space-1);
+}
+
+::-webkit-scrollbar {
+  width: var(--space-5);
+  height: var(--space-5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border: var(--space-1) solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lq-offscreen {
+  position: fixed;
+  left: calc(var(--space-11) * -100);
+  top: 0;
+  opacity: 0;
+}
+
+.lq-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.lq-muted {
+  color: var(--color-text-muted);
+}
+
+.lq-sub {
+  color: var(--color-text-sub);
+}
+
+/* ---------- 骨組み ---------- */
+.lq-app {
+  display: grid;
+  grid-template-columns: var(--w-rail) auto minmax(0, 1fr);
+  grid-template-rows: var(--h-topbar) minmax(0, 1fr);
+  grid-template-areas:
+    "top top top"
+    "rail panel main";
+  height: 100dvh;
+  min-height: 0;
+}
+
+/* ---------- 上部バー ---------- */
+.lq-topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: 0 var(--space-6);
+  background: var(--color-surface);
+  border-bottom: var(--border-width) solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  z-index: var(--z-topbar);
+}
+
+.lq-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-shrink: 0;
+  color: var(--color-primary-strong);
+  white-space: nowrap;
+}
+
+.lq-brand__mark {
+  display: grid;
+  place-items: center;
+  width: var(--h-control);
+  height: var(--h-control);
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-size: var(--icon-md);
+}
+
+.lq-brand__name {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-wide);
+}
+
+.lq-brand__sub {
+  display: var(--brand-sub-display);
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}
+
+.lq-topbar__chips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.lq-topbar__spacer {
+  flex: 1 1 auto;
+  min-width: var(--space-4);
+}
+
+.lq-topbar__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: var(--w-status-max);
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
+}
+
+.lq-topbar__status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lq-topbar__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* ---------- 左のアイコン列 ---------- */
+.lq-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  background: var(--color-surface-alt);
+  border-right: var(--border-width) solid var(--color-border);
+  min-height: 0;
+}
+
+.lq-rail__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lq-rail__spacer {
+  flex: 1 1 auto;
+}
+
+.lq-rail__divider {
+  height: var(--border-width);
+  margin: var(--space-3) var(--space-5);
+  background: var(--color-border);
+}
+
+/* ---------- 設定パネル（メイン画面の脇。開いていても他の操作ができる） ---------- */
+.lq-panel-host {
+  grid-area: panel;
+  display: flex;
+  flex-direction: column;
+  width: var(--w-panel-md);
+  min-height: 0;
+  background: var(--color-surface);
+  border-right: var(--border-width) solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-panel);
+  animation: lq-panel-in var(--dur-normal) var(--ease-out);
+}
+
+.lq-panel-host[data-size="sm"] {
+  width: var(--w-panel-sm);
+}
+
+.lq-panel-host[data-size="lg"] {
+  width: var(--w-panel-lg);
+}
+
+@keyframes lq-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--shift-md) * -1));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lq-panel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--h-tabbar);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6);
+  border-bottom: var(--border-width) solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.lq-panel__icon {
+  color: var(--color-primary);
+  font-size: var(--icon-lg);
+}
+
+.lq-panel__head[data-role="condition"] .lq-panel__icon {
+  color: var(--color-cond);
+}
+
+.lq-panel__title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+.lq-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.lq-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+/* ---------- メイン ---------- */
+.lq-main {
+  grid-area: main;
+  display: grid;
+  grid-template-rows: var(--h-tabbar) auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-bg);
+}
+
+/* ---------- 上部バーの読み込み状況チップ ---------- */
+.lq-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: var(--w-chip-max);
+  height: var(--h-control);
+  padding: 0 var(--space-4) 0 var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-chip:hover {
+  border-color: var(--color-primary-line);
+  background: var(--color-surface-hover);
+}
+
+.lq-chip--src {
+  border-color: var(--color-src-soft);
+}
+
+.lq-chip--cond {
+  border-color: var(--color-cond-soft);
+}
+
+.lq-chip--empty {
+  border-style: dashed;
+  border-color: var(--color-border-strong);
+  color: var(--color-text-muted);
+}
+
+.lq-chip__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-medium);
+}
+
+.lq-chip__meta {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 左のアイコン列の項目（アイコン＋短いラベル） ---------- */
+.lq-rail__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--h-rail-item);
+  margin: 0 var(--space-2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-sub);
+  transition: background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-rail__item > .fa-solid {
+  font-size: var(--icon-lg);
+}
+
+.lq-rail__label {
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+  white-space: nowrap;
+}
+
+.lq-rail__item:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
+}
+
+.lq-rail__item.is-active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.lq-rail__item.is-active::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--space-2) * -1);
+  top: var(--space-4);
+  bottom: var(--space-4);
+  width: var(--indicator-width);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+}
+
+.lq-rail__item[data-role="condition"].is-active {
+  background: var(--color-cond-soft);
+  color: var(--color-cond-strong);
+}
+
+.lq-rail__item[data-role="condition"].is-active::before {
+  background: var(--color-cond);
+}
+
+.lq-rail__mark {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  display: grid;
+  place-items: center;
+  min-width: var(--icon-lg);
+  height: var(--icon-lg);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  border: var(--border-width) solid var(--color-surface);
+}
+
+.lq-rail__mark--ok {
+  background: var(--color-success);
+  color: var(--color-text-inverse);
+}
+
+.lq-rail__mark--warn {
+  background: var(--color-warning);
+  color: var(--color-text-inverse);
+}
+
+.lq-rail__mark--count {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
