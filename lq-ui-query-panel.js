@@ -1,7 +1,7 @@
 /* =========================================================================
  * LightQuery - lq-ui-query-panel.js
  * 抽出条件パネル：上に抽出条件の一覧（ProfileListView）、下に選択中の抽出条件の編集
- *   （名前・② 条件データ・組み合わせ・条件の一覧・抽出のしかた）。
+ *   （名前・② 条件データ・照合ルール（全体／個別）・組み合わせ・条件の一覧・抽出のしかた）。
  *   条件は「① 列 が ② 列 を含む」の語順で並べ、同名列の提案・除外リストのヒントを出す。
  *   条件の行は id ごとに使い回し、入力中のフォーカスを失わないようにする。
  * ========================================================================= */
@@ -45,7 +45,7 @@
       this.el = h('div');
       Dom.append(this.el, [this.list.el, this._buildHead(), this._buildLogic(), this._buildConditions(), this._buildExtraction()]);
       ctx.bus.on('query', (d) => this.update(d));
-      ['datasets', 'profiles', 'store'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
+      ['datasets', 'profiles', 'store', 'rules'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
       ctx.bus.on('focus-condition', (d) => this._focusCondition(d.id, d.field));
       ctx.bus.on('focus-issue', (issue) => this._focusIssue(issue));
       ctx.bus.on('focus-profile-name', () => this._focusName());
@@ -71,12 +71,15 @@
       });
       this.nameInput.addEventListener('change', () => this._commitName());
       this.condCard = h('div', { class: 'lq-condcard' });
+      this.ruleLine = h('div', { class: 'lq-ruleline' });
+      this.ruleField = UI.field('照合ルール（空白・全角半角などのそろえ方）', this.ruleLine);
       this.headTitle = h('span', { class: 'lq-edit__title' });
       this.head = h('section', { class: 'lq-section lq-edit' }, [
         h('h3', { class: 'lq-section__title' }, [Dom.icon('pen-to-square'), this.headTitle]),
         h('div', { class: 'lq-stack' }, [
           UI.field('名前', h('div', { class: 'lq-profname__row' }, [this.rankBadge, this.nameInput])),
-          UI.field('② 条件データ（この抽出条件で使う表）', this.condCard)
+          UI.field('② 条件データ（この抽出条件で使う表）', this.condCard),
+          this.ruleField
         ])
       ]);
       return this.head;
@@ -282,6 +285,30 @@
       this.rankBadge.hidden = !multi;
       if (switched || document.activeElement !== this.nameInput) this.nameInput.value = p.name;
       this._renderCondCard(p);
+      this._renderRuleLine(p);
+    }
+
+    /** 照合ルールの行：全体の設定か個別の設定かと、その内容（抽出条件が 1 つで個別の設定もなければ出さない） */
+    _renderRuleLine(p) {
+      const s = this.state;
+      const show = s.profiles.length > 1 || !!p.rules;
+      this.ruleField.hidden = !show;
+      if (!show) return;
+      const text = new LQ.Normalizer(s.rulesFor(p)).describe();
+      const key = [p.id, !!p.rules, text].join('|');
+      if (key === this._ruleKey) return;
+      const changed = this._ruleKey !== undefined && this._ruleKey.split('|')[0] === p.id;
+      this._ruleKey = key;
+      Dom.clear(this.ruleLine);
+      Dom.append(this.ruleLine, [
+        p.rules
+          ? h('span', { class: 'lq-tag lq-tag--own', title: 'この抽出条件だけの照合ルールで比べます' }, [Dom.icon('filter'), '個別の設定'])
+          : h('span', { class: 'lq-tag', title: '全体の照合ルールで比べます' }, [Dom.icon('globe'), '全体の設定']),
+        h('span', { class: 'lq-ruleline__text', text: text, title: text }),
+        h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '照合ルールのパネルを開く（全体の設定／この抽出条件だけの設定を選べます）',
+          onclick: () => this.state.openPanel('rules') }, [Dom.icon('spell-check'), '変更'])
+      ]);
+      if (changed) Flash.el(this.ruleLine);
     }
 
     /** ② 条件データのカード：読み込み済みなら表の要約と操作、未読み込みなら読み込みの案内 */

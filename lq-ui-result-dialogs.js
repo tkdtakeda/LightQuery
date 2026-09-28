@@ -222,12 +222,13 @@
       const st = res.stats;
       const multi = res.parts.length > 1;
       const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
+      const own = res.snapshot.ownRules || 0;
       const rows = [
         ['実行日時', Util.dateTimeText(res.snapshot.finishedAt) + '（' + Util.formatSeconds(st.elapsedMs) + '）'],
         ['① 元データ', res.snapshot.sourceName + '（' + fmt(st.sourceRows) + ' 行）'],
         multi ? ['重複の扱い', mode.label + '：' + mode.desc] : null,
         st.includeUnmatched ? ['該当なしの行', '出力する（' + fmt(st.unmatchedRows) + ' 行）'] : null,
-        ['照合ルール', res.snapshot.rules],
+        own < res.parts.length ? [own ? '照合ルール（全体の設定）' : '照合ルール', res.snapshot.rules] : null,
         ['結果', '① ' + fmt(st.matchedSources) + ' 行が該当・出力 ' + fmt(st.outputRows) + ' 行']
       ].filter(Boolean);
       const blocks = res.parts.map((part, i) => this._partBlock(part, view.partName(i), multi, st.mode));
@@ -249,6 +250,7 @@
         st.needsCondition ? '② ' + snap.conditionName + '（' + fmt(st.conditionRows) + ' 行）' : '② は使っていません（固定値の条件のみ）',
         '組み合わせ：' + snap.exprJa,
         '出力する行：' + join.label + (st.needsCondition && st.joinKind !== 'anti' ? '・' + match.label : ''),
+        part.ownRules ? '照合ルール（個別）：' + snap.rules : null,
         st.indexLabel ? '高速化：条件 ' + st.indexLabel + '（' + st.indexOp + '）で ② の候補行を絞り込み' : null
       ].filter(Boolean);
       const shadow = part.hits - part.assigned;

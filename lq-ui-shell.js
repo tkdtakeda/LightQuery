@@ -115,7 +115,7 @@
     { id: 'source', icon: 'table', label: '①元データ', title: '① 元データ：読み込み・ヘッダー・範囲の設定' },
     { id: 'condition', icon: 'list-check', label: '②条件データ', title: '② 条件データ（選択中の抽出条件）：読み込み・ヘッダー・範囲の設定', role: 'condition' },
     { id: 'query', icon: 'filter', label: '抽出条件', title: '抽出条件：一覧（名前・優先順位）と、① と ② の対応・比較方法・組み合わせ・出力する行' },
-    { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：空白・全角半角・大文字小文字・数値・日付' },
+    { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：空白・全角半角・大文字小文字・数値・日付（全体の設定／抽出条件ごとの設定）' },
     { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' }
   ];
 
@@ -151,6 +151,8 @@
       this._mark('source', s.datasets.source ? { kind: 'ok', icon: 'check', title: '読み込み済み' } : null);
       this._mark('condition', s.datasets.condition ? { kind: 'ok', icon: 'check', title: '読み込み済み（選択中の抽出条件）' } : null);
       this._mark('query', this._queryMark());
+      const own = s.profiles.items.filter((p) => !!p.rules).length;
+      this._mark('rules', own ? { kind: 'count', text: String(own), title: '個別の照合ルールがある抽出条件 ' + own + ' 件' } : null);
       const counts = s.columnCounts();
       const visible = counts['s:'].visible + counts['c:'].visible + counts['m:'].visible;
       this._mark('output', s.output.columns.length ? { kind: 'count', text: String(visible), title: '表示する列 ' + visible + ' 列' } : null);

@@ -149,7 +149,7 @@
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
           h('p', { text: info.fileName + '（抽出条件 ' + info.count + ' 件）を、どのように読み込みますか？' }),
           first,
-          btn('add', 'plus', '今の一覧の後ろに追加する', '今の設定はそのまま。追加した分は優先順位が下になります', '2', false),
+          btn('add', 'plus', '今の一覧の後ろに追加する', '今の設定はそのまま。優先順位は下になり、照合ルールが違う分は個別の設定として付けます', '2', false),
           h('p', { class: 'lq-field__hint', text: 'どちらも、通知の「元に戻す」で読み込む前に戻せます。' })
         ])])
       ], { key: 'importchoice', size: 'lg', onClose: () => release && release() });
@@ -232,7 +232,7 @@
       this.pop.open(anchor, [
         this._head('triangle-exclamation', 'すべてクリアしますか？'),
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
-          h('p', { text: '① 元データ・結果に加え、抽出条件 ' + count + ' 件（ブラウザに保存した分も）を消去します。' }),
+          h('p', { text: '① 元データ・結果に加え、抽出条件 ' + count + ' 件と出力列の並び（ブラウザに保存した分も）を消去します。' }),
           UI.note('tip', '残しておきたいときは、先に JSON に書き出してください（あとで「読込」で戻せます）。'),
           h('p', { class: 'lq-field__hint', text: '消去のあと、通知の「元に戻す」でも戻せます。' })
         ])]),

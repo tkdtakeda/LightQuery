@@ -2,7 +2,8 @@
 /* =========================================================================
  * LightQuery - lq-profiles.css
  * 複数の抽出条件まわり：一覧（順位・有効／無効・名前・状態）、編集欄の見出しと ② のカード、開閉できる区画、
- *   結果の絞り込み、表の選択・読み込み方法の小窓、結果の根拠（抽出条件ごと）
+ *   結果の絞り込み、表の選択・読み込み方法の小窓、結果の根拠（抽出条件ごと）、
+ *   照合ルールの対象（全体の設定／抽出条件ごと）、出力列の覚えている並び
  * 値はすべて lq-tokens.css のトークンを参照する。
  * ========================================================================= */
 
@@ -601,4 +602,87 @@
 .lq-grid--kv td {
   white-space: normal;
   max-width: none;
+}
+
+/* ---------- 照合ルール（全体の設定／抽出条件ごとの設定） ---------- */
+.lq-tag--own {
+  border-color: var(--color-primary-line);
+  background: var(--color-primary-faint);
+  color: var(--color-primary-strong);
+}
+
+.lq-ruleline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.lq-ruleline__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--color-text-sub);
+}
+
+.lq-ruleline .lq-btn {
+  flex-shrink: 0;
+}
+
+.lq-rulescope__who,
+.lq-rulescope__others {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.lq-rulescope__label {
+  font-size: var(--fs-xs);
+  color: var(--color-text-sub);
+}
+
+.lq-rulescope__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.lq-rulescope__rank {
+  font-weight: var(--fw-bold);
+  color: var(--color-primary-strong);
+}
+
+.lq-rulescope__editing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  font-size: var(--fs-xs);
+  color: var(--color-text-sub);
+}
+
+.lq-rulescope__editing.is-own {
+  background: var(--color-primary-faint);
+  color: var(--color-primary-strong);
+  font-weight: var(--fw-medium);
+}
+
+.lq-rules.is-own .lq-rule {
+  border-color: var(--color-primary-line);
+  border-left: var(--border-width-strong) solid var(--color-primary);
+}
+
+/* ---------- 出力列：覚えている並び ---------- */
+.lq-colmemo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }

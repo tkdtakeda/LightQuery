@@ -1,8 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-ui-output-panel.js
- * 出力列パネル（① / ② / 根拠の列の表示切替・ドラッグとキーボードでの並べ替え）と
- * 照合ルールパネル（空白・全角半角・大文字小文字・数値・日付）
+ * 出力列パネル（① / ② / 根拠の列の表示切替・ドラッグとキーボードでの並べ替え・初期状態に戻す）
  *   ② の列は全抽出条件の ② の列を名前でまとめて並べ、どの抽出条件の ② の列かを添える。
+ *   並びと表示は列の名前でブラウザに記憶する（今は使っていない列の分も覚えておく）。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -19,9 +19,6 @@
     { prefix: 'm:', label: '根拠（抽出条件・行番号・一致数）', short: '抽出条件・行番号など', badge: ['meta', '根拠'] }
   ];
 
-  /* ---------------------------------------------------------------------
-   * OutputPanel
-   * ------------------------------------------------------------------- */
   class OutputPanel {
     constructor(ctx) {
       this.ctx = ctx;
@@ -38,14 +35,19 @@
       this.filter.addEventListener('input', () => this.render());
       this.list = h('ul', { class: 'lq-collist' });
       this.empty = h('p', { class: 'lq-field__hint', text: '① または ② を読み込むと、ここに列が表示されます。' });
+      this.memo = h('p', { class: 'lq-field__hint lq-colmemo' });
+      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '覚えている並びを消し、① の列を表示・② の列を非表示の初期状態に戻す（元に戻せます）',
+        onclick: () => this._reset() }, [Dom.icon('rotate-left'), '初期状態に戻す']);
       this.el = h('div', {}, [
         UI.section('まとめて切り替え', [groups]),
         UI.section('列の一覧（上から順に表示・出力）', [
           this.filter,
           this.empty,
           this.list,
-          UI.note('tip', '左端のつまみをドラッグして並べ替えます。表の見出しをドラッグしても同じ順序が変わります。チェックボックスを選んで Alt+↑／Alt+↓ でも移動できます。')
-        ])
+          this.memo,
+          UI.note('tip', '左端のつまみをドラッグして並べ替えます。表の見出しをドラッグしても同じ順序が変わります。チェックボックスを選んで Alt+↑／Alt+↓ でも移動できます。'),
+          UI.note('info', '並びと表示は列の名前でこのブラウザに記憶し、次に同じ名前の列を読み込んだときも使います（サンプル表示中の変更は記憶しません）。')
+        ], [reset])
       ]);
       this._bindDrag();
       ['output', 'datasets', 'query', 'profiles'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
@@ -67,6 +69,19 @@
     _group(prefix, visible) {
       this.state.setGroupVisible(prefix, visible);
       Flash.el(this.list);
+    }
+
+    _reset() {
+      const s = this.state;
+      const snap = s.snapshot();
+      s.resetOutputColumns();
+      Flash.el(this.list);
+      this.ctx.toasts.show({
+        type: 'success',
+        title: '出力列を初期状態に戻しました',
+        message: '① の列を表示・② の列を非表示にし、覚えていた並び（今は使っていない列の分も）を消しました。',
+        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '出力列の並びを元に戻しました') }]
+      });
     }
 
     /** ② の行がひも付く（「一致しなかった行」でも固定値だけでもない）有効な抽出条件 */
@@ -119,6 +134,9 @@
       const word = this.filter.value.trim().toLowerCase();
       Dom.clear(this.list);
       this.empty.hidden = s.output.columns.length > 0;
+      const dormant = s.output.memory.length - s.output.columns.length;
+      this.memo.hidden = dormant <= 0;
+      this.memo.textContent = dormant > 0 ? 'ほかに、今は読み込んでいない列 ' + dormant + ' 列の並びと表示を覚えています。' : '';
       s.output.columns.forEach((col) => {
         const name = LQ.ResultView.nameOf(col.key);
         if (word && name.toLowerCase().indexOf(word) === -1) return;
@@ -210,87 +228,5 @@
     }
   }
 
-  /* ---------------------------------------------------------------------
-   * RulesPanel
-   * ------------------------------------------------------------------- */
-  const RULES = [
-    { key: 'space', type: 'select', label: '空白',
-      options: [{ value: 'trim', label: '前後の空白を無視' }, { value: 'all', label: 'すべての空白を無視' }, { value: 'keep', label: '空白も区別する' }],
-      example: '例：「 東京 」＝「東京」。「すべて無視」なら「山田 太郎」＝「山田太郎」' },
-    { key: 'width', type: 'switch', label: '全角・半角を区別しない', example: '例：ＡＢＣ＝ABC、１２３＝123、ｱｲｳ＝アイウ、（）＝()' },
-    { key: 'caseless', type: 'switch', label: '大文字・小文字を区別しない', example: '例：abc＝ABC、Ｃ００１＝c001' },
-    { key: 'numeric', type: 'switch', label: '数値として読める値は数値で比較', example: '例：1,000＝1000、00123＝123、▲500＝-500、12%＝0.12。以上・未満は数の大きさで比べます' },
-    { key: 'date', type: 'switch', label: '日付として読める値は日付で比較', example: '例：2024/1/5＝2024-01-05＝2024年1月5日＝令和6年1月5日' }
-  ];
-
-  class RulesPanel {
-    constructor(ctx) {
-      this.ctx = ctx;
-      this.state = ctx.state;
-      this.title = '照合ルール';
-      this.icon = 'spell-check';
-      this.size = 'md';
-      this.controls = new Map();
-      const cards = RULES.map((rule) => this._card(rule));
-      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '照合ルールを初期値に戻す', onclick: () => this._reset() },
-        [Dom.icon('rotate-left'), '初期値に戻す']);
-      this.el = h('div', {}, [
-        UI.section('値をそろえてから比べます', [
-          h('div', { class: 'lq-rules' }, cards),
-          UI.note('info', '変更すると、表示中の結果は「未反映」になります。右上のボタンで再抽出すると反映されます。設定はこのパソコンのブラウザに記憶されます。')
-        ], [reset])
-      ]);
-      ctx.bus.on('rules', () => this.sync());
-      this.sync();
-    }
-
-    _card(rule) {
-      let control;
-      if (rule.type === 'select') {
-        const select = h('select', { class: 'lq-select' });
-        UI.fillSelect(select, rule.options, this.state.rules[rule.key]);
-        select.addEventListener('change', () => this._set(rule.key, select.value));
-        this.controls.set(rule.key, { get: () => select.value, set: (v) => { select.value = v; } });
-        control = UI.field(rule.label, select);
-      } else {
-        const sw = UI.switchToggle(rule.label, !!this.state.rules[rule.key], (checked) => this._set(rule.key, checked));
-        this.controls.set(rule.key, { get: () => sw.input.checked, set: (v) => { sw.input.checked = !!v; } });
-        control = sw.el;
-      }
-      const card = h('div', { class: 'lq-rule', dataset: { rule: rule.key } }, [control, h('div', { class: 'lq-rule__example', text: rule.example })]);
-      this.controls.get(rule.key).card = card;
-      return card;
-    }
-
-    _set(key, value) {
-      if (this.state.rules[key] === value) return;
-      const patch = {};
-      patch[key] = value;
-      this.state.setRules(patch);
-      const c = this.controls.get(key);
-      Flash.el(c.card);
-      Flash.applied(c.card.querySelector('.lq-field') || c.card);
-    }
-
-    _reset() {
-      const defaults = LQ.Normalizer.DEFAULT_RULES;
-      const changed = Object.keys(defaults).filter((key) => this.state.rules[key] !== defaults[key]);
-      if (!changed.length) {
-        this.ctx.toasts.show({ type: 'info', title: '照合ルールはすでに初期値です' });
-        return;
-      }
-      this.state.setRules(Object.assign({}, defaults));
-      changed.forEach((key) => Flash.el(this.controls.get(key).card));
-      this.ctx.toasts.show({ type: 'success', title: '照合ルールを初期値に戻しました' });
-    }
-
-    sync() {
-      this.controls.forEach((c, key) => {
-        if (c.get() !== this.state.rules[key]) c.set(this.state.rules[key]);
-      });
-    }
-  }
-
   LQ.OutputPanel = OutputPanel;
-  LQ.RulesPanel = RulesPanel;
 })(window);

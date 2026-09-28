@@ -1,7 +1,7 @@
 /* =========================================================================
  * LightQuery - lq-app-profiles.js
- * 抽出条件の操作：選択・追加・複製・削除・優先順位・有効／無効・振り分けの設定、条件（A・B…）の追加と削除、
- *   表（ファイル・シート）からの作成、JSON の書き出し／読み込み、サンプルの読み込み／消去。
+ * 抽出条件の操作：選択・追加・複製・削除・優先順位・有効／無効・振り分けの設定・照合ルールの対象、
+ *   条件（A・B…）の追加と削除、表（ファイル・シート）からの作成、JSON の書き出し／読み込み、サンプルの読み込み／消去。
  *   消去や置き換えは確認ダイアログではなく、通知の「元に戻す」で取り消せるようにする。
  * ========================================================================= */
 (function (global) {
@@ -97,6 +97,29 @@
 
     setCombine(patch) {
       this.state.setCombine(patch);
+    }
+
+    /**
+     * 照合ルールの対象を切り替える。own：今の全体の設定を写して、この抽出条件だけの設定にする /
+     * global：個別の設定を外して全体の設定を使う（元に戻せる）
+     */
+    setRulesScope(id, scope) {
+      const s = this.state;
+      const p = s.profiles.find(id);
+      if (!p || (scope === 'own') === !!p.rules) return;
+      const snap = s.snapshot();
+      const undo = this._undo(snap, '「' + p.name + '」の照合ルールを元に戻しました');
+      if (scope === 'own') {
+        s.setProfileRules(id, s.rules);
+        this.toasts.show({ type: 'success', title: '「' + p.name + '」だけの照合ルールにしました',
+          message: '今の全体の設定を写しました。ここで変えた項目は、この抽出条件だけに使います。', actions: undo });
+        return;
+      }
+      const own = p.rules;
+      const same = LQ.Normalizer.sameRules(own, s.rules);
+      s.setProfileRules(id, null);
+      this.toasts.show({ type: 'success', title: '「' + p.name + '」は全体の設定で比べます',
+        message: same ? '個別の設定は全体の設定と同じでした。' : '外した個別の設定：' + new LQ.Normalizer(own).describe(), actions: undo });
     }
 
     /* =================================================================
@@ -217,7 +240,7 @@
         count = s.profiles.length;
       } else {
         const p = s.profiles.find(opts.id) || s.activeProfile;
-        obj = LQ.Bundle.exportProfile(p, s.profiles.rank(p.id), opts.withData);
+        obj = LQ.Bundle.exportProfile(p, s.profiles.rank(p.id), opts.withData, s.rules);
       }
       const blob = new Blob([LQ.Bundle.stringify(obj)], { type: 'application/json' });
       const name = Util.sanitizeFileName(opts.fileName) + '.json';
@@ -261,6 +284,9 @@
 
     /**
      * 読み込んだ抽出条件を適用する。サンプル表示中ならサンプルを閉じてから適用する。
+     * 一式（旧形式を含む）で置き換えるときは、全体の照合ルール・振り分け・出力列・表示件数・① の読み込み範囲もファイルの内容にする。
+     * それ以外（追加・1 件のファイル）は今の設定を変えず、ファイルの全体の照合ルールが今と違えば、
+     * それを使っていた抽出条件に個別の設定として付ける（書き出し元と同じ結果になるように）。
      * @param {object} bundle LQ.Bundle.parse の結果
      * @param {'replace'|'add'} mode
      */
@@ -273,17 +299,21 @@
       let added = bundle.profiles;
       if (replace) s.replaceProfiles(bundle.profiles, bundle.profiles[0].id);
       else added = s.insertProfiles(bundle.profiles, s.profiles.length, true);
-      const whole = replace || bundle.kind === 'legacy';
-      if (whole && bundle.rules) s.setRules(bundle.rules);
-      if (replace && bundle.combine) s.setCombine(bundle.combine);
-      if (whole && bundle.output) s.importOutputColumns(bundle.output.columns);
-      if (whole && bundle.view) s.setPageSize(bundle.view.pageSize);
+      const whole = replace && bundle.kind !== 'profile';
+      if (whole) {
+        if (bundle.rules) s.setRules(bundle.rules);
+        if (bundle.combine) s.setCombine(bundle.combine);
+        if (bundle.output) s.importOutputColumns(bundle.output.columns);
+        if (bundle.view) s.setPageSize(bundle.view.pageSize);
+      }
+      const adopted = whole ? 0 : this._adoptRules(added, bundle.rules);
       const readApplied = whole && bundle.read ? this._applySourceRead(bundle.read.source) : false;
       s.openPanel('query');
       const missing = added.filter((p) => !p.condition && p.conditionRef && p.conditionRef.fileName).length;
       const skipped = bundle.skipped + (bundle.profiles.length - added.length);
       const notes = [];
       if (missing) notes.push('② のデータが入っていない ' + missing + ' 件は、使う前に ② を読み込んでください（前回のファイル名を表示しています）');
+      if (adopted) notes.push('ファイルの照合ルールが今の全体の設定と違うため、' + adopted + ' 件には個別の照合ルールとして付けました');
       if (readApplied) notes.push('① の読み込み範囲も適用しました');
       if (skipped) notes.push('上限（' + LQ.Profile.MAX + ' 件）のため ' + skipped + ' 件は読み込みませんでした');
       if (leftSample) notes.push('サンプルは閉じました');
@@ -293,6 +323,22 @@
         message: fileName + (notes.length ? '。' + notes.join('。') + '。' : ''),
         actions: this._undo(snap, '読み込む前の抽出条件に戻しました')
       });
+    }
+
+    /**
+     * 書き出し元の全体の照合ルールが今の全体の設定と違うとき、それを使っていた抽出条件に個別の設定として付ける。
+     * @returns {number} 付けた件数
+     */
+    _adoptRules(list, rules) {
+      const s = this.state;
+      if (!rules || LQ.Normalizer.sameRules(rules, s.rules)) return 0;
+      let count = 0;
+      list.forEach((p) => {
+        if (p.rules) return;
+        s.setProfileRules(p.id, rules);
+        count++;
+      });
+      return count;
     }
 
     /** 一括・旧形式の JSON に入っている ① の読み込み範囲を、読み込み済みの ① に適用する */
@@ -326,7 +372,7 @@
         built = LQ.Samples.build(id);
         const make = (role, spec) => new LQ.Dataset(role, LQ.SourceFile.fromGrid(spec.grid, spec.name, 'sample'), { isSample: true, settings: spec.settings || null });
         const profiles = built.profiles.map((spec) => {
-          const p = new LQ.Profile({ name: spec.name, origin: 'sample', query: LQ.QueryOps.fromPlain(spec.query) });
+          const p = new LQ.Profile({ name: spec.name, origin: 'sample', query: LQ.QueryOps.fromPlain(spec.query), rules: spec.rules || null });
           if (spec.condition) p.setCondition(make('condition', spec.condition));
           return p;
         });

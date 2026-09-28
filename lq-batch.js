@@ -2,6 +2,7 @@
  * LightQuery - lq-batch.js
  * 複数の抽出条件をまとめて実行し、優先順位に従って 1 つの結果にまとめる。
  *   ・各抽出条件は QueryEngine でそれぞれ実行する（① の値の下ごしらえは共有キャッシュで再利用）
+ *   ・照合ルールは抽出条件ごとの設定（個別の設定がなければ全体の設定）を使う
  *   ・振り分け（assign）：複数に該当した ① の行は、優先順位が最も高い抽出条件にだけ入れる。① の行の順に並ぶ
  *   ・それぞれに出力（independent）：該当したすべての抽出条件に入れる。優先順位の順に続けて並ぶ
  *   ・どれにも該当しない行は、指定があれば「該当なし」（抽出条件の番号 -1）として加える
@@ -155,8 +156,9 @@
     /**
      * 有効な抽出条件をまとめて実行する。
      * @param {{source:LQ.Dataset, rules:object, combine:{mode:string, includeUnmatched:boolean},
-     *          profiles:Array<{id:string, name:string, priority:number, query:object, condition:LQ.Dataset|null}>}} ctx
-     *        profiles は優先順位の順（検証済みのもの）
+     *          profiles:Array<{id:string, name:string, priority:number, query:object, condition:LQ.Dataset|null,
+     *                          rules?:object, ownRules?:boolean}>}} ctx
+     *        rules は全体の照合ルール。profiles は優先順位の順（検証済みのもの）で、rules があればそれを使う
      * @param {{onProgress?:Function, token?:LQ.CancelToken}} hooks
      * @returns {Promise<object>} 結果（中止時は {cancelled:true}）
      */
@@ -171,7 +173,7 @@
       for (let i = 0; i < n; i++) {
         const p = list[i];
         const prefix = n > 1 ? '抽出条件 ' + (i + 1) + '/' + n + '「' + p.name + '」：' : '';
-        const res = await this.engine.run({ source: ctx.source, condition: p.condition, query: p.query, rules: ctx.rules }, {
+        const res = await this.engine.run({ source: ctx.source, condition: p.condition, query: p.query, rules: p.rules || ctx.rules }, {
           token: token,
           onProgress: (e) => onProgress({ phase: e.phase, ratio: 0.97 * (i + e.ratio) / n, label: prefix + e.label })
         });
@@ -194,6 +196,7 @@
           joinKind: st.joinKind,
           matchMode: st.matchMode,
           needsCondition: st.needsCondition,
+          ownRules: !!p.ownRules,
           hits: merged.hits[i],
           assigned: merged.assigned[i],
           rows: merged.counts[i],
@@ -224,6 +227,7 @@
         snapshot: {
           sourceName: ctx.source.name,
           rules: new LQ.Normalizer(ctx.rules).describe(),
+          ownRules: parts.filter((p) => p.ownRules).length,
           finishedAt: new Date()
         }
       };

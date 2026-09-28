@@ -2,9 +2,10 @@
  * LightQuery - lq-profiles.js
  * 抽出条件のモデル
  *   QueryOps    … 条件 A〜Z・組み合わせ・抽出のしかた（query）を操作する関数群（状態を持たない）
- *   Profile     … 1 件の抽出条件（名前・有効／無効・② 条件データ・query）
+ *   Profile     … 1 件の抽出条件（名前・有効／無効・② 条件データ・query・個別の照合ルール）
  *   ProfileList … 優先順位の順に並べた抽出条件の一覧（先頭が 1 位）
  * 抽出条件ごとに ② を持つため、② の列構成は抽出条件ごとに異なってよい。
+ * 照合ルールは rules が null なら全体の設定を使い、オブジェクトならその抽出条件だけの設定を使う。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -24,6 +25,12 @@
 
   function text(value) {
     return value === null || value === undefined ? '' : String(value);
+  }
+
+  /** 個別の照合ルール（不正な値は捨て、欠けは初期値で補う。使える値がなければ null＝全体の設定） */
+  function ownRules(rules) {
+    const clean = LQ.Normalizer.cleanRules(rules);
+    return clean ? Object.assign({}, LQ.Normalizer.DEFAULT_RULES, clean) : null;
   }
 
   function emptyRight() {
@@ -205,7 +212,7 @@
   class Profile {
     /**
      * @param {{id?:string, name?:string, enabled?:boolean, origin?:'user'|'sample', query?:object,
-     *          condition?:LQ.Dataset|null, conditionRef?:object|null, createdAt?:string}} init
+     *          condition?:LQ.Dataset|null, conditionRef?:object|null, rules?:object|null, createdAt?:string}} init
      */
     constructor(init) {
       const o = init || {};
@@ -216,6 +223,7 @@
       this.query = o.query || QueryOps.create();
       this.condition = o.condition || null;
       this.conditionRef = o.conditionRef || null;
+      this.rules = ownRules(o.rules);
       this.createdAt = o.createdAt || new Date().toISOString();
     }
 
@@ -240,9 +248,9 @@
       return this.origin === 'sample';
     }
 
-    /** ② も条件もない（追加したままの）抽出条件か */
+    /** ② も条件も個別の照合ルールもない（追加したままの）抽出条件か */
     isBlank() {
-      return !this.condition && !this.conditionRef && !this.query.conditions.length;
+      return !this.condition && !this.conditionRef && !this.query.conditions.length && !this.rules;
     }
 
     /** ② を差し替える（null で外す）。覚えておく情報（ファイル名・読み込み範囲）も合わせて更新する */
@@ -297,6 +305,7 @@
         condition: this.condition,
         conditionVersion: this.condition ? this.condition.version : 0,
         conditionRef: Util.clone(this.conditionRef),
+        rules: Util.clone(this.rules),
         createdAt: this.createdAt
       };
     }
@@ -310,6 +319,7 @@
         query: Util.clone(snap.query),
         condition: snap.condition,
         conditionRef: Util.clone(snap.conditionRef),
+        rules: Util.clone(snap.rules),
         createdAt: snap.createdAt
       });
     }
@@ -321,7 +331,8 @@
         enabled: this.enabled,
         origin: 'user',
         query: QueryOps.fromPlain(QueryOps.toPlain(this.query)),
-        conditionRef: Util.clone(this.conditionRef)
+        conditionRef: Util.clone(this.conditionRef),
+        rules: Util.clone(this.rules)
       });
       if (this.condition) copy.condition = this.condition.clone({ isSample: false });
       return copy;
@@ -329,7 +340,7 @@
 
     /**
      * 保存・JSON の素のオブジェクト → 抽出条件。② の表があれば読み込み済みにする。
-     * @param {object} plain {name, enabled, query, condition:{fileName, settings, choices, grid?, ...}}
+     * @param {object} plain {name, enabled, query, rules?, condition:{fileName, settings, choices, grid?, ...}}
      * @param {{id?:string, origin?:string, grid?:Array}} options grid を別に渡すとき（ブラウザ保存）は options.grid
      */
     static fromPlain(plain, options) {
@@ -341,6 +352,7 @@
         enabled: o.enabled !== false,
         origin: opts.origin,
         query: QueryOps.fromPlain(o.query),
+        rules: o.rules,
         createdAt: typeof o.createdAt === 'string' ? o.createdAt : undefined
       });
       const ref = o.condition && typeof o.condition === 'object' ? o.condition : null;

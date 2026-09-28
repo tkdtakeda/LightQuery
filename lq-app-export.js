@@ -132,6 +132,7 @@
       lines.push(['組み合わせ', snap.exprJa]);
       lines.push(['出力する行', join.label + '（' + join.note + '）']);
       if (st.needsCondition && st.joinKind !== 'anti') lines.push(['複数一致したとき', match.label]);
+      if (part.ownRules) lines.push(['照合ルール（個別）', snap.rules]);
       const shadow = part.hits - part.assigned;
       lines.push(['件数', '該当 ' + fmt(part.hits) + ' 行・出力 ' + fmt(part.rows) + ' 行' +
         (shadow > 0 ? '（うち ' + fmt(shadow) + ' 行は優先順位が上の抽出条件に振り分け）' : '')]);
@@ -153,7 +154,8 @@
       view.parts.forEach((part, i) => {
         this._partLines(part, multi ? part.priority + ' 位「' + view.partName(i) + '」' : '').forEach((line) => lines.push(line));
       });
-      lines.push(['照合ルール', res.snapshot.rules]);
+      const own = res.snapshot.ownRules || 0;
+      if (own < view.parts.length) lines.push([own ? '照合ルール（全体の設定）' : '照合ルール', res.snapshot.rules]);
       lines.push(['結果', '① ' + fmt(st.sourceRows) + ' 行中 ' + fmt(st.matchedSources) + ' 行が該当・出力 ' + fmt(st.outputRows) + ' 行' +
         (st.includeUnmatched ? '（該当なし ' + fmt(st.unmatchedRows) + ' 行を含む）' : '')]);
       if (prepared.sheets) lines.push(['シート', prepared.sheets.map((sh) => sh.name).join('、')]);

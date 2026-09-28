@@ -1,7 +1,7 @@
 /* =========================================================================
  * LightQuery - lq-samples.js
- * 動作確認用のサンプルデータ（9 パターン）。値は乱数の種を固定して毎回同じものを生成する。
- *   build() は ① の grid と、抽出条件（名前・② の grid・条件）の一覧、振り分けの設定、出力列の初期値を返す。
+ * 動作確認用のサンプルデータ（10 パターン）。値は乱数の種を固定して毎回同じものを生成する。
+ *   build() は ① の grid と、抽出条件（名前・② の grid・条件・個別の照合ルール）の一覧、振り分けの設定、出力列の初期値を返す。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -273,6 +273,34 @@
       }
     },
     {
+      id: 'rules',
+      icon: 'spell-check',
+      title: '抽出条件ごとに照合ルールを変える',
+      desc: '同じ ② の会員番号を、1 位「ゆるく照合」は全体の設定（初期値：00123＝123、ABC-01＝abc-01＝ＡＢＣ－０１）で、2 位「厳密に照合」は個別の設定（空白・全角半角・大小文字を区別し、数値も文字で比較）で照合します。それぞれに出力するので違いを並べて確かめられます。',
+      tags: ['照合ルール', '抽出条件ごとの設定', 'それぞれに出力'],
+      build() {
+        const members = [['会員番号', '氏名', '区分', '入会日'],
+          ['00123', '青木 花子', '一般', '2024/04/01'], ['123', '石川 太郎', '一般', '2024/05/12'], ['0123', '上田 次郎', 'ゴールド', '2024/06/03'],
+          ['00456', '遠藤 三郎', '一般', '2024/07/21'], ['456', '大野 桜', 'ゴールド', '2024/08/08'],
+          ['ABC-01', '加藤 翼', '法人', '2024/09/15'], ['abc-01', '木村 蓮', '法人', '2024/10/02'], ['ＡＢＣ－０１', '小林 陽菜', '法人', '2024/11/11'],
+          ['XYZ-9', '斎藤 湊', '法人', '2024/12/24'], ['xyz-9', '佐々木 結衣', '法人', '2025/01/06'],
+          ['0789', '清水 大和', '一般', '2025/02/14'], ['789', '高田 美咲', 'ゴールド', '2025/03/03'], [' 789 ', '田村 悠真', '一般', '2025/03/30'],
+          ['DEF-2', '中島 杏', '一般', '2025/04/18'], ['01000', '西村 陸', '一般', '2025/05/05']];
+        const target = [['対象会員番号', 'メモ'], ['00123', 'ゼロ埋め 5 桁'], ['00456', 'ゼロ埋め 5 桁'], ['ABC-01', '英字は大文字・半角'], ['789', 'ゼロ埋めなし']];
+        const cond = () => ({ name: 'サンプル_対象会員番号.csv', grid: target });
+        const query = () => Q([C('会員番号', 'eq', col('対象会員番号'))]);
+        return {
+          source: { name: 'サンプル_会員データ.xlsx', grid: members },
+          profiles: [
+            { name: 'ゆるく照合', condition: cond(), query: query() },
+            { name: '厳密に照合', condition: cond(), query: query(), rules: { space: 'keep', width: false, caseless: false, numeric: false, date: false } }
+          ],
+          combine: { mode: 'independent', includeUnmatched: false },
+          output: ['m:profile', 's:会員番号', 's:氏名', 's:区分', 'c:対象会員番号', 'c:メモ']
+        };
+      }
+    },
+    {
       id: 'perf',
       icon: 'gauge-high',
       title: '10 万行で速度を確認',
@@ -308,7 +336,7 @@
       return SAMPLES.find((s) => s.id === id) || null;
     },
 
-    /** @returns {{id, title, source:{name,grid,settings?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query}>, combine?, output:string[]}} */
+    /** @returns {{id, title, source:{name,grid,settings?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[]}} */
     build(id) {
       const sample = Samples.get(id);
       if (!sample) throw new Error('サンプルが見つかりません');

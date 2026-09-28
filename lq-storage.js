@@ -1,7 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-storage.js
- * 抽出条件の一覧をブラウザ（localStorage）に自動保存し、次に開いたときに復元する。
- *   ・保存するのは自分の抽出条件（サンプルは保存しない）と、並び順・選択中・振り分けの設定
+ * 抽出条件の一覧と出力列の並びをブラウザ（localStorage）に自動保存し、次に開いたときに復元する。
+ *   ・保存するのは自分の抽出条件（サンプルは保存しない）と、並び順・選択中・振り分けの設定・個別の照合ルール
+ *   ・出力列の並びと表示は列の名前で覚える（サンプル表示中は、サンプル前の並びを保存し続ける）
  *   ・② の中身も保存する。1 件 1,000,000 文字・合計 2,000,000 文字を超える分はファイル名と読み込み範囲だけを記録する
  *   ・書き込みは変更から少し待ってまとめて行い、変わっていないものは書き直さない
  *   ・① 元データは保存しない
@@ -16,10 +17,11 @@
   const KEY_LIBRARY = PREFIX + 'library';
   const KEY_PROFILE = PREFIX + 'profile.';
   const KEY_DATA = PREFIX + 'pdata.';
+  const KEY_OUTPUT = PREFIX + 'output';
   const DATA_LIMIT = 1000000;
   const TOTAL_LIMIT = 2000000;
   const SAVE_DELAY = 400;
-  const TOPICS = new Set(['profiles', 'query', 'datasets']);
+  const TOPICS = new Set(['profiles', 'query', 'datasets', 'rules', 'output']);
   const REASON_TEXT = {
     size: '② が大きいため、ブラウザにはファイル名だけを保存しています（次回は ② を読み込み直してください）',
     total: '保存容量の上限のため、ブラウザにはファイル名だけを保存しています（次回は ② を読み込み直してください）',
@@ -62,12 +64,14 @@
     }
 
     /**
-     * 前回の一覧を状態に読み込む（画面を組み立てる前に呼ぶ）。
+     * 前回の一覧と出力列の並びを状態に読み込む（画面を組み立てる前に呼ぶ）。
      * @returns {{count:number, missing:number}|null} 復元した件数と、② を読み込み直す必要がある件数
      */
     restore() {
       const ls = storage();
       if (!ls) return null;
+      const out = read(ls, KEY_OUTPUT);
+      if (out && Array.isArray(out.memory)) this.state.importOutputColumns(out.memory);
       const lib = read(ls, KEY_LIBRARY);
       if (!lib || !Array.isArray(lib.order)) return null;
       const profiles = [];
@@ -159,11 +163,12 @@
           ref.stored = stored;
           if (reason) ref.reason = reason;
         }
-        const def = { name: p.name, enabled: p.enabled, createdAt: p.createdAt, query: QueryOps.toPlain(p.query), condition: ref };
+        const def = { name: p.name, enabled: p.enabled, createdAt: p.createdAt, query: QueryOps.toPlain(p.query), rules: p.rules, condition: ref };
         if (!this._write(ls, KEY_PROFILE + p.id, JSON.stringify(def))) failed = true;
       });
       const lib = { format: 1, order: profiles.map((p) => p.id), activeId: s.userActiveId(), combine: s.userCombine() };
       if (!this._write(ls, KEY_LIBRARY, JSON.stringify(lib))) failed = true;
+      if (!this._write(ls, KEY_OUTPUT, JSON.stringify({ format: 1, memory: s.userOutputMemory() }))) failed = true;
       this._sweep(ls, new Set(lib.order));
       if (failed) this._warnOnce('unavailable');
       else if (quota) this._warnOnce('quota');

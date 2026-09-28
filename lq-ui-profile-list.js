@@ -151,6 +151,10 @@
       Dom.clear(row.tags);
       if (p.isSample) row.tags.appendChild(h('span', { class: 'lq-tag lq-tag--sample', text: 'サンプル' }));
       if (!p.enabled) row.tags.appendChild(h('span', { class: 'lq-tag', text: '無効' }));
+      if (p.rules) {
+        row.tags.appendChild(h('span', { class: 'lq-tag lq-tag--own', title: 'この抽出条件だけの照合ルールで比べます：' + new LQ.Normalizer(p.rules).describe() },
+          [Dom.icon('spell-check'), '個別ルール']));
+      }
       Dom.clear(row.status);
       if (p.enabled && s.datasets.source) {
         const v = this.app.validationOf(p);

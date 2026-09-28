@@ -48,7 +48,7 @@
         h('div', { class: 'lq-menu__sep' }),
         this._item('broom', 'サンプルデータのみクリア', hasSample ? 'サンプルの ①・② と抽出条件だけを消去（元に戻せます）' : 'サンプルデータは読み込まれていません',
           () => this.app.profiles.clearSamples(), { disabled: !hasSample }),
-        this._item('trash-can', 'すべてクリア', hasAny ? '①・抽出条件（ブラウザの保存分も）・結果を消去（元に戻せます）' : 'クリアするものがありません',
+        this._item('trash-can', 'すべてクリア', hasAny ? '①・抽出条件・出力列の並び（ブラウザの保存分も）・結果を消去（元に戻せます）' : 'クリアするものがありません',
           () => this.app.clearAll(anchor), { danger: true, disabled: !hasAny }),
         h('div', { class: 'lq-menu__sep' }),
         this._item('book-open', '使い方（取扱説明書）', null, () => this.app.manual.open())

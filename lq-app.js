@@ -454,7 +454,9 @@
       const signature = s.querySignature();
       const profiles = [];
       s.profiles.items.forEach((p, i) => {
-        if (p.enabled) profiles.push({ id: p.id, name: p.name, priority: i + 1, query: Util.clone(p.query), condition: p.condition });
+        if (!p.enabled) return;
+        profiles.push({ id: p.id, name: p.name, priority: i + 1, query: Util.clone(p.query), condition: p.condition,
+          rules: Util.clone(s.rulesFor(p)), ownRules: !!p.rules });
       });
       const ctx = { source: s.datasets.source, rules: Util.clone(s.rules), combine: s.effectiveCombine(), profiles: profiles };
       s.setBusy({ kind: 'run', label: '準備中', ratio: 0 });
@@ -534,7 +536,8 @@
       const profile = part ? s.profiles.find(part.id) : null;
       let explanation = null;
       if (part && profile) {
-        explanation = this.engine.explain({ source: s.datasets.source, condition: part.condition || profile.condition, query: profile.query, rules: s.rules }, pair.src, pair.cond);
+        explanation = this.engine.explain({ source: s.datasets.source, condition: part.condition || profile.condition, query: profile.query, rules: s.rulesFor(profile) },
+          pair.src, pair.cond);
       }
       const others = [];
       view.parts.forEach((q, j) => {
@@ -577,7 +580,7 @@
       this.toasts.show({
         type: 'info',
         title: 'すべてクリアしました',
-        message: '① 元データ・抽出条件（ブラウザに保存した分も）・結果を消去しました。',
+        message: '① 元データ・抽出条件（ブラウザに保存した分も）・出力列の並び・結果を消去しました。',
         actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, 'クリアする前に戻しました') }]
       });
     }

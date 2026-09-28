@@ -4,6 +4,7 @@
  *   変更を話題（topic）ごとに通知する。画面部品は状態を直接書き換えず、必ずここを通す。
  *   topic：datasets / profiles / query / rules / output / result / view / busy / panel（加えて change）
  *   query と datasets.condition は「選択中の抽出条件」のものを指す（条件パネル・② パネルはそれを編集する）。
+ *   照合ルールは全体の設定（rules）を既定とし、抽出条件ごとに個別の設定（profile.rules）で上書きできる。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -13,18 +14,13 @@
   const Prefs = LQ.Prefs;
   const QueryOps = LQ.QueryOps;
   const Profile = LQ.Profile;
+  const Normalizer = LQ.Normalizer;
 
   const PAGE_SIZE_MAX = 5000;
   const DEFAULT_PAGE_SIZE = 100;
   const META_KEYS = ['m:profile', 'm:priority', 'm:srcRow', 'm:condRow', 'm:count'];
   const META_VISIBLE = { 'm:profile': true };
-  const GROUP_ORDER = ['lead', 's:', 'c:', 'm:'];
   const UNMATCHED_FILTER = '__none__';
-
-  /** 出力列の並びのまとまり（抽出条件・優先順位は先頭にまとめる） */
-  function groupOf(key) {
-    return key === 'm:profile' || key === 'm:priority' ? 'lead' : key.slice(0, 2);
-  }
 
   function clampPageSize(n) {
     const v = parseInt(n, 10);
@@ -52,8 +48,8 @@
       this.activeId = null;
       this.combine = cleanCombine(null);
       this.sampleStash = null;
-      this.rules = Object.assign({}, LQ.Normalizer.DEFAULT_RULES, Prefs.get('rules', {}));
-      this.output = { columns: [] };
+      this.rules = Object.assign({}, Normalizer.DEFAULT_RULES, Normalizer.cleanRules(Prefs.get('rules', null)) || {});
+      this.output = new LQ.OutputColumns();
       this.view = {
         tab: 'result',
         pageSize: clampPageSize(Prefs.get('pageSize', DEFAULT_PAGE_SIZE)),
@@ -261,7 +257,7 @@
     /* ---------------- サンプル（自分の ① と抽出条件は退避する） ---------------- */
 
     /**
-     * サンプルに切り替える。初回は自分の ① と抽出条件を退避し、
+     * サンプルに切り替える。初回は自分の ①・抽出条件・出力列の並びを退避し、
      * サンプル表示中に自分で作った抽出条件（サンプルの複製など）は残す。
      */
     enterSample(source, list, combine) {
@@ -272,7 +268,8 @@
           profiles: this.profiles.items.filter((p) => !p.isSample),
           activeId: this.activeId,
           source: src && !src.isSample ? src : null,
-          combine: Util.clone(this.combine)
+          combine: Util.clone(this.combine),
+          outputMemory: Util.clone(this.output.memory)
         };
       } else {
         own = this.profiles.items.filter((p) => !p.isSample);
@@ -285,7 +282,7 @@
       this._emit('datasets', { role: 'source' });
     }
 
-    /** サンプルを消し、退避していた ① と抽出条件に戻す（サンプル表示中に作った抽出条件は後ろに残す） */
+    /** サンプルを消し、退避していた ①・抽出条件・出力列の並びに戻す（サンプル表示中に作った抽出条件は後ろに残す） */
     exitSample() {
       const stash = this.sampleStash;
       const own = this.profiles.items.filter((p) => !p.isSample);
@@ -295,7 +292,10 @@
         this.datasets.source = stash ? stash.source : null;
         this.view.pages.source = 0;
       }
-      if (stash) this.combine = stash.combine;
+      if (stash) {
+        this.combine = stash.combine;
+        this.output.setMemory(stash.outputMemory);
+      }
       const active = stash && stash.profiles.some((p) => p.id === stash.activeId) ? stash.activeId : null;
       this.replaceProfiles((stash ? stash.profiles : []).concat(own), active);
       this._clearResult();
@@ -318,12 +318,18 @@
       return this.sampleStash ? this.sampleStash.combine : this.combine;
     }
 
-    /** ①・抽出条件・結果をすべて初期状態に戻す */
+    /** 保存の対象：自分の出力列の並び（サンプル表示中は退避した並び） */
+    userOutputMemory() {
+      return this.sampleStash ? this.sampleStash.outputMemory : this.output.memory;
+    }
+
+    /** ①・抽出条件・出力列の並び・結果をすべて初期状態に戻す */
     resetAll() {
       this.sampleStash = null;
       this.datasets.source = null;
       this.view.pages.source = 0;
       this.combine = cleanCombine(null);
+      this.output.clearMemory();
       this.replaceProfiles([], null);
       this._clearResult();
       this._emit('datasets', { role: 'source' });
@@ -381,21 +387,42 @@
       this._emit('query', { matchMode: true });
     }
 
-    /* ---------------- 照合ルール ---------------- */
+    /* ---------------- 照合ルール（全体の設定と、抽出条件ごとの個別の設定） ---------------- */
 
+    /** 全体の設定を変える（個別の設定をしていない抽出条件すべてに使う） */
     setRules(patch) {
       Object.assign(this.rules, patch);
       Prefs.set('rules', this.rules);
       this._emit('rules', { keys: Object.keys(patch) });
     }
 
-    /* ---------------- 出力列 ---------------- */
+    /** 抽出条件に使う照合ルール（個別の設定がなければ全体の設定） */
+    rulesFor(profile) {
+      return profile && profile.rules ? Object.assign({}, Normalizer.DEFAULT_RULES, profile.rules) : this.rules;
+    }
 
-    /**
-     * 読み込みデータの列に合わせて出力列の一覧を更新する（既存の並び・表示は名前で引き継ぐ）。
-     * ② の列は全抽出条件の ② の列を名前でまとめる（列構成が違っても同じ名前は 1 列）。
-     */
-    _syncOutputColumns() {
+    /** 個別の設定を付ける（rules）／外して全体の設定を使う（null） */
+    setProfileRules(id, rules) {
+      const p = this.profiles.find(id);
+      if (!p) return;
+      p.rules = rules ? Object.assign({}, Normalizer.DEFAULT_RULES, Normalizer.cleanRules(rules) || {}) : null;
+      this._emit('rules', { profile: id });
+      this._emit('profiles', { rules: id });
+    }
+
+    /** 個別の設定の一部を変える */
+    updateProfileRules(id, patch) {
+      const p = this.profiles.find(id);
+      if (!p || !p.rules) return;
+      Object.assign(p.rules, patch);
+      this._emit('rules', { profile: id, keys: Object.keys(patch) });
+      this._emit('profiles', { rules: id });
+    }
+
+    /* ---------------- 出力列（並び・表示は OutputColumns が覚える） ---------------- */
+
+    /** 今使える列（既定の並び・既定の表示）。② の列は全抽出条件の ② の列を名前でまとめる（同じ名前は 1 列） */
+    _availableColumns() {
       const available = [];
       const seen = new Set();
       const push = (key, visible) => {
@@ -409,93 +436,58 @@
         if (p.condition) p.condition.columns.forEach((c) => push('c:' + c.name, false));
       });
       META_KEYS.forEach((key) => push(key, !!META_VISIBLE[key]));
-      const list = this.output.columns.filter((c) => seen.has(c.key));
-      const known = new Set(list.map((c) => c.key));
-      available.forEach((a) => {
-        if (known.has(a.key)) return;
-        const g = GROUP_ORDER.indexOf(groupOf(a.key));
-        let at = 0;
-        for (let i = list.length - 1; i >= 0; i--) {
-          if (GROUP_ORDER.indexOf(groupOf(list[i].key)) <= g) {
-            at = i + 1;
-            break;
-          }
-        }
-        list.splice(at, 0, { key: a.key, visible: a.visible });
-        known.add(a.key);
-      });
-      this.output.columns = list;
+      return available;
+    }
+
+    /** 読み込みデータの列に合わせて出力列の一覧を更新する（覚えている表示・並びを名前で引き継ぐ） */
+    _syncOutputColumns() {
+      this.output.sync(this._availableColumns());
     }
 
     setColumnVisible(key, visible) {
-      const col = this.output.columns.find((c) => c.key === key);
-      if (!col || col.visible === visible) return;
-      col.visible = visible;
-      this._emit('output', { key: key });
+      if (this.output.setVisible(key, visible)) this._emit('output', { key: key });
     }
 
     /** prefix：'s:' / 'c:' / 'm:' */
     setGroupVisible(prefix, visible) {
-      this.output.columns.forEach((c) => {
-        if (c.key.slice(0, 2) === prefix) c.visible = visible;
-      });
+      this.output.setGroupVisible(prefix, visible);
       this._emit('output', { group: prefix });
     }
 
     /** key を targetKey の前（after=true なら後ろ）へ移す */
     moveColumn(key, targetKey, after) {
-      if (key === targetKey) return;
-      const list = this.output.columns;
-      const from = list.findIndex((c) => c.key === key);
-      if (from < 0) return;
-      const item = list.splice(from, 1)[0];
-      let to = list.findIndex((c) => c.key === targetKey);
-      if (to < 0) {
-        list.splice(from, 0, item);
-        return;
-      }
-      if (after) to += 1;
-      list.splice(to, 0, item);
-      this._emit('output', { moved: key });
+      if (this.output.move(key, targetKey, after)) this._emit('output', { moved: key });
     }
 
     /** delta 個分移動（キーボード操作用） */
     moveColumnBy(key, delta) {
-      const list = this.output.columns;
-      const idx = list.findIndex((c) => c.key === key);
-      const target = idx + delta;
-      if (idx < 0 || target < 0 || target >= list.length) return false;
-      const item = list.splice(idx, 1)[0];
-      list.splice(target, 0, item);
+      if (!this.output.moveBy(key, delta)) return false;
       this._emit('output', { moved: key });
       return true;
     }
 
     applyOutputPreset(visibleKeys) {
-      const order = visibleKeys.filter((key) => this.output.columns.some((c) => c.key === key));
-      const rest = this.output.columns.filter((c) => order.indexOf(c.key) === -1).map((c) => ({ key: c.key, visible: false }));
-      this.output.columns = order.map((key) => ({ key: key, visible: true })).concat(rest);
+      this.output.applyPreset(visibleKeys);
       this._emit('output', { preset: true });
     }
 
-    /** JSON の出力列を適用する（今の ①・② にない列は除く） */
+    /** 保存・JSON の出力列の並びを適用する（今ない列も覚えておき、読み込んだときに使う） */
     importOutputColumns(columns) {
       if (!Array.isArray(columns)) return;
-      this.output.columns = columns
-        .filter((c) => c && typeof c.key === 'string')
-        .map((c) => ({ key: c.key, visible: !!c.visible }));
+      this.output.setMemory(columns);
       this._syncOutputColumns();
       this._emit('output', { imported: true });
     }
 
+    /** 覚えている並びを消し、出力列を初期状態（① の列を表示・② の列を非表示）に戻す */
+    resetOutputColumns() {
+      this.output.clearMemory();
+      this._syncOutputColumns();
+      this._emit('output', { reset: true });
+    }
+
     columnCounts() {
-      const counts = { 's:': { visible: 0, total: 0 }, 'c:': { visible: 0, total: 0 }, 'm:': { visible: 0, total: 0 } };
-      this.output.columns.forEach((c) => {
-        const bucket = counts[c.key.slice(0, 2)];
-        bucket.total++;
-        if (c.visible) bucket.visible++;
-      });
-      return counts;
+      return this.output.counts();
     }
 
     /* ---------------- 表示 ---------------- */
@@ -547,14 +539,17 @@
 
     /* ---------------- 結果 ---------------- */
 
-    /** 結果に影響する内容の署名（名前の変更は含めない＝名前を変えても再抽出は不要） */
+    /**
+     * 結果に影響する内容の署名。名前の変更は含めない（名前を変えても再抽出は不要）。
+     * 照合ルールは抽出条件ごとに実際に使うものを含める（個別の設定に切り替えただけで中身が同じなら変わらない）。
+     */
     querySignature() {
       const s = this.datasets.source;
       return JSON.stringify([
         s ? s.id + ':' + s.version : '',
-        this.profiles.enabled().map((p) => [p.id, p.condition ? p.condition.id + ':' + p.condition.version : '', QueryOps.signature(p.query)]),
-        this.effectiveCombine(),
-        this.rules
+        this.profiles.enabled().map((p) => [p.id, p.condition ? p.condition.id + ':' + p.condition.version : '', QueryOps.signature(p.query),
+          Normalizer.signatureOf(this.rulesFor(p))]),
+        this.effectiveCombine()
       ]);
     }
 
@@ -614,13 +609,15 @@
         profiles: this.profiles.items.map((p) => p.snapshot()),
         activeId: this.activeId,
         combine: Util.clone(this.combine),
+        rules: Util.clone(this.rules),
         sampleStash: stash ? {
           profiles: stash.profiles.map((p) => p.snapshot()),
           activeId: stash.activeId,
           source: stash.source,
-          combine: Util.clone(stash.combine)
+          combine: Util.clone(stash.combine),
+          outputMemory: Util.clone(stash.outputMemory)
         } : null,
-        output: Util.clone(this.output),
+        output: this.output.snapshot(),
         view: Util.clone(this.view),
         result: this.result,
         resultSignature: this.resultSignature
@@ -633,21 +630,26 @@
       this.activeId = snap.activeId;
       this._ensureProfile();
       this.combine = cleanCombine(snap.combine);
+      if (snap.rules && !Normalizer.sameRules(snap.rules, this.rules)) {
+        this.rules = Object.assign({}, Normalizer.DEFAULT_RULES, snap.rules);
+        Prefs.set('rules', this.rules);
+      }
       const st = snap.sampleStash;
       this.sampleStash = st ? {
         profiles: st.profiles.map((s) => Profile.fromSnapshot(s)),
         activeId: st.activeId,
         source: st.source,
-        combine: cleanCombine(st.combine)
+        combine: cleanCombine(st.combine),
+        outputMemory: Util.clone(st.outputMemory || [])
       } : null;
-      this.output = Util.clone(snap.output);
+      this.output.restore(snap.output);
       this.view = Util.clone(snap.view);
       const src = this.datasets.source;
       const same = (!src || src.version === snap.sourceVersion) &&
         snap.profiles.every((s) => !s.condition || s.condition.version === s.conditionVersion);
       this.result = same ? snap.result : null;
       this.resultSignature = same ? snap.resultSignature : null;
-      ['datasets', 'profiles', 'query', 'output', 'result', 'view'].forEach((topic) => this._emit(topic, { restored: true }));
+      ['datasets', 'profiles', 'query', 'rules', 'output', 'result', 'view'].forEach((topic) => this._emit(topic, { restored: true }));
     }
   }
 
