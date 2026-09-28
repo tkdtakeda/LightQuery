@@ -141,6 +141,8 @@
 
   /* ---------------------------------------------------------------------
    * CsvParser：引用符・改行入りセルに対応した区切り文字テキストの解析
+   *   引用符で始まるセルは「正しく閉じている」ときだけ引用として扱い、
+   *   閉じていない引用符（例：5" 画面）は文字としてそのまま残す（列ずれ防止）。
    * ------------------------------------------------------------------- */
   const DELIMITERS = [
     { value: ',', label: 'カンマ（,）' },
@@ -148,6 +150,25 @@
     { value: ';', label: 'セミコロン（;）' },
     { value: '|', label: '縦棒（|）' }
   ];
+  const DETECT_CHARS = 64 * 1024;
+  const DETECT_ROWS = 30;
+
+  /** from 以降で引用を閉じる引用符の位置。閉じていない・途中に単独の引用符があれば -1 */
+  function closingQuote(text, from, d) {
+    const n = text.length;
+    let j = from;
+    for (;;) {
+      const k = text.indexOf('"', j);
+      if (k === -1) return -1;
+      const next = text.charCodeAt(k + 1);
+      if (next === 34) {
+        j = k + 2;
+        continue;
+      }
+      if (k + 1 >= n || next === d || next === 10 || next === 13) return k;
+      return -1;
+    }
+  }
 
   const CsvParser = {
     delimiters: DELIMITERS,
@@ -157,47 +178,39 @@
       return found ? found.label : value;
     },
 
-    /** 先頭 30 行で「各行に同じ数だけ現れる」区切り文字を選ぶ */
+    /** 先頭 30 行を各区切り文字で実際に分け、列数が最もそろう区切り文字を選ぶ */
     detectDelimiter(text, preferred) {
-      const sample = text.slice(0, 64 * 1024);
-      const lines = [];
-      let inQuotes = false;
-      let current = '';
-      for (let i = 0; i < sample.length && lines.length < 30; i++) {
-        const ch = sample[i];
-        if (ch === '"') inQuotes = !inQuotes;
-        if (!inQuotes && (ch === '\n' || ch === '\r')) {
-          if (current !== '') lines.push(current);
-          current = '';
-          continue;
-        }
-        if (!inQuotes) current += ch;
-      }
-      if (current !== '' && lines.length < 30) lines.push(current);
+      const truncated = text.length > DETECT_CHARS;
+      const sample = truncated ? text.slice(0, DETECT_CHARS) : text;
       let best = null;
       DELIMITERS.forEach((d) => {
-        const counts = lines.map((line) => line.split(d.value).length - 1);
-        const nonZero = counts.filter((c) => c > 0);
-        if (!nonZero.length) return;
+        let rows = CsvParser.parse(sample, d.value);
+        if (truncated && rows.length > 1) rows = rows.slice(0, -1);
+        rows = rows.filter((r) => !(r.length === 1 && r[0].trim() === '')).slice(0, DETECT_ROWS);
         const freq = new Map();
-        nonZero.forEach((c) => freq.set(c, (freq.get(c) || 0) + 1));
+        rows.forEach((r) => {
+          if (r.length > 1) freq.set(r.length, (freq.get(r.length) || 0) + 1);
+        });
+        if (!freq.size) return;
         let mode = 0;
         let modeCount = 0;
-        freq.forEach((cnt, val) => {
-          if (cnt > modeCount || (cnt === modeCount && val > mode)) {
-            mode = val;
+        freq.forEach((cnt, cols) => {
+          if (cnt > modeCount || (cnt === modeCount && cols > mode)) {
+            mode = cols;
             modeCount = cnt;
           }
         });
-        const score = (modeCount / lines.length) * 1000 + mode;
-        if (!best || score > best.score) best = { value: d.value, score: score, consistency: modeCount / lines.length };
+        const consistency = modeCount / rows.length;
+        const score = consistency * 1000 + Math.min(mode, 999);
+        if (!best || score > best.score) best = { value: d.value, score: score, consistency: consistency, mode: mode, rows: rows.length };
       });
       if (!best) {
-        const fallback = preferred || ',';
-        return { delimiter: fallback, reason: '区切り文字が見つからないため 1 列のデータとして読み込み' };
+        return { delimiter: preferred || ',', reason: '区切り文字が見つからないため 1 列のデータとして読み込み' };
       }
-      const pct = Math.round(best.consistency * 100);
-      return { delimiter: best.value, reason: '先頭の行の ' + pct + '% で同じ数だけ現れるため' };
+      return {
+        delimiter: best.value,
+        reason: '先頭 ' + best.rows + ' 行のうち ' + Math.round(best.consistency * 100) + '% が同じ列数（' + best.mode + ' 列）になるため'
+      };
     },
 
     parse(text, delimiter) {
@@ -206,42 +219,23 @@
       const n = text.length;
       let row = [];
       let field = '';
+      let started = false;
       let i = 0;
-      let inQuotes = false;
-      let fieldStarted = false;
       while (i < n) {
         const c = text.charCodeAt(i);
-        if (inQuotes) {
-          if (c === 34) {
-            if (text.charCodeAt(i + 1) === 34) {
-              field += '"';
-              i += 2;
-            } else {
-              inQuotes = false;
-              i += 1;
-            }
+        if (c === 34 && !started) {
+          const end = closingQuote(text, i + 1, d);
+          if (end !== -1) {
+            field = text.slice(i + 1, end).replace(/""/g, '"');
+            started = true;
+            i = end + 1;
             continue;
           }
-          const next = text.indexOf('"', i);
-          if (next === -1) {
-            field += text.slice(i);
-            i = n;
-          } else {
-            field += text.slice(i, next);
-            i = next;
-          }
-          continue;
-        }
-        if (c === 34 && !fieldStarted) {
-          inQuotes = true;
-          fieldStarted = true;
-          i += 1;
-          continue;
         }
         if (c === d) {
           row.push(field);
           field = '';
-          fieldStarted = false;
+          started = false;
           i += 1;
           continue;
         }
@@ -250,7 +244,7 @@
           rows.push(row);
           row = [];
           field = '';
-          fieldStarted = false;
+          started = false;
           i += (c === 13 && text.charCodeAt(i + 1) === 10) ? 2 : 1;
           continue;
         }
@@ -261,10 +255,10 @@
           j++;
         }
         field += text.slice(i, j);
-        fieldStarted = true;
+        started = true;
         i = j;
       }
-      if (fieldStarted || field !== '' || row.length) {
+      if (started || row.length) {
         row.push(field);
         rows.push(row);
       }
@@ -380,10 +374,36 @@
   const TEXT_EXT = new Set(['csv', 'tsv', 'txt']);
   const KIND_LABEL = { excel: 'Excel', csv: 'CSV', paste: '貼り付け', sample: 'サンプル' };
 
+  const TEXT_MIME = /^text\/(csv|plain|tab-separated-values)|spreadsheet|ms-excel/i;
+  const MEDIA_MIME = /^(image|audio|video)\//i;
+  const BINARY_SIGNATURES = [
+    { bytes: [0x89, 0x50, 0x4e, 0x47], label: '画像（PNG）' },
+    { bytes: [0xff, 0xd8, 0xff], label: '画像（JPEG）' },
+    { bytes: [0x47, 0x49, 0x46, 0x38], label: '画像（GIF）' },
+    { bytes: [0x25, 0x50, 0x44, 0x46], label: 'PDF' }
+  ];
+  const BINARY_CHECK_BYTES = 8192;
+
   function sniffKind(bytes) {
     if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) return 'excel';
     if (bytes.length >= 4 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) return 'excel';
     return 'csv';
+  }
+
+  /** 文字として読めないファイル（画像・PDF など）なら種類名、テキストなら null */
+  function binaryLabel(bytes) {
+    const sig = BINARY_SIGNATURES.find((s) => s.bytes.every((b, i) => bytes[i] === b));
+    if (sig) return sig.label;
+    if (bytes.length >= 2 && ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff))) return null;
+    const limit = Math.min(bytes.length, BINARY_CHECK_BYTES);
+    for (let i = 0; i < limit; i++) {
+      if (bytes[i] === 0) return '文字データではないファイル';
+    }
+    return null;
+  }
+
+  function unsupportedError(label) {
+    return new Error(label + 'は読み込めません。Excel（.xlsx .xls など）・CSV・TSV・TXT のファイルを選んでください。');
   }
 
   class SourceFile {
@@ -408,11 +428,22 @@
       return EXCEL_EXT.has(ext) || TEXT_EXT.has(ext);
     }
 
+    /** 表のデータとして読み込めるファイルか（貼り付けで画像と区別するため、拡張子と種類で判定） */
+    static isDataFile(file) {
+      return SourceFile.isSupportedName(file.name) || TEXT_MIME.test(file.type || '');
+    }
+
     static async fromFile(file) {
+      const ext = LQ.Util.extName(file.name);
+      const known = EXCEL_EXT.has(ext) || TEXT_EXT.has(ext);
+      if (!known && MEDIA_MIME.test(file.type || '')) throw unsupportedError(/^image/i.test(file.type) ? '画像' : '音声・動画');
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
-      const ext = LQ.Util.extName(file.name);
       const kind = EXCEL_EXT.has(ext) ? 'excel' : (TEXT_EXT.has(ext) ? 'csv' : sniffKind(bytes));
+      if (kind === 'csv') {
+        const label = binaryLabel(bytes);
+        if (label) throw unsupportedError(label);
+      }
       const src = new SourceFile(kind, file.name, file.size);
       if (kind === 'excel') {
         src._workbook = await ExcelReader.readWorkbook(buffer);
@@ -472,7 +503,9 @@
         text = EncodingDetector.decode(this._bytes, this.encoding.value);
       }
       if (this.delimiterChoice === 'auto') {
-        const detected = CsvParser.detectDelimiter(text, this.kind === 'paste' ? '\t' : ',');
+        const detected = this.kind === 'paste' && text.indexOf('\t') !== -1
+          ? { delimiter: '\t', reason: 'Excel からの貼り付けはタブ区切りのため' }
+          : CsvParser.detectDelimiter(text, this.kind === 'paste' ? '\t' : ',');
         this.delimiter = { value: detected.delimiter, reason: detected.reason, auto: true };
       } else {
         this.delimiter = { value: this.delimiterChoice, reason: '手動で指定', auto: false };
