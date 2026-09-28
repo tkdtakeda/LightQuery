@@ -186,22 +186,38 @@
     }
 
     /** 画面のどこかで Ctrl+V されたとき（入力欄以外） */
+    /**
+     * 画面のどこかで Ctrl+V されたとき（入力欄以外）。
+     * Excel でコピーすると「タブ区切りの文字」と「セル範囲の画像」が同時に入るため、
+     * 読み込めるファイル（Excel・CSV・条件設定）→ 表の文字 の順に採用し、画像は使わない。
+     */
     handlePaste(text, files) {
       const panelRole = this.state.panel === 'source' || this.state.panel === 'condition' ? this.state.panel : null;
-      if (files && files.length) {
-        const file = files[0];
-        if (panelRole) this.loadFile(panelRole, file);
-        else this.dialogs.openRoleChooser(file.name, (role) => this.loadFile(role, file));
+      const list = Array.from(files || []);
+      const settings = list.find((f) => Util.extName(f.name) === 'json');
+      if (settings) {
+        this.importSettingsFile(settings);
         return;
       }
-      const trimmed = (text || '').replace(/\s+$/, '');
-      if (!trimmed) return;
-      if (!/[\t\n]/.test(trimmed)) {
-        this.toasts.show({ type: 'info', title: '表のデータではないため読み込みませんでした', message: 'Excel でセル範囲をコピーしてから Ctrl+V を押してください。' });
+      const dataFile = list.find((f) => LQ.SourceFile.isDataFile(f));
+      if (dataFile) {
+        if (panelRole) this.loadFile(panelRole, dataFile);
+        else this.dialogs.openRoleChooser(dataFile.name, (role) => this.loadFile(role, dataFile));
         return;
       }
-      if (panelRole) this.loadText(panelRole, text);
-      else this.dialogs.openRoleChooser('貼り付けたデータ', (role) => this.loadText(role, text));
+      const body = (text || '').replace(/\s+$/, '');
+      if (/[\t\n]/.test(body)) {
+        if (panelRole) this.loadText(panelRole, text);
+        else this.dialogs.openRoleChooser('貼り付けたデータ', (role) => this.loadText(role, text));
+        return;
+      }
+      if (body) {
+        this.toasts.show({ type: 'info', title: '表のデータではないため読み込みませんでした', message: '1 つの値だけが貼り付けられました。Excel で見出しを含むセル範囲を選んでコピーしてから Ctrl+V を押してください。' });
+        return;
+      }
+      if (list.length) {
+        this.toasts.show({ type: 'info', title: '画像などのため読み込みませんでした', message: '表として読み込むには、Excel でセル範囲を選んでコピー（Ctrl+C）してから Ctrl+V を押してください。' });
+      }
     }
 
     _putDataset(role, dataset) {
