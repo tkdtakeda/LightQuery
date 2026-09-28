@@ -78,25 +78,30 @@
 
     _renderChips() {
       Dom.clear(this.chips);
+      const s = this.state;
+      const multi = s.profiles.length > 1;
       ['source', 'condition'].forEach((role) => {
-        const ds = this.state.datasets[role];
+        const ds = s.datasets[role];
         const isSrc = role === 'source';
         const badge = LQ.UI.badge(isSrc ? 'src' : 'cond', isSrc ? '①' : '②');
+        const owner = !isSrc && multi ? h('span', { class: 'lq-chip__owner', text: s.activeProfile.name }) : null;
+        const ownerText = !isSrc && multi ? '（抽出条件「' + s.activeProfile.name + '」）' : '';
         if (!ds) {
           this.chips.appendChild(h('button', {
-            class: 'lq-chip lq-chip--empty', type: 'button', title: (isSrc ? '① 元データ' : '② 条件データ') + 'を読み込む',
-            onclick: () => this.state.openPanel(role)
-          }, [badge, h('span', { class: 'lq-chip__name', text: isSrc ? '元データ 未読み込み' : '条件データ 未読み込み' })]));
+            class: 'lq-chip lq-chip--empty', type: 'button', title: (isSrc ? '① 元データ' : '② 条件データ' + ownerText) + 'を読み込む',
+            onclick: () => s.openPanel(role)
+          }, [badge, h('span', { class: 'lq-chip__name', text: isSrc ? '元データ 未読み込み' : '条件データ 未読み込み' }), owner]));
           return;
         }
         this.chips.appendChild(h('button', {
           class: 'lq-chip ' + (isSrc ? 'lq-chip--src' : 'lq-chip--cond'), type: 'button',
-          title: ds.name + '（' + ds.source.kindLabel + '）— クリックで読み込み設定を開く',
-          onclick: () => this.state.togglePanel(role)
+          title: ds.name + '（' + ds.source.kindLabel + '・' + Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列）' + ownerText + '— クリックで読み込み設定を開く',
+          onclick: () => s.togglePanel(role)
         }, [
           badge,
+          owner,
           h('span', { class: 'lq-chip__name', text: ds.name }),
-          h('span', { class: 'lq-chip__meta', text: Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列' }),
+          owner ? null : h('span', { class: 'lq-chip__meta', text: Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列' }),
           ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample', text: 'サンプル' }) : null
         ]));
       });
@@ -108,8 +113,8 @@
    * ------------------------------------------------------------------- */
   const RAIL_ITEMS = [
     { id: 'source', icon: 'table', label: '①元データ', title: '① 元データ：読み込み・ヘッダー・範囲の設定' },
-    { id: 'condition', icon: 'list-check', label: '②条件データ', title: '② 条件データ：読み込み・ヘッダー・範囲の設定', role: 'condition' },
-    { id: 'query', icon: 'filter', label: '条件', title: '条件：① と ② の対応・比較方法・組み合わせ・出力する行' },
+    { id: 'condition', icon: 'list-check', label: '②条件データ', title: '② 条件データ（選択中の抽出条件）：読み込み・ヘッダー・範囲の設定', role: 'condition' },
+    { id: 'query', icon: 'filter', label: '抽出条件', title: '抽出条件：一覧（名前・優先順位）と、① と ② の対応・比較方法・組み合わせ・出力する行' },
     { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：空白・全角半角・大文字小文字・数値・日付' },
     { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' }
   ];
@@ -144,16 +149,25 @@
       const s = this.state;
       this.items.forEach((item, id) => item.btn.classList.toggle('is-active', s.panel === id));
       this._mark('source', s.datasets.source ? { kind: 'ok', icon: 'check', title: '読み込み済み' } : null);
-      this._mark('condition', s.datasets.condition ? { kind: 'ok', icon: 'check', title: '読み込み済み' } : null);
-      let queryMark = null;
-      if (s.query.conditions.length && s.datasets.source) {
-        const v = this.app.validation();
-        queryMark = v.ok ? { kind: 'ok', icon: 'check', title: '条件は整っています' } : { kind: 'warn', text: String(v.errors.length), title: '要設定 ' + v.errors.length + ' 件' };
-      }
-      this._mark('query', queryMark);
+      this._mark('condition', s.datasets.condition ? { kind: 'ok', icon: 'check', title: '読み込み済み（選択中の抽出条件）' } : null);
+      this._mark('query', this._queryMark());
       const counts = s.columnCounts();
       const visible = counts['s:'].visible + counts['c:'].visible + counts['m:'].visible;
       this._mark('output', s.output.columns.length ? { kind: 'count', text: String(visible), title: '表示する列 ' + visible + ' 列' } : null);
+    }
+
+    /** 抽出条件の印：要設定の件数（警告）／整っていれば有効な件数（複数のとき）かチェック */
+    _queryMark() {
+      const s = this.state;
+      const multi = s.profiles.length > 1;
+      const started = multi || s.query.conditions.length > 0;
+      if (!s.datasets.source || !started) return multi ? { kind: 'count', text: String(s.profiles.length), title: '抽出条件 ' + s.profiles.length + ' 件' } : null;
+      const all = this.app.validationAll();
+      if (!all.ok && all.errorCount) return { kind: 'warn', text: String(all.errorCount), title: '要設定 ' + all.errorCount + ' 件' };
+      if (!all.ok) return { kind: 'warn', icon: 'exclamation', title: '有効な抽出条件がありません' };
+      return multi
+        ? { kind: 'ok', text: String(all.enabledCount), title: '有効な抽出条件 ' + all.enabledCount + ' 件（整っています）' }
+        : { kind: 'ok', icon: 'check', title: '条件は整っています' };
     }
 
     _mark(id, spec) {
@@ -189,6 +203,7 @@
       Dom.append(root, [this.head, this.body]);
       LQ.FormNav.attach(this.body);
       ctx.bus.on('panel', () => this.render());
+      ctx.bus.on('profiles', () => this.render());
       this.render();
     }
 
@@ -259,22 +274,26 @@
         const zone = e.target.closest ? e.target.closest('[data-drop-role]') : null;
         this.depth = 0;
         this.hide();
-        const file = e.dataTransfer.files && e.dataTransfer.files[0];
-        if (!file) return;
-        if (Util.extName(file.name) === 'json') this.app.importSettingsFile(file);
-        else if (zone) this.app.loadFile(zone.dataset.dropRole, file);
+        const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+        if (!files.length) return;
+        const json = files.find((f) => Util.extName(f.name) === 'json');
+        if (json) this.app.profiles.importJsonFile(json);
+        else if (zone && zone.dataset.dropRole === 'source') this.app.loadFile('source', files[0]);
+        else if (zone) this.app.loadTables(files, 'active');
       });
     }
 
     show() {
       if (this.el) return;
+      const s = this.ctx.state;
+      const owner = s.profiles.length > 1 ? '抽出条件「' + s.activeProfile.name + '」へ。' : '';
       const zone = (role, icon, title, sub) => h('div', {
         class: 'lq-dropoverlay__zone' + (role === 'condition' ? ' lq-dropoverlay__zone--cond' : ''),
         dataset: { dropRole: role }
       }, [Dom.icon(icon), h('div', { class: 'lq-dropoverlay__title', text: title }), h('div', { class: 'lq-dropoverlay__sub', text: sub })]);
       this.el = h('div', { class: 'lq-dropoverlay' }, [
         zone('source', 'table', '① 元データとして読み込む', '抽出される側のデータ（Excel・CSV）'),
-        zone('condition', 'list-check', '② 条件データとして読み込む', '条件の一覧（条件設定の .json はどちらでも可）')
+        zone('condition', 'list-check', '② 条件データとして読み込む', owner + '複数のファイル・シートは、表ごとに抽出条件にできます（抽出条件の .json はどちらでも可）')
       ]);
       this.root.appendChild(this.el);
     }

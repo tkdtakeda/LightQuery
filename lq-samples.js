@@ -1,7 +1,7 @@
 /* =========================================================================
  * LightQuery - lq-samples.js
- * 動作確認用のサンプルデータ（7 パターン）。値は乱数の種を固定して毎回同じものを生成する。
- *   build() は ① / ② の grid・読み込み設定・条件・出力列の初期値を返す。
+ * 動作確認用のサンプルデータ（9 パターン）。値は乱数の種を固定して毎回同じものを生成する。
+ *   build() は ① の grid と、抽出条件（名前・② の grid・条件）の一覧、振り分けの設定、出力列の初期値を返す。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -91,6 +91,12 @@
   const C = (left, op, right) => ({ left: left, op: op, right: right });
   const col = (name) => ({ type: 'column', col: name, value: '' });
   const fixed = (value) => ({ type: 'value', col: '', value: value });
+  const Q = (conditions, extra) => Object.assign({ conditions: conditions, logic: { mode: 'and', expr: '' } }, extra || {});
+  const orders = (seed) => {
+    const rand = createRandom(seed);
+    return makeOrders(2000, makeCustomers(300, 4, rand), rand);
+  };
+  const ORDERS_NAME = 'サンプル_受注データ.xlsx';
 
   const SAMPLES = [
     {
@@ -100,18 +106,14 @@
       desc: '② の顧客 ID と完全一致する受注を抽出します。全角・小文字・前後の空白が混じった ID も照合ルールで一致します。',
       tags: ['完全一致', '照合ルール'],
       build() {
-        const rand = createRandom(101);
-        const customers = makeCustomers(300, 4, rand);
-        const orders = makeOrders(2000, customers, rand);
         const cond = [['顧客ID', 'メモ'],
           ['Ｃ００１２', '全角で入力'], ['c0045', '小文字で入力'], [' C0078 ', '前後に空白'], ['C0101', ''],
           ['C0133', ''], ['C0150', '重点顧客'], ['C0177', ''], ['C0202', ''], ['C0230', '新規'], ['C0256', ''],
           ['C0288', ''], ['C9999', '該当なし（受注なし）']];
         return {
-          source: { name: 'サンプル_受注データ.xlsx', grid: orders },
-          condition: { name: 'サンプル_抽出対象顧客.csv', grid: cond },
-          query: { conditions: [C('顧客ID', 'eq', col('顧客ID'))], logic: { mode: 'and', expr: '' } },
-          output: ORDER_HEADER.map((h) => 's:' + h).concat(['c:メモ'])
+          source: { name: ORDERS_NAME, grid: orders(101) },
+          profiles: [{ name: '抽出対象の顧客', condition: { name: 'サンプル_抽出対象顧客.csv', grid: cond }, query: Q([C('顧客ID', 'eq', col('顧客ID'))]) }],
+          output: ['m:profile'].concat(ORDER_HEADER.map((h) => 's:' + h), ['c:メモ'])
         };
       }
     },
@@ -122,18 +124,15 @@
       desc: '② の 1 行を「地域」と「下限金額」の組として判定します。担当者など ② の列も出力します。福岡は下限金額が空欄のため金額を判定しません。',
       tags: ['1 行＝1 セット', '以上', '空欄は判定しない'],
       build() {
-        const rand = createRandom(202);
-        const customers = makeCustomers(300, 4, rand);
-        const orders = makeOrders(2000, customers, rand);
         const cond = [['地域', '下限金額', '担当者'], ['東京', '50,000', '佐藤'], ['大阪', '30000', '鈴木'], ['名古屋', '20000', '高橋'], ['福岡', '', '田中']];
         return {
-          source: { name: 'サンプル_受注データ.xlsx', grid: orders },
-          condition: { name: 'サンプル_地域別基準.csv', grid: cond },
-          query: {
-            conditions: [C('地域', 'eq', col('地域')), C('金額', 'gte', col('下限金額'))],
-            logic: { mode: 'and', expr: '' }
-          },
-          output: ['s:受注番号', 's:受注日', 's:顧客名', 's:地域', 's:商品名', 's:金額', 'c:担当者', 'c:下限金額', 'm:condRow']
+          source: { name: ORDERS_NAME, grid: orders(202) },
+          profiles: [{
+            name: '地域別の下限金額',
+            condition: { name: 'サンプル_地域別基準.csv', grid: cond },
+            query: Q([C('地域', 'eq', col('地域')), C('金額', 'gte', col('下限金額'))])
+          }],
+          output: ['m:profile', 's:受注番号', 's:受注日', 's:顧客名', 's:地域', 's:商品名', 's:金額', 'c:担当者', 'c:下限金額', 'm:condRow']
         };
       }
     },
@@ -144,18 +143,15 @@
       desc: 'A：商品名がキーワードを含む かつ B：商品名が除外語を含まない かつ C：備考が除外語を含まない。② の行ごとに判定します。',
       tags: ['含む', '含まない'],
       build() {
-        const rand = createRandom(303);
-        const customers = makeCustomers(300, 4, rand);
-        const orders = makeOrders(2000, customers, rand);
         const cond = [['キーワード', '除外語', '用途'], ['USB', '中古', '周辺機器'], ['ペン', '試作', '筆記具'], ['コーヒー', '', '飲料']];
         return {
-          source: { name: 'サンプル_受注データ.xlsx', grid: orders },
-          condition: { name: 'サンプル_キーワード.csv', grid: cond },
-          query: {
-            conditions: [C('商品名', 'contains', col('キーワード')), C('商品名', 'notContains', col('除外語')), C('備考', 'notContains', col('除外語'))],
-            logic: { mode: 'and', expr: '' }
-          },
-          output: ['s:受注番号', 's:受注日', 's:商品名', 's:備考', 's:金額', 'c:キーワード', 'c:用途']
+          source: { name: ORDERS_NAME, grid: orders(303) },
+          profiles: [{
+            name: 'キーワード（除外語あり）',
+            condition: { name: 'サンプル_キーワード.csv', grid: cond },
+            query: Q([C('商品名', 'contains', col('キーワード')), C('商品名', 'notContains', col('除外語')), C('備考', 'notContains', col('除外語'))])
+          }],
+          output: ['m:profile', 's:受注番号', 's:受注日', 's:商品名', 's:備考', 's:金額', 'c:キーワード', 'c:用途']
         };
       }
     },
@@ -166,20 +162,16 @@
       desc: '商品名または備考にキーワードを含み（A or B）、受注日が開始日以降（C）、数量が固定値 5 以上（D）。一致したすべての組み合わせを出力します。',
       tags: ['式で指定', '固定値', 'すべての組み合わせ'],
       build() {
-        const rand = createRandom(404);
-        const customers = makeCustomers(300, 4, rand);
-        const orders = makeOrders(2000, customers, rand);
         const cond = [['キーワード', '開始日'], ['USB', '2025/06/01'], ['ケーブル', '2025/09/01'], ['コーヒー', '']];
         return {
-          source: { name: 'サンプル_受注データ.xlsx', grid: orders },
-          condition: { name: 'サンプル_キャンペーン.csv', grid: cond },
-          query: {
-            conditions: [C('商品名', 'contains', col('キーワード')), C('備考', 'contains', col('キーワード')),
-              C('受注日', 'gte', col('開始日')), C('数量', 'gte', fixed('5'))],
-            logic: { mode: 'expr', expr: '(A or B) and C and D' },
-            matchMode: 'all'
-          },
-          output: ['s:受注番号', 's:受注日', 's:商品名', 's:備考', 's:数量', 'c:キーワード', 'c:開始日', 'm:count']
+          source: { name: ORDERS_NAME, grid: orders(404) },
+          profiles: [{
+            name: 'キャンペーン',
+            condition: { name: 'サンプル_キャンペーン.csv', grid: cond },
+            query: Q([C('商品名', 'contains', col('キーワード')), C('備考', 'contains', col('キーワード')),
+              C('受注日', 'gte', col('開始日')), C('数量', 'gte', fixed('5'))], { logic: { mode: 'expr', expr: '(A or B) and C and D' }, matchMode: 'all' })
+          }],
+          output: ['m:profile', 's:受注番号', 's:受注日', 's:商品名', 's:備考', 's:数量', 'c:キーワード', 'c:開始日', 'm:count']
         };
       }
     },
@@ -207,9 +199,12 @@
         const endRow = grid.length - 1;
         return {
           source: { name: 'サンプル_売上帳票.xlsx', grid: grid, settings: { hasHeader: true, headerRow: 4, startRow: 5, startCol: 2, endRow: endRow } },
-          condition: { name: 'サンプル_コード一覧.txt', grid: [['A-1'], ['B-2'], ['D-4']], settings: { hasHeader: false, headerRow: 1, startRow: 1, startCol: 1, endRow: null } },
-          query: { conditions: [C('商品コード', 'startsWith', col('列A'))], logic: { mode: 'and', expr: '' } },
-          output: ['m:srcRow', 's:商品コード', 's:商品名', 's:カテゴリ', 's:売上数', 's:売上金額']
+          profiles: [{
+            name: 'コードの頭文字',
+            condition: { name: 'サンプル_コード一覧.txt', grid: [['A-1'], ['B-2'], ['D-4']], settings: { hasHeader: false, headerRow: 1, startRow: 1, startCol: 1, endRow: null } },
+            query: Q([C('商品コード', 'startsWith', col('列A'))])
+          }],
+          output: ['m:profile', 'm:srcRow', 's:商品コード', 's:商品名', 's:カテゴリ', 's:売上数', 's:売上金額']
         };
       }
     },
@@ -220,18 +215,60 @@
       desc: '② の NG ワードを商品名・備考のいずれかに含む行を除き、残りを出力します（出力する行＝一致しなかった行）。',
       tags: ['一致しなかった行', 'いずれか満たす'],
       build() {
-        const rand = createRandom(606);
-        const customers = makeCustomers(300, 4, rand);
-        const orders = makeOrders(2000, customers, rand);
         return {
-          source: { name: 'サンプル_受注データ.xlsx', grid: orders },
-          condition: { name: 'サンプル_NGワード.csv', grid: [['NGワード'], ['試作'], ['テスト'], ['中古']] },
-          query: {
-            conditions: [C('商品名', 'contains', col('NGワード')), C('備考', 'contains', col('NGワード'))],
-            logic: { mode: 'or', expr: '' },
-            joinKind: 'anti'
-          },
-          output: ['s:受注番号', 's:受注日', 's:顧客名', 's:商品名', 's:備考', 's:金額']
+          source: { name: ORDERS_NAME, grid: orders(606) },
+          profiles: [{
+            name: 'NG ワード除外',
+            condition: { name: 'サンプル_NGワード.csv', grid: [['NGワード'], ['試作'], ['テスト'], ['中古']] },
+            query: Q([C('商品名', 'contains', col('NGワード')), C('備考', 'contains', col('NGワード'))], { logic: { mode: 'or', expr: '' }, joinKind: 'anti' })
+          }],
+          output: ['m:profile', 's:受注番号', 's:受注日', 's:顧客名', 's:商品名', 's:備考', 's:金額']
+        };
+      }
+    },
+    {
+      id: 'priority',
+      icon: 'arrow-down-1-9',
+      title: '列の違う 3 つの抽出条件を優先順位で振り分け',
+      desc: '列の構成が違う 3 つの ②（顧客 ID／地域と下限金額／NG ワード）を使い、1 位「重点顧客」→ 2 位「地域キャンペーン」→ 3 位「NG ワード要確認」の順に振り分けます。どれにも該当しない行は「該当なし」として出力します。',
+      tags: ['複数の抽出条件', '優先順位', '振り分け', '該当なし'],
+      build() {
+        const vip = [['顧客ID', 'ランク'], ['C0012', 'A'], ['C0045', 'A'], ['C0078', 'A'], ['C0101', 'B'], ['C0133', 'B'],
+          ['C0150', 'A'], ['C0177', 'B'], ['C0202', 'B'], ['C0230', 'A'], ['C0256', 'B']];
+        const region = [['地域', '下限金額', '担当者'], ['東京', '30000', '佐藤'], ['大阪', '20000', '鈴木']];
+        const ng = [['NGワード', '理由'], ['試作', '未発売'], ['中古', '品質確認'], ['テスト', 'テスト発注']];
+        return {
+          source: { name: ORDERS_NAME, grid: orders(808) },
+          profiles: [
+            { name: '重点顧客', condition: { name: 'サンプル_重点顧客.xlsx', grid: vip }, query: Q([C('顧客ID', 'eq', col('顧客ID'))]) },
+            { name: '地域キャンペーン', condition: { name: 'サンプル_地域キャンペーン.csv', grid: region },
+              query: Q([C('地域', 'eq', col('地域')), C('金額', 'gte', col('下限金額'))]) },
+            { name: 'NG ワード要確認', condition: { name: 'サンプル_NGワード.csv', grid: ng },
+              query: Q([C('商品名', 'contains', col('NGワード')), C('備考', 'contains', col('NGワード'))], { logic: { mode: 'or', expr: '' } }) }
+          ],
+          combine: { mode: 'assign', includeUnmatched: true },
+          output: ['m:profile', 's:受注番号', 's:受注日', 's:顧客ID', 's:地域', 's:商品名', 's:金額', 's:備考', 'c:ランク', 'c:担当者', 'c:理由']
+        };
+      }
+    },
+    {
+      id: 'independent',
+      icon: 'clone',
+      title: '抽出条件ごとに独立して抽出（シート分け出力）',
+      desc: '同じ受注が複数の抽出条件に該当しても、それぞれの結果に入れます。「大口受注」は ② を使わない固定値だけの抽出条件です。Excel 出力では「まとめ」と抽出条件ごとのシートに分けられます。',
+      tags: ['それぞれに出力', '重複あり', '固定値', 'シート分け'],
+      build() {
+        const usb = [['キーワード', '分類'], ['USB', '周辺機器'], ['ケーブル', '周辺機器']];
+        const area = [['地域', '重点理由'], ['福岡', '新店舗'], ['札幌', '販促強化']];
+        return {
+          source: { name: ORDERS_NAME, grid: orders(909) },
+          profiles: [
+            { name: 'USB 関連商品', condition: { name: 'サンプル_キーワード.csv', grid: usb }, query: Q([C('商品名', 'contains', col('キーワード'))]) },
+            { name: '大口受注', condition: null, query: Q([C('数量', 'gte', fixed('15'))]) },
+            { name: '重点地域', condition: { name: 'サンプル_重点地域.csv', grid: area }, query: Q([C('地域', 'eq', col('地域'))]) }
+          ],
+          combine: { mode: 'independent', includeUnmatched: false },
+          output: ['m:profile', 's:受注番号', 's:受注日', 's:地域', 's:商品名', 's:数量', 's:金額', 'c:分類', 'c:重点理由']
         };
       }
     },
@@ -245,15 +282,18 @@
         const rand = createRandom(707);
         const customers = makeCustomers(20000, 5, rand);
         const columns = ['受注番号', '受注日', '顧客ID', '地域', '商品名', '数量', '金額'];
-        const orders = makeOrders(100000, customers, rand, columns);
+        const grid = makeOrders(100000, customers, rand, columns);
         const picked = new Set();
         while (picked.size < 1000) picked.add(rand.pick(customers).id);
         const cond = [['顧客ID']].concat(Array.from(picked).map((id) => [id]));
         return {
-          source: { name: 'サンプル_受注10万行.csv', grid: orders },
-          condition: { name: 'サンプル_顧客1000件.csv', grid: cond },
-          query: { conditions: [C('顧客ID', 'eq', col('顧客ID')), C('金額', 'gte', fixed('10,000'))], logic: { mode: 'and', expr: '' } },
-          output: columns.map((h) => 's:' + h)
+          source: { name: 'サンプル_受注10万行.csv', grid: grid },
+          profiles: [{
+            name: '顧客 1,000 件',
+            condition: { name: 'サンプル_顧客1000件.csv', grid: cond },
+            query: Q([C('顧客ID', 'eq', col('顧客ID')), C('金額', 'gte', fixed('10,000'))])
+          }],
+          output: ['m:profile'].concat(columns.map((h) => 's:' + h))
         };
       }
     }
@@ -268,6 +308,7 @@
       return SAMPLES.find((s) => s.id === id) || null;
     },
 
+    /** @returns {{id, title, source:{name,grid,settings?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query}>, combine?, output:string[]}} */
     build(id) {
       const sample = Samples.get(id);
       if (!sample) throw new Error('サンプルが見つかりません');

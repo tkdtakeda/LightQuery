@@ -1,8 +1,9 @@
 /* =========================================================================
  * LightQuery - lq-state.js
- * アプリの状態（読み込みデータ・条件・照合ルール・出力列・表示・結果）を一か所で管理し、
+ * アプリの状態（① 元データ・抽出条件の一覧・照合ルール・出力列・表示・結果）を一か所で管理し、
  *   変更を話題（topic）ごとに通知する。画面部品は状態を直接書き換えず、必ずここを通す。
- *   topic：datasets / query / rules / output / result / view / busy / panel（加えて change）
+ *   topic：datasets / profiles / query / rules / output / result / view / busy / panel（加えて change）
+ *   query と datasets.condition は「選択中の抽出条件」のものを指す（条件パネル・② パネルはそれを編集する）。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -10,15 +11,19 @@
   const LQ = global.LQ;
   const Util = LQ.Util;
   const Prefs = LQ.Prefs;
-  const Logic = LQ.Logic;
+  const QueryOps = LQ.QueryOps;
+  const Profile = LQ.Profile;
 
-  const MAX_CONDITIONS = 26;
   const PAGE_SIZE_MAX = 5000;
   const DEFAULT_PAGE_SIZE = 100;
-  const META_KEYS = ['m:srcRow', 'm:condRow', 'm:count'];
+  const META_KEYS = ['m:profile', 'm:priority', 'm:srcRow', 'm:condRow', 'm:count'];
+  const META_VISIBLE = { 'm:profile': true };
+  const GROUP_ORDER = ['lead', 's:', 'c:', 'm:'];
+  const UNMATCHED_FILTER = '__none__';
 
-  function defaultQuery() {
-    return { conditions: [], logic: { mode: 'and', expr: '' }, joinKind: 'inner', matchMode: 'first', origin: 'user' };
+  /** 出力列の並びのまとまり（抽出条件・優先順位は先頭にまとめる） */
+  function groupOf(key) {
+    return key === 'm:profile' || key === 'm:priority' ? 'lead' : key.slice(0, 2);
   }
 
   function clampPageSize(n) {
@@ -26,11 +31,27 @@
     return Util.clamp(isFinite(v) && v > 0 ? v : DEFAULT_PAGE_SIZE, 1, PAGE_SIZE_MAX);
   }
 
+  function cleanCombine(value) {
+    const v = value || {};
+    return { mode: v.mode === 'independent' ? 'independent' : 'assign', includeUnmatched: !!v.includeUnmatched };
+  }
+
   class AppState {
     constructor(bus) {
       this.bus = bus;
-      this.datasets = { source: null, condition: null };
-      this.query = defaultQuery();
+      const self = this;
+      /* ① は共通、② は選択中の抽出条件のもの */
+      this.datasets = Object.defineProperty({ source: null }, 'condition', {
+        enumerable: true,
+        get() {
+          const p = self.activeProfile;
+          return p ? p.condition : null;
+        }
+      });
+      this.profiles = new LQ.ProfileList();
+      this.activeId = null;
+      this.combine = cleanCombine(null);
+      this.sampleStash = null;
       this.rules = Object.assign({}, LQ.Normalizer.DEFAULT_RULES, Prefs.get('rules', {}));
       this.output = { columns: [] };
       this.view = {
@@ -38,20 +59,27 @@
         pageSize: clampPageSize(Prefs.get('pageSize', DEFAULT_PAGE_SIZE)),
         pages: { result: 0, source: 0, condition: 0 },
         sort: null,
+        filter: null,
         raw: { source: false, condition: false }
       };
       this.result = null;
       this.resultSignature = null;
       this.busy = null;
       this.panel = null;
+      this._ensureProfile();
     }
 
     static get MAX_CONDITIONS() {
-      return MAX_CONDITIONS;
+      return QueryOps.MAX_CONDITIONS;
     }
 
     static get PAGE_SIZE_MAX() {
       return PAGE_SIZE_MAX;
+    }
+
+    /** 結果の絞り込みで「どの抽出条件にも該当しない行」を表す値 */
+    static get UNMATCHED_FILTER() {
+      return UNMATCHED_FILTER;
     }
 
     _emit(topic, detail) {
@@ -61,10 +89,21 @@
 
     /* ---------------- 読み込みデータ ---------------- */
 
+    /** role：'source'（① 共通）/ 'condition'（選択中の抽出条件の ②） */
     setDataset(role, dataset) {
-      this.datasets[role] = dataset;
+      if (role === 'source') this.datasets.source = dataset;
+      else this.activeProfile.setCondition(dataset);
       this.view.pages[role] = 0;
       this._afterDatasetChange(role);
+    }
+
+    /** 指定した抽出条件の ② を差し替える */
+    setProfileCondition(id, dataset) {
+      const p = this.profiles.find(id);
+      if (!p) return;
+      p.setCondition(dataset);
+      if (id === this.activeId) this.view.pages.condition = 0;
+      this._afterDatasetChange('condition');
     }
 
     /** 読み込み範囲・文字コード・シートなどを変えたあとに呼ぶ */
@@ -80,100 +119,250 @@
     }
 
     hasSample() {
-      const d = this.datasets;
-      return !!((d.source && d.source.isSample) || (d.condition && d.condition.isSample));
+      const src = this.datasets.source;
+      if (src && src.isSample) return true;
+      return this.profiles.items.some((p) => p.isSample || (p.condition && p.condition.isSample));
     }
 
-    /* ---------------- 条件 ---------------- */
+    /* ---------------- 抽出条件の一覧 ---------------- */
 
-    get conditionLabels() {
-      return this.query.conditions.map((c) => c.label);
+    get activeProfile() {
+      return this.profiles.find(this.activeId) || this.profiles.items[0] || null;
     }
 
-    canAddCondition() {
-      return this.query.conditions.length < MAX_CONDITIONS;
+    /** 選択中の抽出条件の query（条件パネルが編集する） */
+    get query() {
+      return this.activeProfile.query;
     }
 
-    findCondition(id) {
-      return this.query.conditions.find((c) => c.id === id) || null;
+    /** 実行に使う組み合わせの設定（抽出条件が 1 つのときは振り分けの設定を使わない） */
+    effectiveCombine() {
+      return this.profiles.length > 1 ? Util.clone(this.combine) : cleanCombine(null);
     }
 
-    _nextLabel() {
-      const used = new Set(this.conditionLabels);
-      let max = -1;
-      used.forEach((label) => {
-        max = Math.max(max, label.charCodeAt(0) - 65);
+    _ensureProfile() {
+      if (!this.profiles.length) this.profiles.insert(new Profile({ name: this.profiles.defaultName() }));
+      if (!this.profiles.find(this.activeId)) this.activeId = this.profiles.items[0].id;
+    }
+
+    /** 選択中の抽出条件が変わった（または一覧が大きく変わった）ことを知らせる */
+    _emitSwitched(detail) {
+      this._syncOutputColumns();
+      this._emit('profiles', detail || {});
+      this._emit('query', { replaced: true });
+      this._emit('datasets', { role: 'condition', switched: true });
+      this._emit('output', {});
+    }
+
+    setActive(id) {
+      if (!this.profiles.find(id) || this.activeId === id) return false;
+      this.activeId = id;
+      this.view.pages.condition = 0;
+      this._emit('profiles', { active: id });
+      this._emit('query', { replaced: true });
+      this._emit('datasets', { role: 'condition', switched: true });
+      return true;
+    }
+
+    /** 1 件追加して選択する（index 省略時は最後＝最も低い優先順位） */
+    addProfile(profile, index) {
+      if (!this.profiles.canAdd()) return null;
+      const p = profile instanceof Profile ? profile : new Profile(profile);
+      p.name = this.profiles.uniqueName(p.name, p.id);
+      this.profiles.insert(p, index);
+      this.activeId = p.id;
+      this.view.pages.condition = 0;
+      this._emitSwitched({ added: [p.id] });
+      return p;
+    }
+
+    /**
+     * まとめて追加する（表から作成・JSON の追加読み込み）。上限を超える分は入れない。
+     * @returns {Profile[]} 追加したもの
+     */
+    insertProfiles(list, index, activateFirst) {
+      const room = Math.max(0, Profile.MAX - this.profiles.length);
+      const items = list.slice(0, room);
+      let at = index === undefined || index === null ? this.profiles.length : index;
+      items.forEach((p) => {
+        p.name = this.profiles.uniqueName(p.name, p.id);
+        at = this.profiles.insert(p, at) + 1;
       });
-      for (let i = max + 1; i < 26; i++) {
-        const label = String.fromCharCode(65 + i);
-        if (!used.has(label)) return label;
-      }
-      for (let i = 0; i < 26; i++) {
-        const label = String.fromCharCode(65 + i);
-        if (!used.has(label)) return label;
-      }
-      return null;
+      if (items.length && activateFirst) this.activeId = items[0].id;
+      this._emitSwitched({ added: items.map((p) => p.id) });
+      return items;
     }
 
-    addCondition(init) {
-      if (!this.canAddCondition()) return null;
-      const label = this._nextLabel();
-      const base = { id: Util.uid('cond'), left: '', op: 'eq', right: { type: 'column', col: '', value: '' } };
-      const cond = Object.assign(base, init || {}, { label: label });
-      cond.right = Object.assign({ type: 'column', col: '', value: '' }, (init && init.right) || {});
-      const labelsBefore = this.conditionLabels;
-      this.query.conditions.push(cond);
-      if (this.query.logic.mode === 'expr') {
-        const parsed = Logic.parse(this.query.logic.expr, labelsBefore);
-        if (parsed.ok) {
-          const children = parsed.ast.type === 'and' ? parsed.ast.children.slice() : [parsed.ast];
-          children.push({ type: 'cond', label: label });
-          this.query.logic.expr = Logic.serialize({ type: 'and', children: children });
-        } else {
-          const expr = this.query.logic.expr.trim();
-          this.query.logic.expr = expr ? expr + ' and ' + label : label;
-        }
-      }
-      this._emit('query', { added: cond.id, exprChanged: this.query.logic.mode === 'expr' });
-      return cond;
-    }
-
-    updateCondition(id, patch) {
-      const cond = this.findCondition(id);
-      if (!cond) return;
-      Object.keys(patch).forEach((key) => {
-        if (key === 'right') cond.right = Object.assign({}, cond.right, patch.right);
-        else if (key !== 'id' && key !== 'label') cond[key] = patch[key];
-      });
-      this._emit('query', { updated: id });
-    }
-
-    removeCondition(id) {
-      const idx = this.query.conditions.findIndex((c) => c.id === id);
+    removeProfile(id) {
+      const idx = this.profiles.indexOf(id);
       if (idx < 0) return null;
-      const labelsBefore = this.conditionLabels;
-      const removed = this.query.conditions.splice(idx, 1)[0];
-      let exprChanged = false;
-      if (this.query.logic.expr.trim()) {
-        const parsed = Logic.parse(this.query.logic.expr, labelsBefore);
-        if (parsed.ok) {
-          const ast = Logic.removeLabel(parsed.ast, removed.label);
-          this.query.logic.expr = ast ? Logic.serialize(ast) : '';
-          exprChanged = true;
-        }
-      }
-      this._emit('query', { removed: id, exprChanged: exprChanged && this.query.logic.mode === 'expr' });
+      const removed = this.profiles.remove(id);
+      if (!this.profiles.length) this.profiles.insert(new Profile({ name: this.profiles.defaultName() }));
+      if (this.activeId === id) this.activeId = this.profiles.items[Math.min(idx, this.profiles.length - 1)].id;
+      if (this.view.filter === id) this.view.filter = null;
+      this.view.pages.condition = 0;
+      this._emitSwitched({ removed: id });
       return removed;
     }
 
-    setLogicMode(mode) {
-      if (mode === this.query.logic.mode) return;
-      if (mode === 'expr' && !this.query.logic.expr.trim()) {
-        const ast = Logic.fromMode(this.query.logic.mode, this.conditionLabels);
-        this.query.logic.expr = ast ? Logic.serialize(ast) : '';
+    /** 優先順位を変える（to は 0 始まりの位置） */
+    moveProfile(id, to) {
+      if (!this.profiles.move(id, to)) return false;
+      this._emit('profiles', { moved: id });
+      return true;
+    }
+
+    moveProfileBy(id, delta) {
+      const idx = this.profiles.indexOf(id);
+      return idx >= 0 && this.moveProfile(id, idx + delta);
+    }
+
+    /**
+     * 名前を変える。空欄なら元の名前のまま、重なるときは「名前 (2)」にする。
+     * @returns {{name:string, adjusted:boolean, empty:boolean}|null}
+     */
+    renameProfile(id, name) {
+      const p = this.profiles.find(id);
+      if (!p) return null;
+      const requested = Profile.cleanName(name);
+      const next = requested ? this.profiles.uniqueName(requested, id) : p.name;
+      if (next !== p.name) {
+        p.name = next;
+        this._emit('profiles', { renamed: id });
       }
-      this.query.logic.mode = mode;
-      this._emit('query', { logic: true });
+      return { name: next, adjusted: !!requested && next !== requested, empty: !requested };
+    }
+
+    setProfileEnabled(id, enabled) {
+      const p = this.profiles.find(id);
+      if (!p || p.enabled === !!enabled) return;
+      p.enabled = !!enabled;
+      this._emit('profiles', { enabled: id });
+    }
+
+    /** patch：{mode:'assign'|'independent', includeUnmatched:boolean} */
+    setCombine(patch) {
+      const next = cleanCombine(Object.assign({}, this.combine, patch));
+      if (next.mode === this.combine.mode && next.includeUnmatched === this.combine.includeUnmatched) return;
+      this.combine = next;
+      this._emit('profiles', { combine: true });
+    }
+
+    /** 一覧をまとめて差し替える（JSON の置き換え・サンプル・全消去） */
+    replaceProfiles(list, activeId) {
+      this.profiles = new LQ.ProfileList(list.slice(0, Profile.MAX));
+      this.activeId = activeId;
+      this._ensureProfile();
+      this.view.filter = null;
+      this.view.pages.condition = 0;
+      this._emitSwitched({ replaced: true });
+    }
+
+    /* ---------------- サンプル（自分の ① と抽出条件は退避する） ---------------- */
+
+    /**
+     * サンプルに切り替える。初回は自分の ① と抽出条件を退避し、
+     * サンプル表示中に自分で作った抽出条件（サンプルの複製など）は残す。
+     */
+    enterSample(source, list, combine) {
+      let own = [];
+      if (!this.sampleStash) {
+        const src = this.datasets.source;
+        this.sampleStash = {
+          profiles: this.profiles.items.filter((p) => !p.isSample),
+          activeId: this.activeId,
+          source: src && !src.isSample ? src : null,
+          combine: Util.clone(this.combine)
+        };
+      } else {
+        own = this.profiles.items.filter((p) => !p.isSample);
+      }
+      this.datasets.source = source;
+      this.view.pages.source = 0;
+      this.combine = cleanCombine(combine);
+      this.replaceProfiles(list.concat(own), list.length ? list[0].id : null);
+      this._clearResult();
+      this._emit('datasets', { role: 'source' });
+    }
+
+    /** サンプルを消し、退避していた ① と抽出条件に戻す（サンプル表示中に作った抽出条件は後ろに残す） */
+    exitSample() {
+      const stash = this.sampleStash;
+      const own = this.profiles.items.filter((p) => !p.isSample);
+      this.sampleStash = null;
+      const src = this.datasets.source;
+      if (src && src.isSample) {
+        this.datasets.source = stash ? stash.source : null;
+        this.view.pages.source = 0;
+      }
+      if (stash) this.combine = stash.combine;
+      const active = stash && stash.profiles.some((p) => p.id === stash.activeId) ? stash.activeId : null;
+      this.replaceProfiles((stash ? stash.profiles : []).concat(own), active);
+      this._clearResult();
+      this._emit('datasets', { role: 'source' });
+    }
+
+    /** 保存の対象：サンプルを除いた自分の抽出条件（サンプル表示中は退避分を先頭に含める） */
+    userProfiles() {
+      const own = this.profiles.items.filter((p) => !p.isSample);
+      return this.sampleStash ? this.sampleStash.profiles.concat(own) : own;
+    }
+
+    userActiveId() {
+      const p = this.activeProfile;
+      if (p && !p.isSample) return p.id;
+      return this.sampleStash ? this.sampleStash.activeId : null;
+    }
+
+    userCombine() {
+      return this.sampleStash ? this.sampleStash.combine : this.combine;
+    }
+
+    /** ①・抽出条件・結果をすべて初期状態に戻す */
+    resetAll() {
+      this.sampleStash = null;
+      this.datasets.source = null;
+      this.view.pages.source = 0;
+      this.combine = cleanCombine(null);
+      this.replaceProfiles([], null);
+      this._clearResult();
+      this._emit('datasets', { role: 'source' });
+    }
+
+    /* ---------------- 条件（選択中の抽出条件） ---------------- */
+
+    get conditionLabels() {
+      return QueryOps.labels(this.query);
+    }
+
+    canAddCondition() {
+      return QueryOps.canAdd(this.query);
+    }
+
+    findCondition(id) {
+      return QueryOps.find(this.query, id);
+    }
+
+    addCondition(init) {
+      const r = QueryOps.add(this.query, init);
+      if (!r) return null;
+      this._emit('query', { added: r.cond.id, exprChanged: r.exprChanged });
+      return r.cond;
+    }
+
+    updateCondition(id, patch) {
+      if (QueryOps.update(this.query, id, patch)) this._emit('query', { updated: id });
+    }
+
+    removeCondition(id) {
+      const r = QueryOps.remove(this.query, id);
+      if (!r) return null;
+      this._emit('query', { removed: id, exprChanged: r.exprChanged });
+      return r.removed;
+    }
+
+    setLogicMode(mode) {
+      if (QueryOps.setLogicMode(this.query, mode)) this._emit('query', { logic: true });
     }
 
     setExpr(text) {
@@ -192,33 +381,6 @@
       this._emit('query', { matchMode: true });
     }
 
-    /** 条件一式の差し替え（サンプル・設定ファイル読み込み用） */
-    replaceQuery(query, origin) {
-      const q = defaultQuery();
-      q.origin = origin || 'user';
-      q.logic = Object.assign({ mode: 'and', expr: '' }, query.logic || {});
-      q.joinKind = query.joinKind || 'inner';
-      q.matchMode = query.matchMode || 'first';
-      this.query = q;
-      (query.conditions || []).forEach((c) => {
-        const cond = {
-          id: Util.uid('cond'),
-          label: c.label,
-          left: c.left || '',
-          op: c.op || 'eq',
-          right: Object.assign({ type: 'column', col: '', value: '' }, c.right || {})
-        };
-        if (!cond.label || this.conditionLabels.indexOf(cond.label) !== -1) cond.label = this._nextLabel();
-        q.conditions.push(cond);
-      });
-      this._emit('query', { replaced: true });
-    }
-
-    resetQuery() {
-      this.query = defaultQuery();
-      this._emit('query', { replaced: true });
-    }
-
     /* ---------------- 照合ルール ---------------- */
 
     setRules(patch) {
@@ -229,31 +391,35 @@
 
     /* ---------------- 出力列 ---------------- */
 
-    /** 読み込みデータの列に合わせて出力列の一覧を更新（既存の並び・表示は名前で引き継ぐ） */
+    /**
+     * 読み込みデータの列に合わせて出力列の一覧を更新する（既存の並び・表示は名前で引き継ぐ）。
+     * ② の列は全抽出条件の ② の列を名前でまとめる（列構成が違っても同じ名前は 1 列）。
+     */
     _syncOutputColumns() {
       const available = [];
+      const seen = new Set();
+      const push = (key, visible) => {
+        if (seen.has(key)) return;
+        seen.add(key);
+        available.push({ key: key, visible: visible });
+      };
       const src = this.datasets.source;
-      const cond = this.datasets.condition;
-      if (src) src.columns.forEach((c) => available.push({ key: 's:' + c.name, visible: true }));
-      if (cond) cond.columns.forEach((c) => available.push({ key: 'c:' + c.name, visible: false }));
-      META_KEYS.forEach((key) => available.push({ key: key, visible: false }));
-      const availableKeys = new Set(available.map((a) => a.key));
-      const list = this.output.columns.filter((c) => availableKeys.has(c.key));
+      if (src) src.columns.forEach((c) => push('s:' + c.name, true));
+      this.profiles.items.forEach((p) => {
+        if (p.condition) p.condition.columns.forEach((c) => push('c:' + c.name, false));
+      });
+      META_KEYS.forEach((key) => push(key, !!META_VISIBLE[key]));
+      const list = this.output.columns.filter((c) => seen.has(c.key));
       const known = new Set(list.map((c) => c.key));
       available.forEach((a) => {
         if (known.has(a.key)) return;
-        const prefix = a.key.slice(0, 2);
-        let at = -1;
+        const g = GROUP_ORDER.indexOf(groupOf(a.key));
+        let at = 0;
         for (let i = list.length - 1; i >= 0; i--) {
-          if (list[i].key.slice(0, 2) === prefix) {
+          if (GROUP_ORDER.indexOf(groupOf(list[i].key)) <= g) {
             at = i + 1;
             break;
           }
-        }
-        if (at < 0) {
-          if (prefix === 's:') at = 0;
-          else if (prefix === 'c:') at = list.filter((c) => c.key.slice(0, 2) !== 'm:').length;
-          else at = list.length;
         }
         list.splice(at, 0, { key: a.key, visible: a.visible });
         known.add(a.key);
@@ -268,7 +434,7 @@
       this._emit('output', { key: key });
     }
 
-    /** kind：'s:' / 'c:' / 'm:' */
+    /** prefix：'s:' / 'c:' / 'm:' */
     setGroupVisible(prefix, visible) {
       this.output.columns.forEach((c) => {
         if (c.key.slice(0, 2) === prefix) c.visible = visible;
@@ -293,7 +459,7 @@
       this._emit('output', { moved: key });
     }
 
-    /** 表示中の列だけを数えて delta 個分移動（キーボード操作用） */
+    /** delta 個分移動（キーボード操作用） */
     moveColumnBy(key, delta) {
       const list = this.output.columns;
       const idx = list.findIndex((c) => c.key === key);
@@ -310,6 +476,16 @@
       const rest = this.output.columns.filter((c) => order.indexOf(c.key) === -1).map((c) => ({ key: c.key, visible: false }));
       this.output.columns = order.map((key) => ({ key: key, visible: true })).concat(rest);
       this._emit('output', { preset: true });
+    }
+
+    /** JSON の出力列を適用する（今の ①・② にない列は除く） */
+    importOutputColumns(columns) {
+      if (!Array.isArray(columns)) return;
+      this.output.columns = columns
+        .filter((c) => c && typeof c.key === 'string')
+        .map((c) => ({ key: c.key, visible: !!c.visible }));
+      this._syncOutputColumns();
+      this._emit('output', { imported: true });
     }
 
     columnCounts() {
@@ -353,6 +529,15 @@
       this._emit('view', { sort: true });
     }
 
+    /** 結果の絞り込み：null＝すべて / 抽出条件の id / UNMATCHED_FILTER＝該当なし */
+    setFilter(filter) {
+      const next = filter || null;
+      if (this.view.filter === next) return;
+      this.view.filter = next;
+      this.view.pages.result = 0;
+      this._emit('view', { filter: true });
+    }
+
     setRaw(role, on) {
       if (this.view.raw[role] === on) return;
       this.view.raw[role] = on;
@@ -362,21 +547,18 @@
 
     /* ---------------- 結果 ---------------- */
 
+    /** 結果に影響する内容の署名（名前の変更は含めない＝名前を変えても再抽出は不要） */
     querySignature() {
       const s = this.datasets.source;
-      const c = this.datasets.condition;
       return JSON.stringify([
         s ? s.id + ':' + s.version : '',
-        c ? c.id + ':' + c.version : '',
-        this.query.conditions.map((k) => [k.label, k.left, k.op, k.right.type, k.right.col || '', k.right.value || '']),
-        this.query.logic,
-        this.query.joinKind,
-        this.query.matchMode,
+        this.profiles.enabled().map((p) => [p.id, p.condition ? p.condition.id + ':' + p.condition.version : '', QueryOps.signature(p.query)]),
+        this.effectiveCombine(),
         this.rules
       ]);
     }
 
-    /** signature：抽出を始めた時点の条件の署名（実行中に条件が変わっても「未反映」と判定できる） */
+    /** signature：抽出を始めた時点の署名（実行中に条件が変わっても「未反映」と判定できる） */
     setResult(result, signature) {
       this.result = result;
       this.resultSignature = result ? (signature || this.querySignature()) : null;
@@ -424,11 +606,20 @@
     /* ---------------- 取り消し用のスナップショット ---------------- */
 
     snapshot() {
-      const d = this.datasets;
+      const src = this.datasets.source;
+      const stash = this.sampleStash;
       return {
-        datasets: { source: d.source, condition: d.condition },
-        versions: { source: d.source ? d.source.version : 0, condition: d.condition ? d.condition.version : 0 },
-        query: Util.clone(this.query),
+        source: src,
+        sourceVersion: src ? src.version : 0,
+        profiles: this.profiles.items.map((p) => p.snapshot()),
+        activeId: this.activeId,
+        combine: Util.clone(this.combine),
+        sampleStash: stash ? {
+          profiles: stash.profiles.map((p) => p.snapshot()),
+          activeId: stash.activeId,
+          source: stash.source,
+          combine: Util.clone(stash.combine)
+        } : null,
         output: Util.clone(this.output),
         view: Util.clone(this.view),
         result: this.result,
@@ -437,76 +628,26 @@
     }
 
     restore(snap) {
-      this.datasets = { source: snap.datasets.source, condition: snap.datasets.condition };
-      this.query = Util.clone(snap.query);
+      this.datasets.source = snap.source;
+      this.profiles = new LQ.ProfileList(snap.profiles.map((s) => Profile.fromSnapshot(s)));
+      this.activeId = snap.activeId;
+      this._ensureProfile();
+      this.combine = cleanCombine(snap.combine);
+      const st = snap.sampleStash;
+      this.sampleStash = st ? {
+        profiles: st.profiles.map((s) => Profile.fromSnapshot(s)),
+        activeId: st.activeId,
+        source: st.source,
+        combine: cleanCombine(st.combine)
+      } : null;
       this.output = Util.clone(snap.output);
       this.view = Util.clone(snap.view);
-      const d = this.datasets;
-      const sameVersions = (!d.source || d.source.version === snap.versions.source) &&
-        (!d.condition || d.condition.version === snap.versions.condition);
-      this.result = sameVersions ? snap.result : null;
-      this.resultSignature = sameVersions ? snap.resultSignature : null;
-      ['datasets', 'query', 'output', 'result', 'view'].forEach((topic) => this._emit(topic, { restored: true }));
-    }
-
-    /* ---------------- 条件設定の保存・読み込み（JSON） ---------------- */
-
-    exportSettings() {
-      const read = {};
-      ['source', 'condition'].forEach((role) => {
-        const ds = this.datasets[role];
-        if (ds) read[role] = { settings: Util.clone(ds.settings), choices: ds.source.exportChoices(), fileName: ds.name };
-      });
-      return {
-        app: 'LightQuery',
-        format: 1,
-        savedAt: new Date().toISOString(),
-        query: {
-          conditions: this.query.conditions.map((c) => ({ label: c.label, left: c.left, op: c.op, right: Util.clone(c.right) })),
-          logic: Util.clone(this.query.logic),
-          joinKind: this.query.joinKind,
-          matchMode: this.query.matchMode
-        },
-        rules: Util.clone(this.rules),
-        output: { columns: Util.clone(this.output.columns) },
-        read: read,
-        view: { pageSize: this.view.pageSize }
-      };
-    }
-
-    /**
-     * 保存した設定を適用する。読み込み範囲の設定は、同じ役割のデータが読み込まれていれば適用する。
-     * @returns {{conditions:number, appliedRead:string[]}}
-     */
-    importSettings(obj) {
-      if (!obj || obj.app !== 'LightQuery' || obj.format !== 1 || !obj.query || !Array.isArray(obj.query.conditions)) {
-        throw new Error('LightQuery の条件設定ファイルではありません');
-      }
-      const appliedRead = [];
-      ['source', 'condition'].forEach((role) => {
-        const ds = this.datasets[role];
-        const read = obj.read && obj.read[role];
-        if (!ds || !read) return;
-        if (ds.source.applyChoices(read.choices)) ds.reload(read.settings);
-        else if (read.settings) ds.applySettings(LQ.Dataset.normalizeSettings(read.settings));
-        appliedRead.push(role);
-      });
-      if (appliedRead.length) {
-        this._syncOutputColumns();
-        this._clearResult();
-        this._emit('datasets', { role: 'both' });
-      }
-      if (obj.rules) this.setRules(obj.rules);
-      this.replaceQuery(obj.query, 'user');
-      if (obj.output && Array.isArray(obj.output.columns)) {
-        this.output.columns = obj.output.columns
-          .filter((c) => c && typeof c.key === 'string')
-          .map((c) => ({ key: c.key, visible: !!c.visible }));
-        this._syncOutputColumns();
-        this._emit('output', { imported: true });
-      }
-      if (obj.view && obj.view.pageSize) this.setPageSize(obj.view.pageSize);
-      return { conditions: this.query.conditions.length, appliedRead: appliedRead };
+      const src = this.datasets.source;
+      const same = (!src || src.version === snap.sourceVersion) &&
+        snap.profiles.every((s) => !s.condition || s.condition.version === s.conditionVersion);
+      this.result = same ? snap.result : null;
+      this.resultSignature = same ? snap.resultSignature : null;
+      ['datasets', 'profiles', 'query', 'output', 'result', 'view'].forEach((topic) => this._emit(topic, { restored: true }));
     }
   }
 

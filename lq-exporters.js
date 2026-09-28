@@ -2,6 +2,7 @@
  * LightQuery - lq-exporters.js
  * 出力：Excel（.xlsx）・CSV（UTF-8 BOM 付き / Shift_JIS / UTF-8 BOM なし）・UTF-16 テキスト・クリップボード
  *   文字化け対策として形式ごとに文字コードと BOM を明示し、Shift_JIS に変換できない文字は数えて報告する。
+ *   Excel は複数のシート（まとめ＋抽出条件ごと）に分けて出力できる。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -11,7 +12,7 @@
 
   const FORMATS = [
     { id: 'xlsx', label: 'Excel ブック（.xlsx）', ext: 'xlsx', icon: 'file-excel', recommended: true, needsLibrary: true,
-      note: '文字化けせず、先頭の 0 や長い数字もそのまま残ります。「抽出条件」シートに根拠を記録します。' },
+      note: '文字化けせず、先頭の 0 や長い数字もそのまま残ります。抽出条件ごとのシートに分けることもでき、「抽出条件」シートに根拠を記録します。' },
     { id: 'csv-utf8-bom', label: 'CSV（UTF-8・BOM 付き）', ext: 'csv', icon: 'file-csv', protectable: true,
       note: 'Excel 2016 以降でダブルクリックして開いても文字化けしません。' },
     { id: 'csv-sjis', label: 'CSV（Shift_JIS）', ext: 'csv', icon: 'file-csv', protectable: true,
@@ -168,8 +169,25 @@
     return w;
   }
 
-  async function buildXlsx(table, metaLines) {
-    const XLSX = await LQ.ExcelLibrary.ensure();
+  /* シート名：31 文字まで・: \ / ? * [ ] は使えない・前後の ' は不可・大文字小文字を区別せず重複不可 */
+  const SHEET_NAME_MAX = 31;
+
+  function uniqueSheetName(name, used) {
+    let base = String(name || '').replace(/[:\\/?*[\]]/g, '_').replace(/^'+|'+$/g, '').trim();
+    if (!base || base.toLowerCase() === 'history') base = 'シート' + (used.size + 1);
+    base = base.slice(0, SHEET_NAME_MAX);
+    let candidate = base;
+    let k = 2;
+    while (used.has(candidate.toLowerCase())) {
+      const suffix = ' (' + k + ')';
+      candidate = base.slice(0, SHEET_NAME_MAX - suffix.length) + suffix;
+      k++;
+    }
+    used.add(candidate.toLowerCase());
+    return candidate;
+  }
+
+  function tableToSheet(XLSX, table) {
     const data = [table.header.map((h) => ({ t: 's', v: h }))];
     const widths = table.header.map((h) => displayWidth(h));
     table.forEachRow((row, i) => {
@@ -185,11 +203,21 @@
     const ws = { '!data': data, '!ref': ref };
     ws['!cols'] = widths.map((w) => ({ wch: Math.min(60, Math.max(6, w + 2)) }));
     if (table.header.length) ws['!autofilter'] = { ref: ref };
+    return ws;
+  }
+
+  /**
+   * @param {Array<{name:string, table:object}>} sheets データのシート（先頭から順に作る）
+   * @param {Array} metaLines 根拠シートの行
+   */
+  async function buildXlsx(sheets, metaLines) {
+    const XLSX = await LQ.ExcelLibrary.ensure();
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '抽出結果');
+    const used = new Set();
+    sheets.forEach((s) => XLSX.utils.book_append_sheet(wb, tableToSheet(XLSX, s.table), uniqueSheetName(s.name, used)));
     const info = XLSX.utils.aoa_to_sheet(metaLines);
     info['!cols'] = [{ wch: 18 }, { wch: 90 }];
-    XLSX.utils.book_append_sheet(wb, info, '抽出条件');
+    XLSX.utils.book_append_sheet(wb, info, uniqueSheetName('抽出条件', used));
     const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx', compression: true });
     return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   }
@@ -216,8 +244,9 @@
     /**
      * ファイルを作る。
      * @param {string} formatId
-     * @param {{header:string[], forEachRow:Function, rowCount:number}} table
-     * @param {{metaLines:Array, protect:boolean}} options
+     * @param {{header:string[], forEachRow:Function, rowCount:number}} table 出力する表（CSV はこの表だけ）
+     * @param {{metaLines:Array, protect:boolean, sheets?:Array<{name:string, table:object}>}} options
+     *        sheets を渡すと Excel はそのシート構成で作る（まとめ＋抽出条件ごと など）
      * @returns {Promise<{blob:Blob, warnings:string[]}>}
      */
     async build(formatId, table, options) {
@@ -226,7 +255,7 @@
       let blob;
       switch (formatId) {
         case 'xlsx':
-          blob = await buildXlsx(table, opts.metaLines || [['項目', '内容']]);
+          blob = await buildXlsx(opts.sheets && opts.sheets.length ? opts.sheets : [{ name: '抽出結果', table: table }], opts.metaLines || [['項目', '内容']]);
           break;
         case 'csv-utf8-bom':
           blob = new Blob(['﻿' + buildDelimited(table, ',', opts.protect)], { type: 'text/csv;charset=utf-8' });

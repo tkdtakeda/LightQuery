@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-readers.js
- * 読み込み：文字コード判定・CSV 解析・Excel（SheetJS）・貼り付け
+ * 読み込み：文字コード判定・CSV 解析・Excel（SheetJS）・貼り付け・保存データ（ブラウザ／JSON）
  * 読み込んだ結果はすべて「文字列の二次元配列（grid）」にそろえる。
  * ========================================================================= */
 (function (global) {
@@ -372,7 +372,7 @@
    * ------------------------------------------------------------------- */
   const EXCEL_EXT = new Set(['xlsx', 'xlsm', 'xls', 'xlsb', 'ods']);
   const TEXT_EXT = new Set(['csv', 'tsv', 'txt']);
-  const KIND_LABEL = { excel: 'Excel', csv: 'CSV', paste: '貼り付け', sample: 'サンプル' };
+  const KIND_LABEL = { excel: 'Excel', csv: 'CSV', paste: '貼り付け', sample: 'サンプル', stored: '保存データ' };
 
   const TEXT_MIME = /^text\/(csv|plain|tab-separated-values)|spreadsheet|ms-excel/i;
   const MEDIA_MIME = /^(image|audio|video)\//i;
@@ -470,6 +470,20 @@
       return src;
     }
 
+    /**
+     * ブラウザや JSON に保存した表から作る。元の種類・シート・読み込み方法は ref に残し、表示と再保存に使う。
+     * @param {string[][]} grid
+     * @param {string} name 元のファイル名
+     * @param {{kindLabel?:string, sheetName?:string, choices?:object}} ref
+     */
+    static fromStored(grid, name, ref) {
+      const src = new SourceFile('stored', name, 0);
+      src.grid = grid;
+      const r = ref || {};
+      src.storedRef = { kindLabel: r.kindLabel || '', sheetName: r.sheetName || '', choices: Object.assign({}, r.choices || {}) };
+      return src;
+    }
+
     get kindLabel() {
       return KIND_LABEL[this.kind] || this.kind;
     }
@@ -491,7 +505,7 @@
         this.grid = ExcelReader.sheetToGrid(this._workbook, this.sheetName);
         return;
       }
-      if (this.kind === 'sample') return;
+      if (this.kind === 'sample' || this.kind === 'stored') return;
       let text = this._text;
       if (this.kind === 'csv') {
         if (this.encodingChoice === 'auto') {
@@ -527,6 +541,39 @@
       if (this.sheetNames.indexOf(name) === -1) return;
       this.sheetName = name;
       this.build();
+    }
+
+    /** 中身のあるシート名（Excel 以外は空） */
+    usedSheetNames() {
+      if (!this.hasSheets || !this._workbook) return [];
+      return this.sheetNames.filter((name) => {
+        const ws = this._workbook.Sheets[name];
+        return !!(ws && ws['!ref']);
+      });
+    }
+
+    /** 同じファイルを別の抽出条件で使うための複製（元のバイト列・ブックは共有し、設定は別々に持つ） */
+    clone() {
+      const copy = new SourceFile(this.kind, this.name, this.size);
+      copy.encodingChoice = this.encodingChoice;
+      copy.delimiterChoice = this.delimiterChoice;
+      copy.encoding = this.encoding;
+      copy.delimiter = this.delimiter;
+      copy.sheetName = this.sheetName;
+      copy.sheetNames = this.sheetNames.slice();
+      copy.storedRef = this.storedRef ? Object.assign({}, this.storedRef) : undefined;
+      copy._bytes = this._bytes;
+      copy._text = this._text;
+      copy._workbook = this._workbook;
+      copy.grid = this.grid;
+      return copy;
+    }
+
+    /** 別のシートを読む複製 */
+    forSheet(name) {
+      const copy = this.clone();
+      copy.setSheet(name);
+      return copy;
     }
 
     /** 読み込み設定の保存用（文字コード・区切り・シート） */

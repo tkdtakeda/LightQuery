@@ -2,6 +2,7 @@
  * LightQuery - lq-ui-output-panel.js
  * 出力列パネル（① / ② / 根拠の列の表示切替・ドラッグとキーボードでの並べ替え）と
  * 照合ルールパネル（空白・全角半角・大文字小文字・数値・日付）
+ *   ② の列は全抽出条件の ② の列を名前でまとめて並べ、どの抽出条件の ② の列かを添える。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -15,7 +16,7 @@
   const GROUPS = [
     { prefix: 's:', label: '① 元データ', short: '元データ', badge: ['src', '①'] },
     { prefix: 'c:', label: '② 条件データ', short: '条件データ', badge: ['cond', '②'] },
-    { prefix: 'm:', label: '根拠（行番号・一致数）', short: '行番号など', badge: ['meta', '根拠'] }
+    { prefix: 'm:', label: '根拠（抽出条件・行番号・一致数）', short: '抽出条件・行番号など', badge: ['meta', '根拠'] }
   ];
 
   /* ---------------------------------------------------------------------
@@ -47,7 +48,7 @@
         ])
       ]);
       this._bindDrag();
-      ['output', 'datasets', 'query'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
+      ['output', 'datasets', 'query', 'profiles'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
       this.render();
     }
 
@@ -68,15 +69,41 @@
       Flash.el(this.list);
     }
 
-    /** ② / 根拠の列が今の条件で出力できない理由（出力できれば null） */
+    /** ② の行がひも付く（「一致しなかった行」でも固定値だけでもない）有効な抽出条件 */
+    _linkedProfiles() {
+      return this.state.profiles.enabled().filter((p) => {
+        if (p.query.joinKind === 'anti' || !p.condition) return false;
+        const v = this.app.validationOf(p);
+        return !(v.ast && !v.needsCondition);
+      });
+    }
+
+    /**
+     * ② / 根拠の列が今の抽出条件で出力できない理由（出力できれば null）。
+     * @returns {{text:string, soft:boolean}|null} soft：警告ではなく補足（抽出条件が 1 つのときの抽出条件列など）
+     */
     _unavailableReason(key) {
-      const q = this.state.query;
+      const s = this.state;
       const prefix = key.slice(0, 2);
       if (prefix === 's:' || key === 'm:srcRow') return null;
-      if (q.joinKind === 'anti') return '「一致しなかった行」では出力できません';
-      const v = this.app.validation();
-      if (v.ast && !v.needsCondition) return '② を参照する条件がありません';
-      return null;
+      if (key === 'm:profile' || key === 'm:priority') {
+        return s.profiles.length > 1 ? null : { text: '抽出条件が 1 つのときは表示しません', soft: true };
+      }
+      const linked = this._linkedProfiles();
+      if (prefix === 'c:' && linked.some((p) => p.condition.findColumn(key.slice(2)) >= 0)) return null;
+      if (prefix === 'm:' && linked.length) return null;
+      const enabled = s.profiles.enabled();
+      if (prefix === 'c:' && linked.length) return { text: '有効な抽出条件の ② にない列です', soft: true };
+      if (enabled.length && enabled.every((p) => p.query.joinKind === 'anti')) return { text: '「一致しなかった行」では出力できません', soft: false };
+      return { text: '② を参照する条件がありません', soft: false };
+    }
+
+    /** ② の列を持つ抽出条件の名前（抽出条件が複数のときだけ） */
+    _owners(key) {
+      const s = this.state;
+      if (key.slice(0, 2) !== 'c:' || s.profiles.length < 2) return '';
+      const name = key.slice(2);
+      return s.profiles.items.filter((p) => p.condition && p.condition.findColumn(name) >= 0).map((p) => p.name).join('・');
     }
 
     render() {
@@ -96,6 +123,7 @@
         const name = LQ.ResultView.nameOf(col.key);
         if (word && name.toLowerCase().indexOf(word) === -1) return;
         const reason = this._unavailableReason(col.key);
+        const owners = this._owners(col.key);
         const check = h('input', { type: 'checkbox', checked: col.visible, title: col.visible ? '表示中（外すと隠します）' : '非表示（入れると表示します）' });
         check.addEventListener('change', () => {
           this.state.setColumnVisible(col.key, check.checked);
@@ -108,15 +136,17 @@
           if (this.state.moveColumnBy(col.key, e.key === 'ArrowUp' ? -1 : 1)) this._refocus(col.key, true);
         });
         const li = h('li', {
-          class: 'lq-colitem' + (col.visible ? '' : ' is-hidden') + (reason ? ' is-unavailable' : ''),
+          class: 'lq-colitem' + (col.visible ? '' : ' is-hidden') + (reason && !reason.soft ? ' is-unavailable' : ''),
           draggable: 'true',
           dataset: { key: col.key }
         }, [
           h('span', { class: 'lq-colitem__handle', title: 'ドラッグして並べ替え' }, Dom.icon('grip-vertical')),
           check,
           UI.sourceBadge(col.key.slice(0, 2)),
-          h('span', { class: 'lq-colitem__name', text: name, title: name }),
-          reason ? h('span', { class: 'lq-colitem__reason', title: reason }, [Dom.icon('triangle-exclamation'), reason]) : null
+          h('span', { class: 'lq-colitem__name', text: name, title: owners ? name + '（② を持つ抽出条件：' + owners + '）' : name }),
+          owners ? h('span', { class: 'lq-colitem__owner', text: owners, title: 'この列を持つ ② の抽出条件' }) : null,
+          reason ? h('span', { class: 'lq-colitem__reason' + (reason.soft ? ' is-soft' : ''), title: reason.text },
+            [Dom.icon(reason.soft ? 'circle-info' : 'triangle-exclamation'), reason.text]) : null
         ]);
         this.list.appendChild(li);
       });

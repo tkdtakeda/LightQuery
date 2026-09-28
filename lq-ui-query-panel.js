@@ -1,7 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-ui-query-panel.js
- * 条件パネル：組み合わせ（すべて／いずれか／式）、条件の一覧（「① 列 が ② 列 を含む」の語順）、
- *   同名列の提案、除外リストのヒント、抽出のしかた（出力する行・複数一致）。
+ * 抽出条件パネル：上に抽出条件の一覧（ProfileListView）、下に選択中の抽出条件の編集
+ *   （名前・② 条件データ・組み合わせ・条件の一覧・抽出のしかた）。
+ *   条件は「① 列 が ② 列 を含む」の語順で並べ、同名列の提案・除外リストのヒントを出す。
  *   条件の行は id ごとに使い回し、入力中のフォーカスを失わないようにする。
  * ========================================================================= */
 (function (global) {
@@ -34,30 +35,52 @@
       this.ctx = ctx;
       this.state = ctx.state;
       this.app = ctx.app;
-      this.title = '条件';
+      this.title = '抽出条件';
       this.icon = 'filter';
       this.size = 'lg';
       this.rows = new Map();
       this._colsKey = null;
+      this._profileId = null;
+      this.list = new LQ.ProfileListView(ctx);
       this.el = h('div');
-      Dom.append(this.el, [this._buildLogic(), this._buildConditions(), this._buildExtraction()]);
+      Dom.append(this.el, [this.list.el, this._buildHead(), this._buildLogic(), this._buildConditions(), this._buildExtraction()]);
       ctx.bus.on('query', (d) => this.update(d));
-      ctx.bus.on('datasets', () => this.update({}));
+      ['datasets', 'profiles', 'store'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
       ctx.bus.on('focus-condition', (d) => this._focusCondition(d.id, d.field));
       ctx.bus.on('focus-issue', (issue) => this._focusIssue(issue));
+      ctx.bus.on('focus-profile-name', () => this._focusName());
       this.update({});
     }
 
     headerActions() {
       return [
-        h('button', { class: 'lq-btn lq-btn--ghost lq-btn--sm', type: 'button', title: '条件・照合ルール・出力列・読み込み範囲を .json に保存', onclick: () => this.app.saveSettings() },
-          [Dom.icon('floppy-disk'), '保存']),
-        h('button', { class: 'lq-btn lq-btn--ghost lq-btn--sm', type: 'button', title: '保存した条件設定（.json）を読み込む', onclick: () => this.app.pickFile('settings') },
-          [Dom.icon('folder-open'), '読込'])
+        h('button', { class: 'lq-btn lq-btn--ghost lq-btn--sm', type: 'button', title: '抽出条件を .json に書き出す（1 件・一括）',
+          onclick: (e) => this.app.profileDialogs.openJsonExport(e.currentTarget) }, [Dom.icon('file-export'), '書き出し']),
+        h('button', { class: 'lq-btn lq-btn--ghost lq-btn--sm', type: 'button', title: '書き出した抽出条件（.json）を読み込む（ドラッグ＆ドロップも可）',
+          onclick: () => this.app.pickFile('settings') }, [Dom.icon('folder-open'), '読込'])
       ];
     }
 
     /* ---------------- 組み立て ---------------- */
+
+    _buildHead() {
+      this.rankBadge = h('span', { class: 'lq-badge lq-badge--rank', title: '優先順位（上の一覧で変更できます）' });
+      this.nameInput = h('input', {
+        class: 'lq-input lq-profname', type: 'text', maxlength: String(LQ.Profile.NAME_MAX), placeholder: '例：重点顧客', spellcheck: 'false',
+        title: '抽出条件の名前（Enter で確定）。出力の「抽出条件」列やシート名に使います'
+      });
+      this.nameInput.addEventListener('change', () => this._commitName());
+      this.condCard = h('div', { class: 'lq-condcard' });
+      this.headTitle = h('span', { class: 'lq-edit__title' });
+      this.head = h('section', { class: 'lq-section lq-edit' }, [
+        h('h3', { class: 'lq-section__title' }, [Dom.icon('pen-to-square'), this.headTitle]),
+        h('div', { class: 'lq-stack' }, [
+          UI.field('名前', h('div', { class: 'lq-profname__row' }, [this.rankBadge, this.nameInput])),
+          UI.field('② 条件データ（この抽出条件で使う表）', this.condCard)
+        ])
+      ]);
+      return this.head;
+    }
 
     _buildLogic() {
       this.modeSeg = new LQ.Segmented(MODE_OPTIONS, 'and', (v) => this.state.setLogicMode(v), 'lq-seg--block');
@@ -79,12 +102,12 @@
 
     _buildConditions() {
       this.countBadge = h('span', { class: 'lq-badge lq-badge--count' });
-      this.list = h('div', { class: 'lq-condlist' });
+      this.condList = h('div', { class: 'lq-condlist' });
       this.emptyNote = UI.note('info', '条件がまだありません。「条件を追加」を押し、① の列・比べる相手（② の列または固定値）・比較方法を選びます。');
-      this.addBtn = h('button', { class: 'lq-btn', type: 'button', onclick: () => this.app.addCondition() }, [Dom.icon('plus'), '条件を追加']);
+      this.addBtn = h('button', { class: 'lq-btn', type: 'button', onclick: () => this.app.profiles.addCondition() }, [Dom.icon('plus'), '条件を追加']);
       this.suggestBox = h('div');
       this.hintBox = h('div');
-      return UI.section('条件', [this.emptyNote, this.list, h('div', { class: 'lq-row' }, [this.addBtn]), this.suggestBox, this.hintBox], [this.countBadge]);
+      return UI.section('条件', [this.emptyNote, this.condList, h('div', { class: 'lq-row' }, [this.addBtn]), this.suggestBox, this.hintBox], [this.countBadge]);
     }
 
     _buildExtraction() {
@@ -109,12 +132,13 @@
       }, 'lq-seg--block');
       this.matchDesc = h('div', { class: 'lq-field__hint' });
       this.matchReason = h('div');
-      return UI.section('抽出のしかた', [
+      this.extraction = UI.collapsible('抽出のしかた', [
         UI.field('出力する行', joinList),
         UI.field('① の 1 行が ② の複数の行に一致したとき', this.matchSeg.el),
         this.matchDesc,
         this.matchReason
-      ]);
+      ], { open: LQ.Prefs.get('extractionOpen', false), onToggle: (open) => LQ.Prefs.set('extractionOpen', open) });
+      return this.extraction.el;
     }
 
     _buildRow(c) {
@@ -168,7 +192,7 @@
         this.state.updateCondition(id, { op: row.op.value });
         Flash.el(row.op);
       });
-      row.del = UI.iconButton('trash-can', '条件 ' + c.label + ' を削除（元に戻せます）', () => this.app.removeCondition(id), 'lq-btn--sm');
+      row.del = UI.iconButton('trash-can', '条件 ' + c.label + ' を削除（元に戻せます）', () => this.app.profiles.removeCondition(id), 'lq-btn--sm');
       row.issue = h('div', { class: 'lq-cond__issue', hidden: true });
       row.el = h('div', { class: 'lq-cond', dataset: { id: id } }, [row.label, row.left, h('span', { class: 'lq-cond__ga', text: 'が' }), row.rightBox, row.op, row.del, row.issue]);
       return row;
@@ -179,23 +203,46 @@
       this.state.setExpr(this.exprInput.value);
     }
 
+    _commitName() {
+      const p = this.state.activeProfile;
+      if (LQ.Profile.cleanName(this.nameInput.value) === p.name) {
+        this.nameInput.value = p.name;
+        return;
+      }
+      const r = this.state.renameProfile(p.id, this.nameInput.value);
+      if (!r) return;
+      this.nameInput.value = r.name;
+      if (r.empty) {
+        Flash.input(this.nameInput, 'warn', '空欄のため元の名前');
+      } else if (r.adjusted) {
+        Flash.input(this.nameInput, 'warn', '同じ名前があるため変更');
+        this.ctx.toasts.show({ type: 'info', title: '同じ名前があるため「' + r.name + '」にしました' });
+      } else {
+        Flash.input(this.nameInput);
+      }
+    }
+
     /* ---------------- 更新 ---------------- */
 
     update(detail) {
       const d = detail || {};
       const s = this.state;
-      const q = s.query;
+      const p = s.activeProfile;
+      const q = p.query;
+      const switched = p.id !== this._profileId;
+      this._profileId = p.id;
       const v = this.app.validation();
+      this._renderHead(p, switched);
       this.modeSeg.set(q.logic.mode);
       this.exprField.hidden = q.logic.mode !== 'expr';
-      if (document.activeElement !== this.exprInput) this.exprInput.value = q.logic.expr;
+      if (switched || document.activeElement !== this.exprInput) this.exprInput.value = q.logic.expr;
       if ((d.exprChanged || d.logic) && q.logic.mode === 'expr') Flash.el(this.exprInput);
       this._renderExprStatus(v);
       this._renderReading(v);
 
       const src = s.datasets.source;
       const cond = s.datasets.condition;
-      const colsKey = (src ? src.id + ':' + src.version : '') + '|' + (cond ? cond.id + ':' + cond.version : '');
+      const colsKey = p.id + '|' + (src ? src.id + ':' + src.version : '') + '|' + (cond ? cond.id + ':' + cond.version : '');
       const colsChanged = colsKey !== this._colsKey;
       this._colsKey = colsKey;
       const ids = new Set(q.conditions.map((c) => c.id));
@@ -212,7 +259,7 @@
           row = this._buildRow(c);
           this.rows.set(c.id, row);
         }
-        if (this.list.children[i] !== row.el) this.list.insertBefore(row.el, this.list.children[i] || null);
+        if (this.condList.children[i] !== row.el) this.condList.insertBefore(row.el, this.condList.children[i] || null);
         this._updateRow(row, c, v, colsChanged || isNew);
         if (isNew && d.added === c.id) Flash.el(row.el);
       });
@@ -223,6 +270,92 @@
       this._renderSuggestions();
       this._renderHint(v);
       this._renderExtraction(v, d);
+      if (switched && this._shownOnce) Flash.el(this.head);
+      this._shownOnce = true;
+    }
+
+    _renderHead(p, switched) {
+      const s = this.state;
+      const multi = s.profiles.length > 1;
+      this.headTitle.textContent = multi ? '選択中の抽出条件を編集' : '抽出条件を編集';
+      this.rankBadge.textContent = s.profiles.rank(p.id) + ' 位';
+      this.rankBadge.hidden = !multi;
+      if (switched || document.activeElement !== this.nameInput) this.nameInput.value = p.name;
+      this._renderCondCard(p);
+    }
+
+    /** ② 条件データのカード：読み込み済みなら表の要約と操作、未読み込みなら読み込みの案内 */
+    _renderCondCard(p) {
+      const card = this.condCard;
+      const ds = p.condition;
+      const st = this.app.store.statusOf(p.id);
+      const ref = p.conditionRef;
+      const key = [p.id, ds ? ds.id + ':' + ds.version : '', ref ? ref.fileName + ':' + ref.sheetName : '', st ? st.stored + ':' + st.reason : '',
+        LQ.QueryOps.fixedOnly(p.query), p.isSample].join('|');
+      if (key === this._cardKey) return;
+      this._cardKey = key;
+      Dom.clear(card);
+      card.className = 'lq-condcard' + (ds ? '' : ' is-empty');
+      card.onclick = null;
+      card.onkeydown = null;
+      card.removeAttribute('role');
+      card.removeAttribute('tabindex');
+      if (ds) {
+        const src = ds.source;
+        const meta = [Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列'];
+        const sheet = src.hasSheets ? src.sheetName : (src.storedRef ? src.storedRef.sheetName : '');
+        if (sheet) meta.push('シート「' + sheet + '」');
+        if (src.storedRef) meta.push('保存データ（元：' + (src.storedRef.kindLabel || '不明') + '）');
+        const names = ds.columnNames();
+        Dom.append(card, [
+          Dom.icon(src.kind === 'stored' ? 'floppy-disk' : 'table-list', 'lq-condcard__icon'),
+          h('div', { class: 'lq-condcard__body' }, [
+            h('div', { class: 'lq-condcard__name', text: ds.name, title: ds.name }),
+            h('div', { class: 'lq-condcard__meta', text: meta.join('・') }),
+            h('div', { class: 'lq-condcard__cols', text: '列：' + names.slice(0, 6).join('・') + (names.length > 6 ? ' ほか ' + (names.length - 6) + ' 列' : ''), title: names.join('、') }),
+            this._storeNote(p)
+          ]),
+          h('div', { class: 'lq-condcard__actions' }, [
+            h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '別のファイル・シートに差し替える（元に戻せます）', onclick: () => this.app.pickFile('condition') },
+              [Dom.icon('file-import'), '差し替え']),
+            h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: 'ヘッダー行・データ開始行などの読み込み設定を開く', onclick: () => this.state.openPanel('condition') },
+              [Dom.icon('sliders'), '読み込み設定']),
+            h('button', { class: 'lq-btn lq-btn--xs lq-btn--danger', type: 'button', title: 'この抽出条件から ② を外す（元に戻せます）', onclick: () => this.app.clearDataset('condition') },
+              [Dom.icon('xmark'), '外す'])
+          ])
+        ]);
+        return;
+      }
+      const open = () => this.app.pickFile('condition');
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      card.onclick = open;
+      card.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          open();
+        }
+      };
+      const lines = [h('div', { class: 'lq-condcard__name', text: '② 条件データを読み込む' }),
+        h('div', { class: 'lq-condcard__meta', text: 'クリックして選択／ドラッグ＆ドロップ／Ctrl+V（複数のファイル・シートは、表ごとに抽出条件にできます）' })];
+      if (ref && ref.fileName) {
+        lines.push(h('div', { class: 'lq-condcard__ref' }, [Dom.icon('clock-rotate-left'),
+          h('span', { text: '前回：' + ref.fileName + (ref.sheetName ? '（シート「' + ref.sheetName + '」）' : '') + '。同じファイルを選ぶと、読み込み範囲も前回どおりにします' })]));
+        const note = this._storeNote(p);
+        if (note) lines.push(note);
+      } else if (LQ.QueryOps.fixedOnly(p.query)) {
+        lines.push(h('div', { class: 'lq-condcard__ref' }, [Dom.icon('circle-info'), h('span', { text: '条件がすべて固定値のため、② は不要です' })]));
+      }
+      Dom.append(card, [Dom.icon('file-arrow-up', 'lq-condcard__icon'), h('div', { class: 'lq-condcard__body' }, lines)]);
+    }
+
+    /** ② をブラウザに保存しているか（しなかったなら理由） */
+    _storeNote(p) {
+      if (p.isSample) return h('div', { class: 'lq-condcard__store' }, [Dom.icon('flask'), h('span', { text: 'サンプルのため保存しません（複製すると自分の抽出条件として保存）' })]);
+      const st = this.app.store.statusOf(p.id);
+      if (!st) return null;
+      if (st.stored) return h('div', { class: 'lq-condcard__store is-ok' }, [Dom.icon('floppy-disk'), h('span', { text: 'ブラウザに保存済み（次回もそのまま使えます）' })]);
+      return h('div', { class: 'lq-condcard__store is-warn' }, [Dom.icon('triangle-exclamation'), h('span', { text: LQ.ProfileStore.reasonText(st.reason) })]);
     }
 
     _updateRow(row, c, v, colsChanged) {
@@ -317,7 +450,7 @@
       const targets = names.slice(0, Math.max(0, room));
       this.suggestBox.appendChild(UI.note('tip',
         h('span', {}, ['① と ② に同じ名前の列があります：', h('strong', { text: names.slice(0, SUGGEST_LIMIT).join('・') + (names.length > SUGGEST_LIMIT ? ' ほか' : '') })]),
-        h('button', { class: 'lq-btn lq-btn--sm', type: 'button', disabled: !targets.length, onclick: () => this.app.addSameNameConditions(targets) },
+        h('button', { class: 'lq-btn lq-btn--sm', type: 'button', disabled: !targets.length, onclick: () => this.app.profiles.addSameNameConditions(targets) },
           [Dom.icon('wand-magic-sparkles'), '「完全一致」の条件として追加（' + targets.length + ' 件）'])));
     }
 
@@ -337,7 +470,7 @@
       this.hintBox.appendChild(UI.note('tip',
         h('span', {}, [h('strong', { text: '「含まない」などの否定の条件だけで、② に複数の行があります。' }),
           '② の行ごとに判定するため、他の行の語を含む行も一致します。「どの語も含まない行」を出すには、比較方法を「含む」にして、出力する行を「一致しなかった行」にします。']),
-        h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => this.app.convertToExclusion() }, [Dom.icon('wand-magic-sparkles'), 'この設定に切り替える'])));
+        h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => this.app.profiles.convertToExclusion() }, [Dom.icon('wand-magic-sparkles'), 'この設定に切り替える'])));
     }
 
     _renderExtraction(v, d) {
@@ -356,9 +489,19 @@
       this.matchDesc.textContent = mode ? mode.desc : '';
       Dom.clear(this.matchReason);
       if (reason) this.matchReason.appendChild(UI.status('info', reason));
+      const join = LQ.QueryEngine.JOIN_KINDS.find((j) => j.id === q.joinKind);
+      this.extraction.summary.textContent = (join ? join.label : '') + (reason ? '' : '・' + (mode ? mode.label : ''));
+      if (d.joinKind || d.matchMode) Flash.el(this.extraction.summary);
     }
 
     /* ---------------- フォーカス移動 ---------------- */
+
+    _focusName() {
+      this.head.scrollIntoView({ block: 'nearest' });
+      this.nameInput.focus();
+      this.nameInput.select();
+      Flash.el(this.head);
+    }
 
     _focusCondition(id, field) {
       const row = this.rows.get(id);
@@ -379,6 +522,7 @@
         Flash.el(this.exprInput, 'warn');
         return;
       }
+      if (issue.code === 'joinKind' || issue.code === 'matchMode') this.extraction.el.open = true;
       if (issue.condId) this._focusCondition(issue.condId, issue.field);
     }
   }

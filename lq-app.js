@@ -3,6 +3,7 @@
  * アプリ本体（組み立て役）：状態・エンジン・画面部品をつなぎ、利用者の操作（アクション）を実行する。
  *   ・主要動作（CTA）は cta() が「次にすることを 1 つだけ」決める
  *   ・消去や置き換えは確認ダイアログではなく「元に戻す」を通知に付ける
+ *   ・抽出条件の操作は ProfileActions（app.profiles）、出力は ExportActions（app.exporter）が受け持つ
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -11,27 +12,35 @@
   const Util = LQ.Util;
   const Dom = LQ.Dom;
   const Async = LQ.Async;
+  const fmt = Util.formatInt;
 
   const ROLE_LABEL = { source: '① 元データ', condition: '② 条件データ' };
   const FILE_ACCEPT = '.xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt';
+  const RE_GENERIC_SHEET = /^(sheet|シート)\s*\d+$/i;
 
   class App {
     constructor() {
       this.bus = new LQ.EventBus();
       this.state = new LQ.AppState(this.bus);
       this.engine = new LQ.QueryEngine();
+      this.batch = new LQ.BatchRunner(this.engine);
       this.toasts = new LQ.ToastHost(Dom.qs('#lqToasts'));
       this.popovers = new LQ.PopoverHost(Dom.qs('#lqPopovers'));
+      this.store = new LQ.ProfileStore(this.state, this.bus);
+      this.profiles = new LQ.ProfileActions(this);
+      this.exporter = new LQ.ExportActions(this);
       this._token = null;
-      this._validation = null;
-      this._validationKey = null;
+      this._validations = new Map();
       this._tabBeforePanel = null;
       this.ctx = { app: this, state: this.state, bus: this.bus, engine: this.engine, toasts: this.toasts, popovers: this.popovers };
     }
 
     start() {
       const ctx = this.ctx;
+      const restored = this.store.restore();
       this.dialogs = new LQ.Dialogs(ctx);
+      this.resultDialogs = new LQ.ResultDialogs(ctx);
+      this.profileDialogs = new LQ.ProfileDialogs(ctx);
       this.manual = new LQ.ManualModal(ctx);
       this.panels = {
         source: new LQ.DatasetPanel(ctx, 'source'),
@@ -42,27 +51,60 @@
       };
       this.main = new LQ.MainView(ctx);
       this.shell = new LQ.Shell(ctx, this.panels);
+      this.store.attach((notice) => this.toasts.show(notice));
       this.bus.on('panel', () => this._syncPanelView());
       LQ.ExcelLibrary.subscribe(() => this.bus.emit('change', { topic: 'library' }));
       LQ.ExcelLibrary.ensure().catch(() => {});
       this.bus.emit('change', { topic: 'start' });
+      if (restored) this._announceRestore(restored);
       if (this.manual.shouldAutoOpen()) this.manual.open();
+    }
+
+    _announceRestore(r) {
+      this.toasts.show({
+        type: r.missing ? 'info' : 'success',
+        title: '前回の抽出条件 ' + r.count + ' 件を復元しました',
+        message: r.missing
+          ? '② のデータを保存していない ' + r.missing + ' 件は、使う前に ② を読み込んでください（一覧に前回のファイル名を表示しています）。'
+          : 'ブラウザに自動保存されています。① 元データを読み込めば、そのまま抽出できます。'
+      });
     }
 
     /* =================================================================
      * 検証と主要動作（CTA）
      * ================================================================= */
 
-    validation() {
-      const key = this.state.querySignature();
-      if (key !== this._validationKey) {
-        this._validation = this.engine.validate(this.state.query, this.state.datasets.source, this.state.datasets.condition);
-        this._validationKey = key;
-      }
-      return this._validation;
+    /** 抽出条件 1 件の検証（① / ② の版と条件が同じなら前回の結果を使う） */
+    validationOf(profile) {
+      const src = this.state.datasets.source;
+      const cond = profile.condition;
+      const key = (src ? src.id + ':' + src.version : '') + '|' + (cond ? cond.id + ':' + cond.version : '') + '|' + LQ.QueryOps.signature(profile.query);
+      const hit = this._validations.get(profile.id);
+      if (hit && hit.key === key) return hit.value;
+      const value = this.engine.validate(profile.query, src, cond);
+      this._validations.set(profile.id, { key: key, value: value });
+      return value;
     }
 
-    /** 次にすることを 1 つだけ返す（ラベルに件数を含める） */
+    /** 選択中の抽出条件の検証（条件パネル用） */
+    validation() {
+      return this.validationOf(this.state.activeProfile);
+    }
+
+    /** 有効な抽出条件すべての検証（優先順位の順に最初の不備を返す） */
+    validationAll() {
+      const enabled = this.state.profiles.enabled();
+      let first = null;
+      let errorCount = 0;
+      enabled.forEach((p) => {
+        const v = this.validationOf(p);
+        errorCount += v.errors.length;
+        if (!first && !v.ok) first = { profile: p, issue: v.errors[0] };
+      });
+      return { ok: enabled.length > 0 && !first, enabledCount: enabled.length, first: first, errorCount: errorCount };
+    }
+
+    /** 次にすることを 1 つだけ返す（ラベルに件数を含める）。target は先に選択する抽出条件 */
     cta() {
       const s = this.state;
       const busy = s.busy;
@@ -72,48 +114,66 @@
       }
       if (busy) return { id: 'busy', label: busy.label, icon: 'spinner', spin: true, disabled: true, status: { kind: 'info', text: busy.detail || '処理中です' } };
       const src = s.datasets.source;
-      const cond = s.datasets.condition;
-      const q = s.query;
       if (!src) {
         return { id: 'loadSource', label: '① 元データを読み込む', icon: 'file-import',
           status: { kind: 'info', text: 'ドラッグ＆ドロップや Ctrl+V の貼り付けでも読み込めます' } };
       }
-      if (!q.conditions.length && !cond) {
-        return { id: 'loadCondition', label: '② 条件データを読み込む', icon: 'file-import',
-          status: { kind: 'info', text: '固定値だけの条件なら ② は不要です（左の「条件」）' } };
+      const all = this.validationAll();
+      if (!all.enabledCount) {
+        return { id: 'review', label: '抽出条件を有効にする', icon: 'toggle-on', status: { kind: 'warn', text: 'すべての抽出条件が無効です。一覧のスイッチで有効にしてください' } };
       }
-      if (!q.conditions.length) {
-        return { id: 'addCondition', label: '条件を追加する', icon: 'plus', status: { kind: 'info', text: '① のどの列を ② のどの列と比べるかを決めます' } };
-      }
-      const v = this.validation();
-      if (!v.ok) {
-        const e = v.errors[0];
-        if (e.code === 'noConditionData') return { id: 'loadCondition', label: '② 条件データを読み込む', icon: 'file-import', status: { kind: 'warn', text: e.message } };
-        const c = e.condId ? s.findCondition(e.condId) : null;
-        return { id: 'fixCondition', label: e.code === 'expr' ? '式を修正する' : '条件 ' + (c ? c.label : '') + ' を設定する',
-          icon: 'pen', issue: e, status: { kind: 'warn', text: e.message } };
-      }
-      const rows = Util.formatInt(src.rowCount);
+      if (!all.ok) return this._fixCta(all.first.profile, all.first.issue);
+      const rows = fmt(src.rowCount);
       if (!s.result || s.isStale()) {
         const rerun = !!s.result;
         return { id: 'run', label: rows + ' 行から' + (rerun ? '再抽出する' : '抽出する'), icon: rerun ? 'arrows-rotate' : 'play',
-          status: rerun ? { kind: 'warn', text: '条件が変わりました（結果は未反映）' }
-            : { kind: 'info', text: '条件 ' + LQ.Logic.labelsIn(v.ast).length + ' 件：' + LQ.Logic.toJapanese(v.ast) } };
+          status: rerun ? { kind: 'warn', text: '条件が変わりました（結果は未反映）' } : { kind: 'info', text: this._runSummary() } };
       }
       if (s.result.length === 0) return { id: 'review', label: '条件を見直す', icon: 'sliders', status: { kind: 'warn', text: '一致する行はありませんでした' } };
-      return { id: 'export', label: Util.formatInt(s.result.length) + ' 行を出力する', icon: 'file-export',
+      return { id: 'export', label: fmt(s.result.length) + ' 行を出力する', icon: 'file-export',
         status: { kind: 'ok', text: 'Excel・CSV・コピーで出力できます' } };
+    }
+
+    /** 不備のある抽出条件を直すための CTA（抽出条件が複数なら名前を添える） */
+    _fixCta(p, e) {
+      const multi = this.state.profiles.length > 1;
+      const of = multi ? '「' + p.name + '」の' : '';
+      const ref = p.conditionRef && p.conditionRef.fileName;
+      if (e.code === 'noConditionData' || (e.code === 'noCondition' && !p.condition)) {
+        return { id: 'loadCondition', target: p.id, label: (of ? of + ' ' : '') + '② 条件データを読み込む', icon: 'file-import',
+          status: { kind: e.code === 'noCondition' ? 'info' : 'warn',
+            text: ref ? '前回は「' + ref + '」を使っていました（同じファイルなら読み込み範囲も前回どおり）' : '固定値だけの条件なら ② は不要です（左の「抽出条件」）' } };
+      }
+      if (e.code === 'noCondition') {
+        return { id: 'addCondition', target: p.id, label: (multi ? '「' + p.name + '」に' : '') + '条件を追加する', icon: 'plus',
+          status: { kind: 'info', text: '① のどの列を ② のどの列と比べるかを決めます' } };
+      }
+      const c = e.condId ? p.query.conditions.find((k) => k.id === e.condId) : null;
+      return { id: 'fixCondition', target: p.id, label: e.code === 'expr' ? of + '式を修正する' : of + '条件 ' + (c ? c.label : '') + ' を設定する',
+        icon: 'pen', issue: e, status: { kind: 'warn', text: (multi ? '「' + p.name + '」：' : '') + e.message } };
+    }
+
+    _runSummary() {
+      const s = this.state;
+      const enabled = s.profiles.enabled();
+      if (s.profiles.length === 1) {
+        const v = this.validationOf(enabled[0]);
+        return '条件 ' + LQ.Logic.labelsIn(v.ast).length + ' 件：' + LQ.Logic.toJapanese(v.ast);
+      }
+      const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === s.combine.mode);
+      return '抽出条件 ' + enabled.length + ' 件（' + mode.short + '）：' + enabled.map((p) => p.name).join(' → ');
     }
 
     runCta(anchor) {
       const c = this.cta();
+      if (c.target) this.state.setActive(c.target);
       switch (c.id) {
         case 'cancel': this.cancel(); break;
         case 'loadSource': this.pickFile('source'); break;
         case 'loadCondition': this.pickFile('condition'); break;
         case 'addCondition':
           this.state.openPanel('query');
-          this.addCondition();
+          this.profiles.addCondition();
           break;
         case 'fixCondition':
           this.state.openPanel('query');
@@ -121,7 +181,7 @@
           break;
         case 'run': this.run(); break;
         case 'review': this.state.openPanel('query'); break;
-        case 'export': this.dialogs.openExport(anchor); break;
+        case 'export': this.resultDialogs.openExport(anchor); break;
         default: break;
       }
     }
@@ -145,21 +205,36 @@
      * 読み込み
      * ================================================================= */
 
+    /** role：'source'（①）/ 'condition'（選択中の抽出条件の ②・複数可）/ 'tables'（表ごとに抽出条件を作る）/ 'settings'（JSON） */
     pickFile(role) {
-      const input = Dom.h('input', { type: 'file', accept: role === 'settings' ? '.json' : FILE_ACCEPT });
-      input.addEventListener('change', () => {
-        const file = input.files && input.files[0];
-        if (!file) return;
-        if (role === 'settings') this.importSettingsFile(file);
-        else this.loadFile(role, file);
+      const isJson = role === 'settings';
+      Dom.qsa('input.lq-filepick').forEach((el) => el.remove());
+      const input = Dom.h('input', {
+        type: 'file', class: 'lq-filepick lq-offscreen', tabindex: '-1', 'aria-hidden': 'true',
+        accept: isJson ? '.json' : FILE_ACCEPT, multiple: role === 'condition' || role === 'tables'
       });
+      input.addEventListener('change', () => {
+        const files = Array.from(input.files || []);
+        input.remove();
+        if (!files.length) return;
+        if (isJson) this.profiles.importJsonFile(files[0]);
+        else if (role === 'source') this.loadFile('source', files[0]);
+        else this.loadTables(files, role === 'tables' ? 'new' : 'active');
+      });
+      input.addEventListener('cancel', () => input.remove());
+      /* 選択画面を開いている間に要素が片付けられて選択が届かないことがないよう、文書に置いてから開く */
+      document.body.appendChild(input);
       input.click();
     }
 
     async loadFile(role, file) {
+      if (role === 'condition') {
+        this.loadTables([file], 'active');
+        return;
+      }
       if (this._blockedByBusy()) return;
       if (Util.extName(file.name) === 'json') {
-        this.importSettingsFile(file);
+        this.profiles.importJsonFile(file);
         return;
       }
       this.state.setBusy({ kind: 'read', label: '読み込み中…', detail: file.name + '（' + Util.formatBytes(file.size) + '）を読み込んでいます' });
@@ -174,29 +249,83 @@
       }
     }
 
+    /**
+     * ② の表を読み込む。表が複数（複数ファイル・複数シート）なら選ぶ小窓を出す。
+     * @param {File[]} files
+     * @param {'active'|'new'} mode active：選択中の抽出条件の ② に / new：表ごとに抽出条件を作る
+     */
+    async loadTables(files, mode) {
+      if (this._blockedByBusy()) return;
+      const list = Array.from(files || []);
+      const json = list.find((f) => Util.extName(f.name) === 'json');
+      if (json) {
+        this.profiles.importJsonFile(json);
+        return;
+      }
+      if (!list.length) return;
+      this.state.setBusy({ kind: 'read', label: '読み込み中…', detail: list.map((f) => f.name).join('、') + ' を読み込んでいます' });
+      await Async.paint();
+      const tables = [];
+      const failed = [];
+      try {
+        for (let i = 0; i < list.length; i++) {
+          try {
+            const src = await LQ.SourceFile.fromFile(list[i]);
+            this._collectTables(src, list[i].name).forEach((t) => tables.push(t));
+          } catch (err) {
+            failed.push(list[i].name + '：' + this._friendlyError(err));
+          }
+        }
+      } finally {
+        this.state.setBusy(null);
+      }
+      failed.forEach((msg) => this.toasts.show({ type: 'error', title: '② 条件データを読み込めませんでした', message: msg }));
+      if (!tables.length) return;
+      if (tables.length === 1) {
+        if (mode === 'active') this._putDataset('condition', tables[0].dataset, tables[0].name);
+        else this.profiles.createFromTables(tables);
+        return;
+      }
+      this.profileDialogs.openTableChooser(tables, mode, (selected, intoActive) => {
+        if (intoActive) this._putDataset('condition', selected[0].dataset, selected[0].name);
+        else this.profiles.createFromTables(selected);
+      });
+    }
+
+    /** 読み込んだファイル → 表の一覧（Excel は中身のあるシートごと）。name は抽出条件の名前の候補 */
+    _collectTables(src, fileName) {
+      const base = Util.baseName(fileName);
+      const sheets = src.usedSheetNames();
+      if (sheets.length <= 1) return [{ dataset: new LQ.Dataset('condition', src), name: base, label: fileName }];
+      return sheets.map((sheet) => ({
+        dataset: new LQ.Dataset('condition', src.forSheet(sheet)),
+        name: RE_GENERIC_SHEET.test(sheet) ? base + ' ' + sheet : sheet,
+        label: fileName + ' › ' + sheet
+      }));
+    }
+
     loadText(role, text) {
       if (this._blockedByBusy()) return;
       const d = new Date();
       const name = '貼り付けデータ（' + Util.pad2(d.getHours()) + ':' + Util.pad2(d.getMinutes()) + '）';
       try {
-        this._putDataset(role, new LQ.Dataset(role, LQ.SourceFile.fromText(text, name)));
+        this._putDataset(role, new LQ.Dataset(role, LQ.SourceFile.fromText(text, name)), '貼り付けデータ');
       } catch (err) {
         this.toasts.show({ type: 'error', title: '貼り付けたデータを読み込めませんでした', message: err.message });
       }
     }
 
-    /** 画面のどこかで Ctrl+V されたとき（入力欄以外） */
     /**
      * 画面のどこかで Ctrl+V されたとき（入力欄以外）。
      * Excel でコピーすると「タブ区切りの文字」と「セル範囲の画像」が同時に入るため、
-     * 読み込めるファイル（Excel・CSV・条件設定）→ 表の文字 の順に採用し、画像は使わない。
+     * 読み込めるファイル（Excel・CSV・抽出条件の JSON）→ 表の文字 の順に採用し、画像は使わない。
      */
     handlePaste(text, files) {
       const panelRole = this.state.panel === 'source' || this.state.panel === 'condition' ? this.state.panel : null;
       const list = Array.from(files || []);
       const settings = list.find((f) => Util.extName(f.name) === 'json');
       if (settings) {
-        this.importSettingsFile(settings);
+        this.profiles.importJsonFile(settings);
         return;
       }
       const dataFile = list.find((f) => LQ.SourceFile.isDataFile(f));
@@ -220,22 +349,51 @@
       }
     }
 
-    _putDataset(role, dataset) {
-      const snap = this.state.snapshot();
-      const replaced = this.state.datasets[role];
-      this.state.setDataset(role, dataset);
-      this.state.setTab(role);
+    /**
+     * 読み込んだデータを ① または選択中の抽出条件の ② にする。
+     * ② は、前回と同じファイル名なら前回の読み込み範囲を適用し、「抽出条件 N」のままの名前は表の名前にする。
+     */
+    _putDataset(role, dataset, tableName) {
+      const s = this.state;
+      const snap = s.snapshot();
+      const target = role === 'condition' ? s.activeProfile : null;
+      const replaced = role === 'source' ? s.datasets.source : target.condition;
+      const ref = target && !target.condition ? target.conditionRef : null;
+      const sameFile = !!(ref && ref.fileName && ref.fileName === dataset.name);
+      if (sameFile) this._applyRef(dataset, ref);
+      s.setDataset(role, dataset);
+      let renamed = null;
+      if (target && LQ.Profile.isDefaultName(target.name)) {
+        const r = s.renameProfile(target.id, tableName || Util.baseName(dataset.name));
+        if (r && r.name !== snap.profiles.find((p) => p.id === target.id).name) renamed = r.name;
+      }
+      s.setTab(role);
       const src = dataset.source;
-      const parts = [Util.formatInt(dataset.rowCount) + ' 行 × ' + dataset.colCount + ' 列'];
+      const parts = [fmt(dataset.rowCount) + ' 行 × ' + dataset.colCount + ' 列'];
       if (src.encoding) parts.push('文字コード ' + LQ.EncodingDetector.label(src.encoding.value));
       if (src.hasSheets) parts.push('シート「' + src.sheetName + '」');
+      const notes = [];
+      if (sameFile) notes.push('前回と同じ読み込み範囲を適用しました');
+      if (renamed) notes.push('抽出条件の名前を「' + renamed + '」にしました');
+      if (!dataset.rowCount) notes.push('データ行がありません。読み込み範囲を確認してください');
+      const who = target && s.profiles.length > 1 ? '（抽出条件「' + target.name + '」）' : '';
       this.toasts.show({
         type: dataset.rowCount ? 'success' : 'warn',
-        title: ROLE_LABEL[role] + 'を読み込みました',
-        message: dataset.name + '：' + parts.join('・') + (dataset.rowCount ? '' : '。データ行がありません。読み込み範囲を確認してください'),
-        actions: replaced ? [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, '読み込む前の状態に戻しました') }] : []
+        title: ROLE_LABEL[role] + 'を読み込みました' + who,
+        message: dataset.name + '：' + parts.join('・') + (notes.length ? '。' + notes.join('。') : ''),
+        actions: replaced || renamed ? [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, '読み込む前の状態に戻しました') }] : []
       });
       this.bus.emit('dataset-loaded', { role: role });
+    }
+
+    /** 前回の ② と同じファイルなら、シート・文字コード・読み込み範囲を前回どおりにする */
+    _applyRef(dataset, ref) {
+      try {
+        if (dataset.source.applyChoices(ref.choices)) dataset.reload(ref.settings);
+        else if (ref.settings) dataset.applySettings(ref.settings);
+      } catch (err) {
+        /* 前回の設定が合わないときは自動判定のまま使う */
+      }
     }
 
     changeSourceChoice(role, kind, value) {
@@ -270,68 +428,17 @@
     }
 
     clearDataset(role) {
-      const ds = this.state.datasets[role];
+      const s = this.state;
+      const ds = s.datasets[role];
       if (!ds || this._blockedByBusy()) return;
-      const snap = this.state.snapshot();
-      this.state.setDataset(role, null);
+      const snap = s.snapshot();
+      const target = role === 'condition' ? s.activeProfile : null;
+      s.setDataset(role, null);
       this.toasts.show({
         type: 'info',
-        title: ROLE_LABEL[role] + 'を閉じました',
+        title: role === 'source' ? '① 元データを閉じました' : '② 条件データを外しました' + (target && s.profiles.length > 1 ? '（抽出条件「' + target.name + '」）' : ''),
         message: ds.name,
         actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, ROLE_LABEL[role] + 'を元に戻しました') }]
-      });
-    }
-
-    /* =================================================================
-     * 条件
-     * ================================================================= */
-
-    addCondition(init) {
-      if (!this.state.canAddCondition()) {
-        this.toasts.show({ type: 'warn', title: '条件は最大 ' + LQ.AppState.MAX_CONDITIONS + ' 件です', message: '不要な条件を削除してから追加してください。' });
-        return null;
-      }
-      const base = init || { right: { type: this.state.datasets.condition ? 'column' : 'value' } };
-      const c = this.state.addCondition(base);
-      this.bus.emit('focus-condition', { id: c.id, field: base.left ? 'right' : 'left' });
-      return c;
-    }
-
-    /** ① と ② で同じ名前の列を「完全一致」の条件としてまとめて追加 */
-    addSameNameConditions(names) {
-      const added = [];
-      names.forEach((name) => {
-        if (!this.state.canAddCondition()) return;
-        added.push(this.state.addCondition({ left: name, op: 'eq', right: { type: 'column', col: name } }).label);
-      });
-      if (added.length) this.toasts.show({ type: 'success', title: '条件 ' + added.join('・') + ' を追加しました', message: '同じ名前の列を「完全一致」で対応付けました。' });
-    }
-
-    removeCondition(id) {
-      const snap = this.state.snapshot();
-      const removed = this.state.removeCondition(id);
-      if (!removed) return;
-      this.toasts.show({
-        type: 'info',
-        title: '条件 ' + removed.label + ' を削除しました',
-        message: LQ.QueryEngine.describeCondition(removed),
-        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, '条件 ' + removed.label + ' を元に戻しました') }]
-      });
-    }
-
-    /** 否定の条件だけのとき：「含む／一致」＋「一致しなかった行」に切り替える（NG リストの使い方） */
-    convertToExclusion() {
-      const snap = this.state.snapshot();
-      this.state.query.conditions.forEach((c) => {
-        const op = LQ.Operators.get(c.op);
-        if (op && op.negative && op.positive) this.state.updateCondition(c.id, { op: op.positive });
-      });
-      this.state.setJoinKind('anti');
-      this.toasts.show({
-        type: 'success',
-        title: '除外リストの設定に切り替えました',
-        message: '比較方法を「含む／完全一致」にし、出力する行を「一致しなかった行」にしました。',
-        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, '切り替える前に戻しました') }]
       });
     }
 
@@ -341,16 +448,20 @@
 
     async run() {
       const s = this.state;
-      if (s.busy || !this.validation().ok) return;
+      if (s.busy || !this.validationAll().ok) return;
       const token = new LQ.CancelToken();
       this._token = token;
       const signature = s.querySignature();
-      const ctx = { source: s.datasets.source, condition: s.datasets.condition, query: Util.clone(s.query), rules: Util.clone(s.rules) };
+      const profiles = [];
+      s.profiles.items.forEach((p, i) => {
+        if (p.enabled) profiles.push({ id: p.id, name: p.name, priority: i + 1, query: Util.clone(p.query), condition: p.condition });
+      });
+      const ctx = { source: s.datasets.source, rules: Util.clone(s.rules), combine: s.effectiveCombine(), profiles: profiles };
       s.setBusy({ kind: 'run', label: '準備中', ratio: 0 });
       await Async.paint();
       let last = 0;
       try {
-        const result = await this.engine.run(ctx, {
+        const result = await this.batch.run(ctx, {
           token: token,
           onProgress: (p) => {
             const now = performance.now();
@@ -363,7 +474,11 @@
           this.toasts.show({ type: 'info', title: '抽出を中止しました', message: s.result ? '表示中の結果は前回のものです。' : '' });
           return;
         }
-        if (s.datasets.source !== ctx.source || s.datasets.condition !== ctx.condition) {
+        const changed = s.datasets.source !== ctx.source || profiles.some((p) => {
+          const cur = s.profiles.find(p.id);
+          return !!cur && cur.condition !== p.condition;
+        });
+        if (changed) {
           this.toasts.show({ type: 'warn', title: '抽出中にデータが変わったため、結果を破棄しました', message: 'もう一度抽出してください。' });
           return;
         }
@@ -384,226 +499,85 @@
 
     _announce(result) {
       const st = result.stats;
-      const pct = Util.formatPercent(st.matchedSources / Math.max(1, st.sourceRows));
-      const title = st.joinKind === 'anti'
-        ? Util.formatInt(st.outputRows) + ' 行が一致しませんでした（除外後）'
-        : Util.formatInt(st.matchedSources) + ' 行が一致しました（' + pct + '）';
-      this.toasts.show({ type: st.outputRows ? 'success' : 'warn', title: title, message: '出力 ' + Util.formatInt(st.outputRows) + ' 行・処理時間 ' + Util.formatSeconds(st.elapsedMs) });
+      const parts = result.parts;
+      const time = '処理時間 ' + Util.formatSeconds(st.elapsedMs);
+      if (parts.length === 1 && !st.includeUnmatched) {
+        const ps = parts[0].stats;
+        const pct = Util.formatPercent(ps.matchedSources / Math.max(1, ps.sourceRows));
+        const title = ps.joinKind === 'anti'
+          ? fmt(ps.outputRows) + ' 行が一致しませんでした（除外後）'
+          : fmt(ps.matchedSources) + ' 行が一致しました（' + pct + '）';
+        this.toasts.show({ type: st.outputRows ? 'success' : 'warn', title: title, message: '出力 ' + fmt(st.outputRows) + ' 行・' + time });
+      } else {
+        const pct = Util.formatPercent(st.matchedSources / Math.max(1, st.sourceRows));
+        const detail = parts.map((p) => p.priority + ' 位「' + p.name + '」' + fmt(p.rows) + ' 行').join('・') +
+          (st.includeUnmatched ? '・該当なし ' + fmt(st.unmatchedRows) + ' 行' : '');
+        this.toasts.show({ type: st.outputRows ? 'success' : 'warn', title: fmt(st.matchedSources) + ' 行が抽出条件に該当しました（' + pct + '）', message: detail + '。' + time });
+      }
       const notes = [];
       if (st.truncated) notes.push('組み合わせが 1,000,000 行に達したため、途中で打ち切りました。');
-      st.perCondition.forEach((p) => {
-        if (p.incomparable) notes.push('条件 ' + p.label + '：数値と文字など比較できない組み合わせが ' + Util.formatInt(p.incomparable) + ' 件あり、不一致として扱いました。');
+      parts.forEach((part) => {
+        part.stats.perCondition.forEach((p) => {
+          if (p.incomparable) notes.push((parts.length > 1 ? '「' + part.name + '」' : '') + '条件 ' + p.label + '：数値と文字など比較できない組み合わせが ' + fmt(p.incomparable) + ' 件あり、不一致として扱いました。');
+        });
       });
       if (notes.length) this.toasts.show({ type: 'warn', title: '確認してください', message: notes.join('\n') });
     }
 
-    /** 結果の i 行目（表示順）の判定根拠 */
+    /** 結果の i 行目（表示順）の判定根拠。振り分け・独立のときは、ほかに該当した抽出条件も返す */
     explainRow(i) {
       const view = this.main.resultView();
       if (!view) return null;
+      const s = this.state;
       const pair = view.pairAt(i);
-      const s = this.state;
-      const explanation = this.engine.explain({ source: s.datasets.source, condition: s.datasets.condition, query: s.query, rules: s.rules }, pair.src, pair.cond);
-      return { pair: pair, explanation: explanation, stale: s.isStale() };
+      const part = pair.prof >= 0 ? view.parts[pair.prof] : null;
+      const profile = part ? s.profiles.find(part.id) : null;
+      let explanation = null;
+      if (part && profile) {
+        explanation = this.engine.explain({ source: s.datasets.source, condition: part.condition || profile.condition, query: profile.query, rules: s.rules }, pair.src, pair.cond);
+      }
+      const others = [];
+      view.parts.forEach((q, j) => {
+        if (j !== pair.prof && s.result.members[j][pair.src]) others.push({ name: view.partName(j), priority: q.priority });
+      });
+      return {
+        pair: pair,
+        part: part,
+        partName: part ? view.partName(pair.prof) : null,
+        multi: view.multi,
+        explanation: explanation,
+        missing: !!part && !profile,
+        stale: s.isStale(),
+        mode: s.result.stats.mode,
+        others: others
+      };
     }
 
     /* =================================================================
-     * 出力
+     * 消去・取り消し
      * ================================================================= */
 
-    exportTable() {
-      const view = this.main.resultView();
-      if (!view) return null;
-      const defs = view.resolveColumns(this.state.output.columns).filter((d) => d.available);
-      return defs.length ? { view: view, defs: defs, table: view.toTable(defs) } : null;
-    }
-
-    async exportResult(formatId, options) {
-      const s = this.state;
-      const prepared = this.exportTable();
-      if (!prepared) {
-        this.toasts.show({ type: 'warn', title: '出力できる列がありません', message: '出力列パネルで列を選んでください。' });
+    /** ①・抽出条件（ブラウザの保存分を含む）・結果を消す。自分の抽出条件があるときは確認してから */
+    clearAll(anchor) {
+      if (this._blockedByBusy()) return;
+      const own = this.state.userProfiles().filter((p) => !p.isBlank()).length;
+      if (own) {
+        this.profileDialogs.openClearConfirm(anchor, own, () => this._clearAllNow());
         return;
       }
-      const format = LQ.Exporters.get(formatId);
-      s.setBusy({ kind: 'export', label: '出力中…', detail: format.label + 'を作成しています' });
-      await Async.paint();
-      try {
-        const out = await LQ.Exporters.build(formatId, prepared.table, { metaLines: this._metaLines(prepared), protect: !!options.protect });
-        const fileName = Util.sanitizeFileName(options.fileName) + '.' + format.ext;
-        LQ.Exporters.download(out.blob, fileName);
-        LQ.Prefs.set('exportFormat', formatId);
-        this.toasts.show({ type: 'success', title: '出力しました', message: fileName + '（' + Util.formatInt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列・' + Util.formatBytes(out.blob.size) + '）' });
-        out.warnings.forEach((w) => this.toasts.show({ type: 'warn', title: '文字の置き換えがあります', message: w }));
-      } catch (err) {
-        this.toasts.show({ type: 'error', title: '出力できませんでした', message: err.message });
-      } finally {
-        s.setBusy(null);
-      }
+      this._clearAllNow();
     }
 
-    async copyResult() {
-      const prepared = this.exportTable();
-      if (!prepared) return;
-      const text = LQ.Exporters.toClipboardText(prepared.table);
-      const ok = await LQ.Exporters.copyText(text);
-      if (ok) {
-        this.toasts.show({ type: 'success', title: 'クリップボードにコピーしました', message: Util.formatInt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列（見出し付き）。Excel に貼り付けられます。' });
-      } else {
-        this.toasts.show({ type: 'error', title: 'コピーできませんでした', message: 'ブラウザがクリップボードへの書き込みを許可していません。Excel 形式で出力してください。' });
-      }
-    }
-
-    defaultFileName() {
-      const src = this.state.datasets.source;
-      return Util.sanitizeFileName((src ? Util.baseName(src.name) : 'LightQuery') + '_抽出結果_' + Util.timestamp());
-    }
-
-    _describeDataset(ds) {
-      const src = ds.source;
-      const parts = [src.kindLabel];
-      if (src.hasSheets) parts.push('シート「' + src.sheetName + '」');
-      if (src.encoding) parts.push(LQ.EncodingDetector.label(src.encoding.value));
-      parts.push(ds.settings.hasHeader ? 'ヘッダー ' + ds.settings.headerRow + ' 行目' : 'ヘッダーなし');
-      parts.push('範囲 ' + ds.stats.rangeText);
-      parts.push(Util.formatInt(ds.rowCount) + ' 行');
-      return ds.name + '（' + parts.join('・') + '）';
-    }
-
-    _metaLines(prepared) {
+    _clearAllNow() {
       const s = this.state;
-      const res = prepared.view.result;
-      const st = res.stats;
-      const snap = res.snapshot;
-      const join = LQ.QueryEngine.JOIN_KINDS.find((j) => j.id === st.joinKind);
-      const match = LQ.QueryEngine.MATCH_MODES.find((m) => m.id === st.matchMode);
-      const lines = [['項目', '内容'], ['出力日時', Util.dateTimeText(new Date())], ['① 元データ', this._describeDataset(s.datasets.source)]];
-      if (st.needsCondition && s.datasets.condition) lines.push(['② 条件データ', this._describeDataset(s.datasets.condition)]);
-      snap.conditions.forEach((text, i) => lines.push([i === 0 ? '条件' : '', text]));
-      lines.push(['組み合わせ', snap.exprJa]);
-      lines.push(['出力する行', join.label + '（' + join.note + '）']);
-      if (st.needsCondition && st.joinKind !== 'anti') lines.push(['複数一致したとき', match.label]);
-      lines.push(['照合ルール', snap.rules]);
-      lines.push(['結果', '① ' + Util.formatInt(st.sourceRows) + ' 行中 ' + Util.formatInt(st.matchedSources) + ' 行が一致・出力 ' + Util.formatInt(st.outputRows) + ' 行']);
-      if (s.view.sort) lines.push(['並び順', LQ.ResultView.nameOf(s.view.sort.key) + '（' + (s.view.sort.dir === 'desc' ? '降順' : '昇順') + '）']);
-      lines.push(['出力した列', prepared.defs.map((d) => d.name).join('、')]);
-      if (s.isStale()) lines.push(['注意', '出力時点の画面の条件は、この結果を作った条件から変更されています']);
-      lines.push(['作成', 'LightQuery（簡易クエリ）']);
-      return lines;
-    }
-
-    /* =================================================================
-     * 条件設定の保存・読み込み
-     * ================================================================= */
-
-    saveSettings() {
-      if (!this.state.query.conditions.length) {
-        this.toasts.show({ type: 'warn', title: '保存する条件がありません', message: '条件を作成してから保存してください。' });
-        return;
-      }
-      const json = JSON.stringify(this.state.exportSettings(), null, 2);
-      const name = 'LightQuery_条件_' + Util.timestamp() + '.json';
-      LQ.Exporters.download(new Blob([json], { type: 'application/json' }), name);
-      this.toasts.show({ type: 'success', title: '条件設定を保存しました', message: name + '（データそのものは含みません）' });
-    }
-
-    async importSettingsFile(file) {
-      if (this._blockedByBusy()) return;
-      let obj;
-      try {
-        obj = JSON.parse(await file.text());
-      } catch (err) {
-        this.toasts.show({ type: 'error', title: '条件設定を読み込めませんでした', message: file.name + ' は JSON 形式ではありません。' });
-        return;
-      }
-      const snap = this.state.snapshot();
-      try {
-        const r = this.state.importSettings(obj);
-        this.state.openPanel('query');
-        const read = r.appliedRead.map((role) => ROLE_LABEL[role]).join('・');
-        this.toasts.show({
-          type: 'success',
-          title: '条件設定を読み込みました',
-          message: '条件 ' + r.conditions + ' 件' + (read ? '。' + read + 'の読み込み範囲も適用しました' : ''),
-          actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, '読み込む前の条件に戻しました') }]
-        });
-      } catch (err) {
-        this.state.restore(snap);
-        this.toasts.show({ type: 'error', title: '条件設定を読み込めませんでした', message: err.message });
-      }
-    }
-
-    /* =================================================================
-     * サンプル・消去・取り消し
-     * ================================================================= */
-
-    async loadSample(id) {
-      const s = this.state;
-      if (this._blockedByBusy()) return;
       const snap = s.snapshot();
-      s.setBusy({ kind: 'read', label: '準備中…', detail: 'サンプルデータを作成しています' });
-      await Async.paint();
-      let built = null;
-      try {
-        built = LQ.Samples.build(id);
-        const make = (role, spec) => new LQ.Dataset(role, LQ.SourceFile.fromGrid(spec.grid, spec.name, 'sample'), { isSample: true, settings: spec.settings || null });
-        s.setDataset('source', make('source', built.source));
-        s.setDataset('condition', make('condition', built.condition));
-        s.replaceQuery(built.query, 'sample');
-        s.applyOutputPreset(built.output);
-        s.setTab('result');
-      } catch (err) {
-        built = null;
-        this.toasts.show({ type: 'error', title: 'サンプルを読み込めませんでした', message: err.message });
-      } finally {
-        s.setBusy(null);
-      }
-      if (!built) return;
-      this.toasts.show({
-        type: 'success',
-        title: 'サンプル「' + built.title + '」を読み込みました',
-        message: '右上の「' + this.cta().label + '」で結果を確認できます。条件は左の「条件」で確認・変更できます。',
-        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, 'サンプルを読み込む前に戻しました') }]
-      });
-    }
-
-    clearSamples() {
-      const s = this.state;
-      if (!s.hasSample() || this._blockedByBusy()) return;
-      const snap = s.snapshot();
-      const removed = [];
-      ['source', 'condition'].forEach((role) => {
-        const ds = s.datasets[role];
-        if (ds && ds.isSample) {
-          s.setDataset(role, null);
-          removed.push(ROLE_LABEL[role]);
-        }
-      });
-      if (s.query.origin === 'sample') {
-        s.resetQuery();
-        removed.push('サンプルの条件');
-      }
-      this.toasts.show({
-        type: 'info',
-        title: 'サンプルデータを消去しました',
-        message: removed.join('・') + 'を消去しました。自分で読み込んだデータは残っています。',
-        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, 'サンプルデータを元に戻しました') }]
-      });
-    }
-
-    clearAll() {
-      const s = this.state;
-      if (this._blockedByBusy()) return;
-      const snap = s.snapshot();
-      s.setDataset('source', null);
-      s.setDataset('condition', null);
-      s.resetQuery();
+      s.resetAll();
       s.setTab('result');
       s.closePanel();
       this.toasts.show({
         type: 'info',
         title: 'すべてクリアしました',
-        message: '読み込んだデータ・条件・結果を消去しました。',
+        message: '① 元データ・抽出条件（ブラウザに保存した分も）・結果を消去しました。',
         actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, 'クリアする前に戻しました') }]
       });
     }

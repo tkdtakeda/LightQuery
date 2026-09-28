@@ -86,6 +86,18 @@
       this.derive();
     }
 
+    /**
+     * 同じ表を別の抽出条件で使うための複製。読み込み範囲・シートの変更が互いに影響しないよう、ファイル側も複製する。
+     * @param {{isSample?:boolean}} options
+     */
+    clone(options) {
+      const o = options || {};
+      return new Dataset(this.role, this.source.clone(), {
+        isSample: o.isSample === undefined ? this.isSample : !!o.isSample,
+        settings: Util.clone(this.settings)
+      });
+    }
+
     /** 自動判定の設定に戻す */
     resetToAuto() {
       this.settings = Dataset.normalizeSettings(this.auto.settings);

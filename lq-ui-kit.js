@@ -277,6 +277,37 @@
       ]);
     },
 
+    /**
+     * 開閉できる区画（使う頻度の低い設定を畳んでおく）。見出しの横に現在の設定の要約を出す。
+     * @param {string} title
+     * @param {Node[]} children
+     * @param {{open?:boolean, onToggle?:Function}} options
+     * @returns {{el:HTMLElement, summary:HTMLElement}}
+     */
+    collapsible(title, children, options) {
+      const o = options || {};
+      const summary = h('span', { class: 'lq-collapse__summary' });
+      const el = h('details', { class: 'lq-section lq-collapse' }, [
+        h('summary', { class: 'lq-section__title lq-collapse__head' }, [Dom.icon('chevron-right', 'lq-collapse__chevron'), title, summary]),
+        h('div', { class: 'lq-stack' }, children)
+      ]);
+      el.open = !!o.open;
+      if (o.onToggle) el.addEventListener('toggle', () => o.onToggle(el.open));
+      return { el: el, summary: summary };
+    },
+
+    /** メニューの項目（押すと小窓を閉じてから実行。無効のときは理由を小さく表示する） */
+    menuItem(pop, icon, label, sub, onClick, opts) {
+      const o = opts || {};
+      return h('button', {
+        class: 'lq-menu__item' + (o.danger ? ' is-danger' : ''), type: 'button', disabled: !!o.disabled, title: o.title || null,
+        onclick: () => {
+          pop.close();
+          onClick();
+        }
+      }, [Dom.icon(icon), h('span', { class: 'lq-menu__text' }, [h('span', { text: label }), sub ? h('span', { class: 'lq-menu__sub', text: sub }) : null])]);
+    },
+
     switchToggle(text, checked, onChange) {
       const input = h('input', { type: 'checkbox', checked: checked });
       input.addEventListener('change', () => onChange(input.checked));
