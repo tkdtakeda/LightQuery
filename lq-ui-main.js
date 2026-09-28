@@ -1,7 +1,9 @@
 /* =========================================================================
  * LightQuery - lq-ui-main.js
  * メイン領域：タブ（抽出結果 / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
- *   空の状態（はじめに・次の一歩）。② のタブは選択中の抽出条件の ② を表示する。
+ *   空の状態（はじめに・次の一歩）。② のタブは選択中の抽出条件の ② を表示し、
+ *   上の切替ボタン（CondTableBar）で表示する条件データ（＝選択中の抽出条件）を切り替える。
+ *   注意帯は描き直すたびに作るため、ボタンのフォーカスは data-focus-key で戻す。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -34,6 +36,7 @@
       this.info = h('div', { class: 'lq-infobar' });
       this.gridwrap = h('div', { class: 'lq-gridwrap' });
       this.pager = h('div', { class: 'lq-pager' });
+      this.condBar = new LQ.CondTableBar(ctx);
       Dom.append(this.root, [h('div', { class: 'lq-tabbar' }, [this.tabs, this.tools]), this.info, this.gridwrap, this.pager]);
       this.grid = new LQ.GridView(ctx, this.gridwrap, {
         onSort: (key) => this._cycleSort(key),
@@ -103,6 +106,7 @@
 
     render() {
       const tab = this.state.view.tab;
+      const focusKey = this._focusKey();
       this._renderTabs();
       Dom.clear(this.info);
       Dom.clear(this.tools);
@@ -110,6 +114,18 @@
       this.gridwrap.classList.remove('is-stale');
       if (tab === 'result') this._renderResult();
       else this._renderDataset(tab);
+      if (focusKey) this._restoreFocus(focusKey);
+    }
+
+    /** 注意帯の中でフォーカスしているボタンの目印（描き直したあとに戻す） */
+    _focusKey() {
+      const el = document.activeElement;
+      return el && this.info.contains(el) && el.dataset ? el.dataset.focusKey || null : null;
+    }
+
+    _restoreFocus(key) {
+      const el = this.info.querySelector('[data-focus-key="' + CSS.escape(key) + '"]');
+      if (el) el.focus();
     }
 
     _renderTabs() {
@@ -125,23 +141,28 @@
         let lead;
         let label = t.label;
         let count = t.count;
-        let sub = null;
+        let title = null;
         if (t.role) {
           const r = ROLE_TEXT[t.role];
           const ds = s.datasets[t.role];
           lead = UI.badge(r.badge[0], r.badge[1]);
           label = r.label;
           count = ds ? Util.formatInt(ds.rowCount) + ' 行' : '未読み込み';
-          if (t.role === 'condition' && s.profiles.length > 1) sub = s.activeProfile.name;
+          /* 条件データが複数なら件数を出す（どれを表示するかはタブの中の切替ボタンで選ぶ） */
+          const tables = t.role === 'condition' ? LQ.CondTableBar.count(s) : 0;
+          if (tables > 1) {
+            count = tables + ' 件';
+            title = '条件データ ' + tables + ' 件（表示中：' + s.activeProfile.name + '）';
+          }
         } else {
           lead = Dom.icon(t.icon);
         }
         this.tabs.appendChild(h('button', {
           class: 'lq-tab' + (s.view.tab === t.id ? ' is-active' : ''), type: 'button', role: 'tab', dataset: { tab: t.id },
           'aria-selected': s.view.tab === t.id ? 'true' : 'false',
-          title: sub ? '選択中の抽出条件「' + sub + '」の ② を表示' : null,
+          title: title,
           onclick: () => s.setTab(t.id)
-        }, [lead, h('span', { text: label }), sub ? h('span', { class: 'lq-tab__sub', text: sub }) : null, h('span', { class: 'lq-tab__count', text: count }),
+        }, [lead, h('span', { text: label }), h('span', { class: 'lq-tab__count', text: count }),
           t.stale ? h('span', { class: 'lq-tab__stale', title: '条件が変更され、結果に未反映です' }, [Dom.icon('triangle-exclamation'), ' 未反映']) : null]));
       });
     }
@@ -270,7 +291,7 @@
         const active = view.filter === value;
         return h('button', {
           class: 'lq-fchip' + (active ? ' is-active' : '') + (value === -1 ? ' lq-fchip--none' : ''), type: 'button', title: title,
-          'aria-pressed': active ? 'true' : 'false',
+          'aria-pressed': active ? 'true' : 'false', dataset: { focusKey: 'filter:' + value },
           onclick: () => s.setFilter(value === null ? null : (value < 0 ? LQ.AppState.UNMATCHED_FILTER : view.parts[value].id))
         }, [rank ? h('span', { class: 'lq-fchip__rank', text: rank }) : null, h('span', { class: 'lq-fchip__label', text: label }),
           h('span', { class: 'lq-fchip__count lq-num', text: fmt(count) })]);
@@ -406,6 +427,7 @@
       const s = this.state;
       const ds = s.datasets[role];
       const r = ROLE_TEXT[role];
+      if (role === 'condition') this.info.appendChild(this.condBar.render());
       if (!ds) {
         const who = role === 'condition' && s.profiles.length > 1 ? '「' + s.activeProfile.name + '」の ' : '';
         const drop = h('div', { class: 'lq-drop' + (role === 'condition' ? ' lq-drop--cond' : ''), role: 'button', tabindex: '0', onclick: () => this.app.pickFile(role) },

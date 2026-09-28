@@ -4,6 +4,7 @@
  *   ファイル（選択・シート・文字コード・区切り文字と判定の根拠）、読み込み範囲（ヘッダー・開始行・開始列・終了行）、
  *   読み込み結果（行数・列数・列名）。入力欄は作り直さず値だけ更新し、フォーカスを保つ。
  *   ② は選択中の抽出条件のもの（抽出条件を切り替えると、このパネルもその ② に切り替わる）。
+ *   ② のパネルは上部に条件データの一覧（CondTableList）を置き、ここでも切り替え・追加できる。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -28,7 +29,9 @@
       this.isSource = role === 'source';
       this.icon = this.isSource ? 'table' : 'list-check';
       this.size = 'md';
-      this.el = h('div');
+      this.body = h('div', { class: 'lq-dsbody' });
+      this.tables = this.isSource ? null : new LQ.CondTableList(ctx);
+      this.el = h('div', {}, this.tables ? [this.tables.el, this.body] : [this.body]);
       this.f = {};
       this._builtKey = undefined;
       ctx.bus.on('datasets', () => this.refresh());
@@ -63,15 +66,15 @@
     /* ---------------- 組み立て ---------------- */
 
     _build(ds) {
-      Dom.clear(this.el);
+      Dom.clear(this.body);
       this.f = {};
       if (!ds) {
-        this.el.appendChild(this._emptySection());
+        this.body.appendChild(this._emptySection());
         return;
       }
-      this.el.appendChild(this._fileSection(ds));
-      this.el.appendChild(this._rangeSection());
-      this.el.appendChild(this._resultSection());
+      this.body.appendChild(this._fileSection(ds));
+      this.body.appendChild(this._rangeSection());
+      this.body.appendChild(this._resultSection());
     }
 
     _emptySection() {
@@ -102,7 +105,7 @@
       }
       notes.push(UI.note('info', this.isSource
         ? '抽出される側のデータです。読み込むとヘッダー行・データ開始行・開始列を自動で判定し、このパネルで調整できます。'
-        : '② の 1 行が 1 セットの条件になります（例：地域＝東京 かつ 金額≧50,000）。空欄のセルは、その条件を判定しません。② は抽出条件ごとに持てるので、列の構成が違う表を抽出条件ごとに使えます。複数のファイル・シートを選ぶと、表ごとに抽出条件を作れます。'));
+        : '② の 1 行が 1 セットの条件になります（例：地域＝東京 かつ 金額≧50,000）。空欄のセルは、その条件を判定しません。条件データを増やすときは、上の一覧の「追加」を使います（列の構成が違う表を、優先順位を付けて使い分けられます）。'));
       return UI.section('ファイル', [drop].concat(notes));
     }
 

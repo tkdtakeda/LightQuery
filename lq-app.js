@@ -205,13 +205,17 @@
      * 読み込み
      * ================================================================= */
 
-    /** role：'source'（①）/ 'condition'（選択中の抽出条件の ②・複数可）/ 'tables'（表ごとに抽出条件を作る）/ 'settings'（JSON） */
+    /**
+     * role：'source'（①）/ 'condition'（選択中の抽出条件の ②・複数可）/ 'tables'（表ごとに抽出条件を作る）/
+     *       'append'（条件データを一覧の最後に追加する）/ 'settings'（JSON）
+     */
     pickFile(role) {
       const isJson = role === 'settings';
+      const TABLE_MODE = { condition: 'active', tables: 'new', append: 'append' };
       Dom.qsa('input.lq-filepick').forEach((el) => el.remove());
       const input = Dom.h('input', {
         type: 'file', class: 'lq-filepick lq-offscreen', tabindex: '-1', 'aria-hidden': 'true',
-        accept: isJson ? '.json' : FILE_ACCEPT, multiple: role === 'condition' || role === 'tables'
+        accept: isJson ? '.json' : FILE_ACCEPT, multiple: !!TABLE_MODE[role]
       });
       input.addEventListener('change', () => {
         const files = Array.from(input.files || []);
@@ -219,7 +223,7 @@
         if (!files.length) return;
         if (isJson) this.profiles.importJsonFile(files[0]);
         else if (role === 'source') this.loadFile('source', files[0]);
-        else this.loadTables(files, role === 'tables' ? 'new' : 'active');
+        else this.loadTables(files, TABLE_MODE[role]);
       });
       input.addEventListener('cancel', () => input.remove());
       /* 選択画面を開いている間に要素が片付けられて選択が届かないことがないよう、文書に置いてから開く */
@@ -252,7 +256,8 @@
     /**
      * ② の表を読み込む。表が複数（複数ファイル・複数シート）なら選ぶ小窓を出す。
      * @param {File[]} files
-     * @param {'active'|'new'} mode active：選択中の抽出条件の ② に / new：表ごとに抽出条件を作る
+     * @param {'active'|'new'|'append'} mode active：選択中の抽出条件の ② に / new：表ごとに抽出条件を作る（選択中の下へ）/
+     *        append：表ごとに抽出条件を作る（一覧の最後へ。② のタブ・パネルの「条件データを追加」）
      */
     async loadTables(files, mode) {
       if (this._blockedByBusy()) return;
@@ -281,14 +286,15 @@
       }
       failed.forEach((msg) => this.toasts.show({ type: 'error', title: '② 条件データを読み込めませんでした', message: msg }));
       if (!tables.length) return;
+      const opts = { append: mode === 'append' };
       if (tables.length === 1) {
         if (mode === 'active') this._putDataset('condition', tables[0].dataset, tables[0].name);
-        else this.profiles.createFromTables(tables);
+        else this.profiles.createFromTables(tables, opts);
         return;
       }
       this.profileDialogs.openTableChooser(tables, mode, (selected, intoActive) => {
         if (intoActive) this._putDataset('condition', selected[0].dataset, selected[0].name);
-        else this.profiles.createFromTables(selected);
+        else this.profiles.createFromTables(selected, opts);
       });
     }
 

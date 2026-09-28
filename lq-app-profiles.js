@@ -183,40 +183,68 @@
      * 表（ファイル・シート）から作る
      * ================================================================= */
 
-    /**
-     * 選んだ表ごとに抽出条件を作る。選択中が空の抽出条件なら 1 件目はそこに入れ、残りはその下に並べる。
-     * @param {Array<{dataset:LQ.Dataset, name:string}>} tables
-     */
-    createFromTables(tables) {
+    /** 条件データ（表）を選んで一覧の最後に加える（② のタブ・パネルから）。上限に達していればファイルを選ぶ前に知らせる */
+    addTables() {
       const s = this.state;
+      if (!s.activeProfile.isBlank() && !s.profiles.canAdd()) {
+        this._limit();
+        return;
+      }
+      this.app.pickFile('append');
+    }
+
+    /**
+     * 選んだ表ごとに抽出条件を作る。選択中が空の抽出条件なら 1 件目はそこに入れ、
+     * 残りは選択中の下（append のときは一覧の最後）に並べる。
+     * @param {Array<{dataset:LQ.Dataset, name:string}>} tables
+     * @param {{append?:boolean}} opts append：② のタブ・パネルの「条件データを追加」から（画面はそのまま、追加した表を表示する）
+     */
+    createFromTables(tables, opts) {
+      const s = this.state;
+      const append = !!(opts && opts.append);
       if (!tables.length) return;
       const snap = s.snapshot();
       const active = s.activeProfile;
       const rest = tables.slice();
-      const names = [];
-      let reused = false;
+      const made = [];
       if (active.isBlank()) {
         const t = rest.shift();
         s.setProfileCondition(active.id, t.dataset);
         s.renameProfile(active.id, t.name);
-        names.push(active.name);
-        reused = true;
+        made.push(active);
       }
       const created = rest.map((t) => {
         const p = new LQ.Profile({ name: t.name });
         p.setCondition(t.dataset);
         return p;
       });
-      const added = created.length ? s.insertProfiles(created, s.profiles.indexOf(active.id) + 1, !reused) : [];
-      added.forEach((p) => names.push(p.name));
+      const at = append ? s.profiles.length : s.profiles.indexOf(active.id) + 1;
+      const added = created.length ? s.insertProfiles(created, at, !made.length) : [];
+      added.forEach((p) => made.push(p));
       const skipped = created.length - added.length;
+      if (!made.length) {
+        this._limit();
+        return;
+      }
+      const list = made.map((p) => '「' + p.name + '」（' + s.profiles.rank(p.id) + ' 位）').join('・');
+      const limit = skipped ? '上限（' + LQ.Profile.MAX + ' 件）のため ' + skipped + ' 件は作れませんでした。' : '';
+      const undo = this._undo(snap, (append ? '条件データを追加する' : '表から作る') + '前の一覧に戻しました');
+      if (append) {
+        s.setTab('condition');
+        this.toasts.show({
+          type: 'success',
+          title: '条件データを ' + made.length + ' 件追加しました',
+          message: list + '。「条件を設定」で、① のどの列と比べるかを決めてください。' + limit,
+          actions: [{ label: '条件を設定', icon: 'filter', primary: true, onClick: () => s.openPanel('query') }].concat(undo)
+        });
+        return;
+      }
       s.openPanel('query');
       this.toasts.show({
         type: 'success',
-        title: '抽出条件を ' + names.length + ' 件用意しました',
-        message: names.map((n) => '「' + n + '」').join('・') + '。一覧で 1 件ずつ選び、① のどの列と比べるか（条件）を設定してください。' +
-          (skipped ? '上限（' + LQ.Profile.MAX + ' 件）のため ' + skipped + ' 件は作れませんでした。' : ''),
-        actions: this._undo(snap, '表から作る前の一覧に戻しました')
+        title: '抽出条件を ' + made.length + ' 件用意しました',
+        message: list + '。一覧で 1 件ずつ選び、① のどの列と比べるか（条件）を設定してください。' + limit,
+        actions: undo
       });
     }
 

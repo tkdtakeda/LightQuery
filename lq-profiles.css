@@ -434,9 +434,8 @@
   border-style: dashed;
 }
 
-/* ---------- 上部バー・タブ・出力列の補足 ---------- */
-.lq-chip__owner,
-.lq-tab__sub {
+/* ---------- 上部バー・出力列の補足 ---------- */
+.lq-chip__owner {
   flex-shrink: 0;
   max-width: var(--w-chip-owner-max);
   overflow: hidden;

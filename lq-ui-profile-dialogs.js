@@ -161,7 +161,7 @@
 
     /**
      * @param {Array<{dataset:LQ.Dataset, name:string, label:string}>} tables
-     * @param {'active'|'new'} mode
+     * @param {'active'|'new'|'append'} mode append：一覧の最後に加える（② のタブ・パネルの「条件データを追加」）
      * @param {Function} onConfirm (selectedTables, intoActive)
      */
     openTableChooser(tables, mode, onConfirm) {
@@ -185,10 +185,12 @@
       const refresh = () => {
         const n = selected().length;
         const intoActive = mode === 'active' && n === 1;
+        const append = mode === 'append';
         confirmBtn.disabled = n === 0;
-        confirmBtn.lastChild.textContent = intoActive ? '「' + active.name + '」の ② に読み込む' : '抽出条件を ' + n + ' 件作る';
+        confirmBtn.lastChild.textContent = intoActive ? '「' + active.name + '」の ② に読み込む' : (append ? '条件データを ' + n + ' 件追加する' : '抽出条件を ' + n + ' 件作る');
         if (intoActive) note.textContent = '選択中の抽出条件「' + active.name + '」の ② を、選んだ表に差し替えます（元に戻せます）。';
-        else note.textContent = (active.isBlank() ? '1 件目は空の抽出条件「' + active.name + '」に入れ、残りはその下に並べます。' : '選択中の抽出条件の下に並べます。') +
+        else note.textContent = (active.isBlank() ? '1 件目は空の抽出条件「' + active.name + '」に入れ、残りは' + (append ? '一覧の最後' : 'その下') + 'に並べます。'
+          : (append ? '一覧の最後（優先順位が最も低い位置）に並べます。' : '選択中の抽出条件の下に並べます。')) +
           '名前は表の名前（あとで変えられます）、優先順位は表の順です。列の構成は表ごとに違っていて構いません。';
       };
       items.forEach((it) => it.input.addEventListener('change', refresh));
