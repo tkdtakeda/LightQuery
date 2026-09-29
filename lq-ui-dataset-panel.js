@@ -3,6 +3,8 @@
  * ① 元データ / ② 条件データの読み込みパネル：
  *   ファイル（選択・シート・文字コード・区切り文字と判定の根拠）、読み込み範囲（ヘッダー・開始行・開始列・終了行）、
  *   読み込み結果（行数・列数・列名）。入力欄は作り直さず値だけ更新し、フォーカスを保つ。
+ *   ② は選択中の抽出条件のもの（抽出条件を切り替えると、このパネルもその ② に切り替わる）。
+ *   ② のパネルは上部に条件データの一覧（CondTableList）を置き、ここでも切り替え・追加できる。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -14,7 +16,7 @@
   const Flash = LQ.Flash;
   const h = Dom.h;
 
-  const KIND_ICON = { excel: 'file-excel', csv: 'file-csv', paste: 'paste', sample: 'flask' };
+  const KIND_ICON = { excel: 'file-excel', csv: 'file-csv', paste: 'paste', sample: 'flask', stored: 'floppy-disk' };
   const COLUMN_CHIP_LIMIT = 60;
   const FIELD_LABEL = { hasHeader: 'ヘッダー', headerRow: 'ヘッダー行', startRow: 'データ開始行', startCol: '開始列', endRow: '終了行' };
 
@@ -25,10 +27,11 @@
       this.app = ctx.app;
       this.role = role;
       this.isSource = role === 'source';
-      this.title = this.isSource ? '① 元データ' : '② 条件データ';
       this.icon = this.isSource ? 'table' : 'list-check';
       this.size = 'md';
-      this.el = h('div');
+      this.body = h('div', { class: 'lq-dsbody' });
+      this.tables = this.isSource ? null : new LQ.CondTableList(ctx);
+      this.el = h('div', {}, this.tables ? [this.tables.el, this.body] : [this.body]);
       this.f = {};
       this._builtKey = undefined;
       ctx.bus.on('datasets', () => this.refresh());
@@ -38,13 +41,21 @@
       this.refresh();
     }
 
+    /** パネルの見出し（② は抽出条件が複数なら、どの抽出条件の ② かを添える） */
+    get title() {
+      if (this.isSource) return '① 元データ';
+      const s = this.state;
+      return s.profiles.length > 1 ? '② 条件データ：' + s.activeProfile.name : '② 条件データ';
+    }
+
     onShow() {
       this.refresh();
     }
 
     refresh(force) {
       const ds = this.state.datasets[this.role];
-      const key = ds ? ds.id + ':' + ds.source.kind : null;
+      const owner = this.isSource ? '' : this.state.activeId + ':';
+      const key = ds ? ds.id + ':' + ds.source.kind : owner + 'none';
       if (force || key !== this._builtKey) {
         this._build(ds);
         this._builtKey = key;
@@ -55,19 +66,21 @@
     /* ---------------- 組み立て ---------------- */
 
     _build(ds) {
-      Dom.clear(this.el);
+      Dom.clear(this.body);
       this.f = {};
       if (!ds) {
-        this.el.appendChild(this._emptySection());
+        this.body.appendChild(this._emptySection());
         return;
       }
-      this.el.appendChild(this._fileSection(ds));
-      this.el.appendChild(this._rangeSection());
-      this.el.appendChild(this._resultSection());
+      this.body.appendChild(this._fileSection(ds));
+      this.body.appendChild(this._rangeSection());
+      this.body.appendChild(this._resultSection());
     }
 
     _emptySection() {
       const pick = () => this.app.pickFile(this.role);
+      const s = this.state;
+      const p = this.isSource ? null : s.activeProfile;
       const drop = h('div', {
         class: 'lq-drop lq-drop--compact' + (this.isSource ? '' : ' lq-drop--cond'), role: 'button', tabindex: '0', onclick: pick,
         onkeydown: (e) => {
@@ -78,16 +91,21 @@
         }
       }, [
         Dom.icon('file-arrow-up', 'lq-drop__icon'),
-        h('div', { class: 'lq-drop__title', text: 'ファイルを選択' }),
+        h('div', { class: 'lq-drop__title', text: p && s.profiles.length > 1 ? '「' + p.name + '」の ② を選択' : 'ファイルを選択' }),
         h('div', { class: 'lq-drop__sub', text: 'Excel（.xlsx .xlsm .xls .xlsb .ods）・CSV・TSV・TXT' }),
         h('div', { class: 'lq-drop__sub', text: 'ドラッグ＆ドロップ、または Excel でコピーした範囲を Ctrl+V でも読み込めます' })
       ]);
       const notes = [];
       const lib = LQ.ExcelLibrary;
       if (lib.failed) notes.push(UI.note('warn', lib.failureReason));
+      if (p && p.conditionRef && p.conditionRef.fileName) {
+        const ref = p.conditionRef;
+        notes.push(UI.note('tip', '前回は「' + ref.fileName + '」' + (ref.sheetName ? '（シート「' + ref.sheetName + '」）' : '') +
+          'を使っていました。同じファイルを選ぶと、シート・読み込み範囲も前回どおりにします。'));
+      }
       notes.push(UI.note('info', this.isSource
         ? '抽出される側のデータです。読み込むとヘッダー行・データ開始行・開始列を自動で判定し、このパネルで調整できます。'
-        : '② の 1 行が 1 セットの条件になります（例：地域＝東京 かつ 金額≧50,000）。空欄のセルは、その条件を判定しません。'));
+        : '② の 1 行が 1 セットの条件になります（例：地域＝東京 かつ 金額≧50,000）。空欄のセルは、その条件を判定しません。条件データを増やすときは、上の一覧の「追加」を使います（列の構成が違う表を、優先順位を付けて使い分けられます）。'));
       return UI.section('ファイル', [drop].concat(notes));
     }
 
@@ -106,6 +124,11 @@
         ])
       ]);
       const children = [card];
+      if (src.storedRef) {
+        const r = src.storedRef;
+        children.push(UI.note('info', 'ブラウザや JSON に保存した ② です（元：' + (r.kindLabel || '不明') + (r.sheetName ? '・シート「' + r.sheetName + '」' : '') +
+          '）。読み込み範囲はここで変えられます。シートや文字コードを変えるときは、元のファイルを「別のファイル」で読み込み直してください。'));
+      }
       if (src.hasSheets) {
         this.f.sheet = h('select', { class: 'lq-select' });
         this.f.sheet.addEventListener('change', () => {

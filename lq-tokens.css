@@ -197,6 +197,12 @@
   --w-empty-lead: 680px;
   --w-step-text: 210px;
   --w-progress: 160px;
+  --w-rank-input: 40px;
+  --w-switch-sm: 30px;
+  --h-switch-sm: 16px;
+  --w-fchip-max: 240px;
+  --w-chip-owner-max: 140px;
+  --h-tablepicks-max: 46dvh;
   --border-width: 1px;
   --border-width-strong: 2px;
   --focus-width: 3px;
@@ -241,6 +247,7 @@
   --w-switch: 40px;
   --opacity-stale: 0.55;
   --opacity-drag: 0.45;
+  --opacity-sub: 0.85;
 }
 
 /* 画面幅が狭い PC（1440px 以下）ではパネル幅を詰める */

@@ -1,6 +1,9 @@
 /* =========================================================================
  * LightQuery - lq-ui-main.js
- * メイン領域：タブ（抽出結果 / ① / ②）、要約と注意帯、表、ページ送り、空の状態（はじめに・次の一歩）
+ * メイン領域：タブ（抽出結果 / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
+ *   空の状態（はじめに・次の一歩）。② のタブは選択中の抽出条件の ② を表示し、
+ *   上の切替ボタン（CondTableBar）で表示する条件データ（＝選択中の抽出条件）を切り替える。
+ *   注意帯は描き直すたびに作るため、ボタンのフォーカスは data-focus-key で戻す。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -33,6 +36,7 @@
       this.info = h('div', { class: 'lq-infobar' });
       this.gridwrap = h('div', { class: 'lq-gridwrap' });
       this.pager = h('div', { class: 'lq-pager' });
+      this.condBar = new LQ.CondTableBar(ctx);
       Dom.append(this.root, [h('div', { class: 'lq-tabbar' }, [this.tabs, this.tools]), this.info, this.gridwrap, this.pager]);
       this.grid = new LQ.GridView(ctx, this.gridwrap, {
         onSort: (key) => this._cycleSort(key),
@@ -60,7 +64,7 @@
       });
     }
 
-    /** 現在の結果の見せ方（並べ替え・ルールを反映） */
+    /** 現在の結果の見せ方（絞り込み・並べ替え・ルールを反映）。抽出条件の名前は今の名前を表示する */
     resultView() {
       const s = this.state;
       if (!s.result) {
@@ -68,20 +72,41 @@
         return null;
       }
       if (!this._rv || this._rv.result !== s.result) {
-        this._rv = new LQ.ResultView(s.result, s.datasets.source, s.datasets.condition, s.rules);
+        this._rv = new LQ.ResultView(s.result, s.datasets.source, s.rules, (id) => {
+          const p = s.profiles.find(id);
+          return p ? p.name : null;
+        });
         this._rvKey = null;
       }
-      const key = JSON.stringify([s.view.sort, s.rules]);
+      const filter = this._filterIndex(this._rv);
+      const key = JSON.stringify([s.view.sort, s.rules, filter]);
       if (key !== this._rvKey) {
         this._rv.setRules(s.rules);
+        this._rv.setFilter(filter);
         if (!this._rv.setSort(s.view.sort)) s.view.sort = null;
-        this._rvKey = JSON.stringify([s.view.sort, s.rules]);
+        this._rvKey = JSON.stringify([s.view.sort, s.rules, filter]);
       }
       return this._rv;
     }
 
+    /** 絞り込みの指定（抽出条件の id）→ 結果の中の番号。結果にないものは解除する */
+    _filterIndex(view) {
+      const s = this.state;
+      const f = s.view.filter;
+      if (!f) return null;
+      let idx = null;
+      if (f === LQ.AppState.UNMATCHED_FILTER) idx = view.counts().unmatched ? -1 : null;
+      else {
+        const i = view.parts.findIndex((p) => p.id === f);
+        idx = i >= 0 && view.multi ? i : null;
+      }
+      if (idx === null) s.view.filter = null;
+      return idx;
+    }
+
     render() {
       const tab = this.state.view.tab;
+      const focusKey = this._focusKey();
       this._renderTabs();
       Dom.clear(this.info);
       Dom.clear(this.tools);
@@ -89,6 +114,18 @@
       this.gridwrap.classList.remove('is-stale');
       if (tab === 'result') this._renderResult();
       else this._renderDataset(tab);
+      if (focusKey) this._restoreFocus(focusKey);
+    }
+
+    /** 注意帯の中でフォーカスしているボタンの目印（描き直したあとに戻す） */
+    _focusKey() {
+      const el = document.activeElement;
+      return el && this.info.contains(el) && el.dataset ? el.dataset.focusKey || null : null;
+    }
+
+    _restoreFocus(key) {
+      const el = this.info.querySelector('[data-focus-key="' + CSS.escape(key) + '"]');
+      if (el) el.focus();
     }
 
     _renderTabs() {
@@ -104,18 +141,26 @@
         let lead;
         let label = t.label;
         let count = t.count;
+        let title = null;
         if (t.role) {
           const r = ROLE_TEXT[t.role];
           const ds = s.datasets[t.role];
           lead = UI.badge(r.badge[0], r.badge[1]);
           label = r.label;
           count = ds ? Util.formatInt(ds.rowCount) + ' 行' : '未読み込み';
+          /* 条件データが複数なら件数を出す（どれを表示するかはタブの中の切替ボタンで選ぶ） */
+          const tables = t.role === 'condition' ? LQ.CondTableBar.count(s) : 0;
+          if (tables > 1) {
+            count = tables + ' 件';
+            title = '条件データ ' + tables + ' 件（表示中：' + s.activeProfile.name + '）';
+          }
         } else {
           lead = Dom.icon(t.icon);
         }
         this.tabs.appendChild(h('button', {
           class: 'lq-tab' + (s.view.tab === t.id ? ' is-active' : ''), type: 'button', role: 'tab', dataset: { tab: t.id },
           'aria-selected': s.view.tab === t.id ? 'true' : 'false',
+          title: title,
           onclick: () => s.setTab(t.id)
         }, [lead, h('span', { text: label }), h('span', { class: 'lq-tab__count', text: count }),
           t.stale ? h('span', { class: 'lq-tab__stale', title: '条件が変更され、結果に未反映です' }, [Dom.icon('triangle-exclamation'), ' 未反映']) : null]));
@@ -137,9 +182,10 @@
       const view = this.resultView();
       const all = view.resolveColumns(s.output.columns);
       const defs = all.filter((d) => d.available);
-      const unavailable = all.filter((d) => !d.available);
+      const unavailable = all.filter((d) => !d.available && !d.silent);
       this._renderResultTools(defs);
       this._renderSummary(view, defs);
+      this._renderFilterBar(view);
       if (s.isStale()) {
         this.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
           '表示中の結果は変更前のものです。右上のボタンで再抽出すると反映されます。'])));
@@ -154,6 +200,14 @@
       if (!defs.length) {
         this.grid.showEmpty(this._emptyMessage('table-columns', '表示する列がありません', '左の「出力列」で表示する列を選んでください。',
           h('button', { class: 'lq-btn', type: 'button', onclick: () => s.openPanel('output') }, [Dom.icon('table-columns'), '出力列を選ぶ'])));
+        return;
+      }
+      if (!view.length && view.filter !== null) {
+        const assign = view.result.stats.mode === 'assign';
+        this.grid.showEmpty(this._emptyMessage('filter', 'この抽出条件の行はありません', view.filter < 0
+          ? 'どの抽出条件にも該当しなかった行はありません。'
+          : '「' + view.partName(view.filter) + '」の行はありません。' + (assign ? '条件に一致する行がないか、一致した行がすべて優先順位が上の抽出条件に入っています。' : '条件に一致する行がありません。'),
+        h('button', { class: 'lq-btn', type: 'button', onclick: () => s.setFilter(null) }, [Dom.icon('list'), 'すべての行を表示'])));
         return;
       }
       const paging = this._paging('result', view.length);
@@ -188,26 +242,70 @@
     }
 
     _renderSummary(view, defs) {
-      const st = view.result.stats;
-      const snap = view.result.snapshot;
-      const join = LQ.QueryEngine.JOIN_KINDS.find((j) => j.id === st.joinKind);
-      const match = LQ.QueryEngine.MATCH_MODES.find((m) => m.id === st.matchMode);
-      const none = st.outputRows === 0;
-      const mainText = st.joinKind === 'anti'
-        ? Util.formatInt(st.outputRows) + ' 行が一致しませんでした'
-        : Util.formatInt(st.matchedSources) + ' 行が一致';
-      const items = [
-        h('span', { class: 'lq-summary__main' + (none ? ' is-none' : '') }, [Dom.icon(none ? 'triangle-exclamation' : 'circle-check'), mainText]),
-        h('span', { class: 'lq-summary__item lq-num', text: '① ' + Util.formatInt(st.sourceRows) + ' 行中 ' +
-          Util.formatPercent((st.joinKind === 'anti' ? st.outputRows : st.matchedSources) / Math.max(1, st.sourceRows)) }),
-        h('span', { class: 'lq-summary__item lq-num', text: '出力 ' + Util.formatInt(st.outputRows) + ' 行 × ' + defs.length + ' 列' }),
-        h('span', { class: 'lq-summary__item', title: '条件の組み合わせ' }, [Dom.icon('code-branch'), h('span', { class: 'lq-summary__expr', text: snap.exprJa })]),
-        h('span', { class: 'lq-summary__item', text: join.label + (st.needsCondition && st.joinKind !== 'anti' ? '・' + match.label : '') }),
-        h('span', { class: 'lq-summary__item lq-num' }, [Dom.icon('clock-rotate-left'), Util.formatSeconds(st.elapsedMs)]),
-        h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '条件・照合ルール・処理の内容を確認する', onclick: (e) => this.app.dialogs.openResultDetails(e.currentTarget) },
-          [Dom.icon('magnifying-glass'), '根拠を見る'])
-      ];
+      const res = view.result;
+      const st = res.stats;
+      const fmt = Util.formatInt;
+      const detailsBtn = h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '抽出条件・照合ルール・処理の内容を確認する',
+        onclick: (e) => this.app.resultDialogs.openResultDetails(e.currentTarget) }, [Dom.icon('magnifying-glass'), '根拠を見る']);
+      const time = h('span', { class: 'lq-summary__item lq-num' }, [Dom.icon('clock-rotate-left'), Util.formatSeconds(st.elapsedMs)]);
+      const shown = h('span', { class: 'lq-summary__item lq-num', text: '表示 ' + fmt(view.length) + ' 行 × ' + defs.length + ' 列' });
+      let items;
+      if (!view.multi) {
+        const part = res.parts[0];
+        const ps = part.stats;
+        const join = LQ.QueryEngine.JOIN_KINDS.find((j) => j.id === ps.joinKind);
+        const match = LQ.QueryEngine.MATCH_MODES.find((m) => m.id === ps.matchMode);
+        const none = st.outputRows === 0;
+        const anti = ps.joinKind === 'anti';
+        items = [
+          h('span', { class: 'lq-summary__main' + (none ? ' is-none' : '') }, [Dom.icon(none ? 'triangle-exclamation' : 'circle-check'),
+            anti ? fmt(ps.outputRows) + ' 行が一致しませんでした' : fmt(ps.matchedSources) + ' 行が一致']),
+          h('span', { class: 'lq-summary__item lq-num', text: '① ' + fmt(st.sourceRows) + ' 行中 ' +
+            Util.formatPercent((anti ? ps.outputRows : ps.matchedSources) / Math.max(1, st.sourceRows)) }),
+          shown,
+          h('span', { class: 'lq-summary__item', title: '条件の組み合わせ' }, [Dom.icon('code-branch'), h('span', { class: 'lq-summary__expr', text: part.snapshot.exprJa })]),
+          h('span', { class: 'lq-summary__item', text: join.label + (ps.needsCondition && !anti ? '・' + match.label : '') }),
+          time, detailsBtn
+        ];
+      } else {
+        const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
+        const none = st.matchedSources === 0;
+        items = [
+          h('span', { class: 'lq-summary__main' + (none ? ' is-none' : '') }, [Dom.icon(none ? 'triangle-exclamation' : 'circle-check'), fmt(st.matchedSources) + ' 行が該当']),
+          h('span', { class: 'lq-summary__item lq-num', text: '① ' + fmt(st.sourceRows) + ' 行中 ' + Util.formatPercent(st.matchedSources / Math.max(1, st.sourceRows)) }),
+          h('span', { class: 'lq-summary__item', title: mode.desc }, [Dom.icon(mode.icon), '抽出条件 ' + res.parts.length + ' 件・' + mode.short]),
+          shown, time, detailsBtn
+        ];
+      }
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
+    }
+
+    /** 抽出条件ごとの絞り込み（件数付き）。抽出条件が複数か「該当なし」があるときだけ出す */
+    _renderFilterBar(view) {
+      if (!view.multi) return;
+      const s = this.state;
+      const counts = view.counts();
+      const assign = view.result.stats.mode === 'assign';
+      const fmt = Util.formatInt;
+      const chip = (value, label, count, title, rank) => {
+        const active = view.filter === value;
+        return h('button', {
+          class: 'lq-fchip' + (active ? ' is-active' : '') + (value === -1 ? ' lq-fchip--none' : ''), type: 'button', title: title,
+          'aria-pressed': active ? 'true' : 'false', dataset: { focusKey: 'filter:' + value },
+          onclick: () => s.setFilter(value === null ? null : (value < 0 ? LQ.AppState.UNMATCHED_FILTER : view.parts[value].id))
+        }, [rank ? h('span', { class: 'lq-fchip__rank', text: rank }) : null, h('span', { class: 'lq-fchip__label', text: label }),
+          h('span', { class: 'lq-fchip__count lq-num', text: fmt(count) })]);
+      };
+      const items = [chip(null, 'すべて', counts.total, '全 ' + fmt(counts.total) + ' 行を表示')];
+      view.parts.forEach((part, i) => {
+        const shadow = part.hits - part.assigned;
+        const title = '「' + view.partName(i) + '」の行だけを表示' +
+          (assign && shadow > 0 ? '（該当 ' + fmt(part.hits) + ' 行のうち ' + fmt(shadow) + ' 行は、優先順位が上の抽出条件に振り分けました）' : '');
+        items.push(chip(i, view.partName(i), counts.per[i], title, String(part.priority)));
+      });
+      if (counts.unmatched || view.result.stats.includeUnmatched) items.push(chip(-1, '該当なし', counts.unmatched, 'どの抽出条件にも該当しなかった行だけを表示'));
+      this.info.appendChild(h('div', { class: 'lq-filterbar', role: 'toolbar', 'aria-label': '抽出条件で絞り込み' },
+        [h('span', { class: 'lq-filterbar__label' }, [Dom.icon('filter'), '表示する行'])].concat(items)));
     }
 
     _renderWelcome() {
@@ -226,11 +324,30 @@
         }, [Dom.icon(r.icon, 'lq-drop__icon'), h('div', { class: 'lq-drop__title', text: r.title }), h('div', { class: 'lq-drop__sub', text: r.sub }),
           h('div', { class: 'lq-drop__sub', text: 'クリックして選択／ここへドラッグ＆ドロップ／Ctrl+V で貼り付け' })]);
       };
+      /* ② が抽出条件に読み込み済み（前回の保存から復元した場合など）なら、その状態を示して抽出条件パネルへ案内する */
+      const condCard = () => {
+        const s = this.state;
+        const loaded = s.profiles.items.filter((p) => p.condition).length;
+        if (!loaded) return card('condition');
+        const open = () => s.openPanel('query');
+        return h('div', {
+          class: 'lq-drop lq-drop--cond lq-drop--done', role: 'button', tabindex: '0', title: '抽出条件パネルを開いて確認・変更する',
+          onclick: open,
+          onkeydown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              open();
+            }
+          }
+        }, [Dom.icon('circle-check', 'lq-drop__icon'), h('div', { class: 'lq-drop__title', text: '② 条件データ（読み込み済み）' }),
+          h('div', { class: 'lq-drop__sub', text: '抽出条件 ' + s.profiles.length + ' 件のうち ' + loaded + ' 件分を読み込み済みです' }),
+          h('div', { class: 'lq-drop__sub', text: 'クリックで抽出条件を確認・変更。あとは ① 元データを読み込めば抽出できます' })]);
+      };
       const sampleBtn = h('button', { class: 'lq-btn', type: 'button', onclick: () => this.app.dialogs.openSamples(sampleBtn, 'bottom-start') }, [Dom.icon('flask'), 'サンプルで試す']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: '① と ② を読み込み、条件に一致する行を取り出します' }),
-        h('p', { class: 'lq-empty__lead', text: '① 元データの各行を、② 条件データの各行（1 行＝1 セットの条件）と照らし合わせ、一致した行を表示・出力します。Excel（.xlsx / .xls）と CSV に対応しています。' }),
-        h('div', { class: 'lq-empty__cards' }, [card('source'), card('condition')]),
+        h('p', { class: 'lq-empty__lead', text: '① 元データの各行を、② 条件データの各行（1 行＝1 セットの条件）と照らし合わせ、一致した行を表示・出力します。② は抽出条件ごとに持てるので、列の構成が違う表を複数使い、名前と優先順位で振り分けることもできます。Excel（.xlsx / .xls）と CSV に対応しています。' }),
+        h('div', { class: 'lq-empty__cards' }, [card('source'), condCard()]),
         h('div', { class: 'lq-empty__links' }, [sampleBtn,
           h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', onclick: () => this.app.manual.open() }, [Dom.icon('book-open'), '使い方を見る'])])
       ]));
@@ -238,20 +355,7 @@
 
     _renderSteps() {
       const s = this.state;
-      const v = this.app.validation();
-      const src = s.datasets.source;
-      const cond = s.datasets.condition;
-      const hasConds = s.query.conditions.length > 0;
-      const condNeeded = !hasConds || v.needsCondition || !v.ok;
-      const steps = [
-        { icon: 'table', title: '① 元データ', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
-        { icon: 'list-check', title: '② 条件データ', state: cond ? 'done' : (condNeeded ? 'current' : 'done'),
-          text: cond ? cond.name + '（' + Util.formatInt(cond.rowCount) + ' 行）' : (condNeeded ? '読み込んでください（固定値だけの条件なら不要）' : '固定値だけの条件のため不要') },
-        { icon: 'filter', title: '条件', state: hasConds && v.ok ? 'done' : ((cond || !condNeeded) ? 'current' : 'todo'),
-          text: hasConds ? (v.ok ? LQ.Logic.toJapanese(v.ast) : v.errors[0].message) : '① と ② の列の対応を決めます' },
-        { icon: 'play', title: '抽出', state: hasConds && v.ok ? 'current' : 'todo',
-          text: s.busy && s.busy.kind === 'run' ? '抽出中です（右上で中止できます）' : '右上の「' + this.app.cta().label + '」' }
-      ];
+      const steps = s.profiles.length > 1 ? this._multiSteps() : this._singleSteps();
       const list = h('ol', { class: 'lq-steps' });
       steps.forEach((step, i) => {
         if (i > 0) list.appendChild(h('li', { class: 'lq-step__arrow', 'aria-hidden': 'true' }, Dom.icon('chevron-right')));
@@ -264,8 +368,52 @@
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: 'あと少しで抽出できます' }),
         list,
-        h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。条件は左の「条件」から確認・変更できます。' })
+        h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。抽出条件は左の「抽出条件」から確認・変更できます。' })
       ]));
+    }
+
+    _runStep(ready) {
+      const s = this.state;
+      return { icon: 'play', title: '抽出', state: ready ? 'current' : 'todo',
+        text: s.busy && s.busy.kind === 'run' ? '抽出中です（右上で中止できます）' : '右上の「' + this.app.cta().label + '」' };
+    }
+
+    /** 抽出条件が 1 つのとき（① → ② → 条件 → 抽出） */
+    _singleSteps() {
+      const s = this.state;
+      const v = this.app.validation();
+      const src = s.datasets.source;
+      const cond = s.datasets.condition;
+      const hasConds = s.query.conditions.length > 0;
+      const condNeeded = !hasConds || v.needsCondition || !v.ok;
+      return [
+        { icon: 'table', title: '① 元データ', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
+        { icon: 'list-check', title: '② 条件データ', state: cond ? 'done' : (condNeeded ? 'current' : 'done'),
+          text: cond ? cond.name + '（' + Util.formatInt(cond.rowCount) + ' 行）' : (condNeeded ? '読み込んでください（固定値だけの条件なら不要）' : '固定値だけの条件のため不要') },
+        { icon: 'filter', title: '条件', state: hasConds && v.ok ? 'done' : ((cond || !condNeeded) ? 'current' : 'todo'),
+          text: hasConds ? (v.ok ? LQ.Logic.toJapanese(v.ast) : v.errors[0].message) : '① と ② の列の対応を決めます' },
+        this._runStep(hasConds && v.ok)
+      ];
+    }
+
+    /** 抽出条件が複数のとき（① → 各 ② → 各抽出条件の条件 → 抽出） */
+    _multiSteps() {
+      const s = this.state;
+      const src = s.datasets.source;
+      const all = this.app.validationAll();
+      const enabled = s.profiles.enabled();
+      const need = enabled.filter((p) => !LQ.QueryOps.fixedOnly(p.query));
+      const loaded = need.filter((p) => !!p.condition).length;
+      const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === s.combine.mode);
+      const first = all.first;
+      return [
+        { icon: 'table', title: '① 元データ', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
+        { icon: 'list-check', title: '② 条件データ', state: loaded === need.length ? 'done' : 'current',
+          text: need.length ? '読み込み済み ' + loaded + ' / ' + need.length + ' 件（抽出条件ごと）' : '固定値だけの抽出条件のため不要' },
+        { icon: 'filter', title: '抽出条件', state: all.ok ? 'done' : 'current',
+          text: all.ok ? '有効 ' + enabled.length + ' 件・' + mode.short : (first ? '「' + first.profile.name + '」：' + first.issue.message : 'すべて無効です') },
+        this._runStep(all.ok)
+      ];
     }
 
     _emptyMessage(icon, title, lead, action) {
@@ -279,9 +427,11 @@
       const s = this.state;
       const ds = s.datasets[role];
       const r = ROLE_TEXT[role];
+      if (role === 'condition') this.info.appendChild(this.condBar.render());
       if (!ds) {
+        const who = role === 'condition' && s.profiles.length > 1 ? '「' + s.activeProfile.name + '」の ' : '';
         const drop = h('div', { class: 'lq-drop' + (role === 'condition' ? ' lq-drop--cond' : ''), role: 'button', tabindex: '0', onclick: () => this.app.pickFile(role) },
-          [Dom.icon(r.icon, 'lq-drop__icon'), h('div', { class: 'lq-drop__title', text: r.title + 'を読み込む' }), h('div', { class: 'lq-drop__sub', text: r.sub }),
+          [Dom.icon(r.icon, 'lq-drop__icon'), h('div', { class: 'lq-drop__title', text: who + r.title + 'を読み込む' }), h('div', { class: 'lq-drop__sub', text: r.sub }),
             h('div', { class: 'lq-drop__sub', text: 'クリックして選択／ドラッグ＆ドロップ／Ctrl+V で貼り付け' })]);
         this.grid.showEmpty(h('div', { class: 'lq-empty' }, [h('div', { class: 'lq-empty__cards lq-empty__cards--single' }, drop)]));
         return;
@@ -304,10 +454,13 @@
     _renderDatasetSummary(ds, raw) {
       const src = ds.source;
       const set = ds.settings;
+      const stored = src.storedRef;
+      const kind = stored
+        ? '保存データ（元：' + (stored.kindLabel || '不明') + (stored.sheetName ? '・シート「' + stored.sheetName + '」' : '') + '）'
+        : src.kindLabel + (src.hasSheets ? '・シート「' + src.sheetName + '」' : '') + (src.encoding ? '・' + LQ.EncodingDetector.label(src.encoding.value) : '');
       const items = [
         h('span', { class: 'lq-summary__main' }, [Dom.icon('circle-check'), ds.name]),
-        h('span', { class: 'lq-summary__item', text: src.kindLabel + (src.hasSheets ? '・シート「' + src.sheetName + '」' : '') +
-          (src.encoding ? '・' + LQ.EncodingDetector.label(src.encoding.value) : '') }),
+        h('span', { class: 'lq-summary__item', text: kind }),
         h('span', { class: 'lq-summary__item lq-num', text: Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列' }),
         h('span', { class: 'lq-summary__item', text: (set.hasHeader ? 'ヘッダー ' + set.headerRow + ' 行目' : 'ヘッダーなし') + '・範囲 ' + ds.stats.rangeText }),
         ds.stats.skippedEmpty ? h('span', { class: 'lq-summary__item lq-num', text: '空行 ' + Util.formatInt(ds.stats.skippedEmpty) + ' 行を除外' }) : null
@@ -477,7 +630,7 @@
     }
 
     _onRowHead(head, anchor) {
-      if (head.action === 'explain') this.app.dialogs.openRowDetail(anchor, head.index);
+      if (head.action === 'explain') this.app.resultDialogs.openRowDetail(anchor, head.index);
       else if (head.action === 'raw-row') this.app.dialogs.openRawRowMenu(anchor, this.state.view.tab, head.rawIndex);
     }
   }

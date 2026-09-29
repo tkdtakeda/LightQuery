@@ -110,6 +110,7 @@
    *   typed() … 以上・未満などの大小比較や並べ替え用
    * ------------------------------------------------------------------- */
   const DEFAULT_RULES = Object.freeze({ space: 'trim', width: true, caseless: true, numeric: true, date: true });
+  const SPACE_VALUES = ['trim', 'all', 'keep'];
   const TYPE = Object.freeze({ EMPTY: 0, NUMBER: 1, DATE: 2, TEXT: 3 });
   const EMPTY_TYPED = Object.freeze({ t: TYPE.EMPTY, n: 0, s: '' });
   const CACHE_LIMIT = 300000;
@@ -128,15 +129,41 @@
       return TYPE;
     }
 
+    /** 保存・JSON から読んだ照合ルールの値の種類を確かめる（不正な値は捨てる。使える値がなければ null） */
+    static cleanRules(rules) {
+      if (!rules || typeof rules !== 'object') return null;
+      const out = {};
+      let count = 0;
+      Object.keys(DEFAULT_RULES).forEach((key) => {
+        const v = rules[key];
+        if (typeof v !== typeof DEFAULT_RULES[key]) return;
+        if (key === 'space' && SPACE_VALUES.indexOf(v) === -1) return;
+        out[key] = v;
+        count++;
+      });
+      return count ? out : null;
+    }
+
+    /** 2 つの照合ルールが同じか（欠けている項目は初期値とみなす） */
+    static sameRules(a, b) {
+      const x = Object.assign({}, DEFAULT_RULES, a || {});
+      const y = Object.assign({}, DEFAULT_RULES, b || {});
+      return Object.keys(DEFAULT_RULES).every((key) => x[key] === y[key]);
+    }
+
     /** 空欄（空白のみを含む）か */
     static isBlank(value) {
       return value === null || value === undefined || String(value).trim() === '';
     }
 
-    /** ルールの組み合わせを表す文字列（計算結果の再利用に使う） */
-    get signature() {
-      const r = this.rules;
+    /** ルールの組み合わせを表す文字列（計算結果の再利用・結果が最新かの判定に使う。欠けている項目は初期値） */
+    static signatureOf(rules) {
+      const r = Object.assign({}, DEFAULT_RULES, rules || {});
       return [r.space, r.width ? 1 : 0, r.caseless ? 1 : 0, r.numeric ? 1 : 0, r.date ? 1 : 0].join('|');
+    }
+
+    get signature() {
+      return Normalizer.signatureOf(this.rules);
     }
 
     text(value) {
