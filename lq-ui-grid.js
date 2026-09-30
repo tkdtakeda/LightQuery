@@ -1,7 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-ui-grid.js
  * 表の描画：見出しの固定、出どころのバッジ、並べ替え（見出しクリック）、列の移動（見出しドラッグ）、
- *   行番号からの操作（判定根拠・読み込み範囲の指定）。値はすべてエスケープして描く。
+ *   行番号からの操作（判定根拠・読み込み範囲の指定）、列幅の手動調整（ColumnSizer）。値はすべてエスケープして描く。
+ *   列幅は中身の文字数に合わせ（表を画面幅に引き伸ばさない）、手で変えた列だけ幅を固定する。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -32,6 +33,8 @@
       this._scrollKey = null;
       this._dragKey = null;
       this._dropTarget = null;
+      this.sizer = new LQ.ColumnSizer();
+      this.sizer.attach(root);
       root.addEventListener('click', (e) => this._onClick(e));
       root.addEventListener('dragstart', (e) => this._onDragStart(e));
       root.addEventListener('dragover', (e) => this._onDragOver(e));
@@ -67,17 +70,19 @@
       out.push('<table class="lq-grid' + (model.mode === 'raw' ? ' lq-grid--raw' : '') + '"' +
         (model.role ? ' data-role="' + model.role + '"' : '') + '><thead><tr>');
       out.push('<th class="lq-grid__rowhead">' + (model.mode === 'raw' ? '行' : (model.mode === 'data' ? '行' : '#')) + '</th>');
-      model.columns.forEach((col) => out.push(this._th(col, model.mode)));
+      model.columns.forEach((col) => out.push(this._th(col, model.mode, this._sizeId(col, model))));
       out.push('</tr></thead><tbody>');
       const cellClass = this._cellClasses(model);
+      const sizeIds = model.columns.map((col) => this._sizeId(col, model));
+      const sizeStyle = sizeIds.map((id) => this.sizer.styleOf(id));
       model.rows.forEach((row, ri) => {
         out.push(row.rowClass ? '<tr class="' + row.rowClass + '">' : '<tr>');
         out.push('<th class="lq-grid__rowhead" scope="row">' + this._rowHead(row.head, ri, model.mode) + '</th>');
         for (let c = 0; c < model.columns.length; c++) {
           const v = row.cells[c] === undefined || row.cells[c] === null ? '' : String(row.cells[c]);
-          const cls = cellClass[c];
-          const title = v.length > TITLE_LENGTH ? ' title="' + esc(v) + '"' : '';
-          out.push('<td' + (cls ? ' class="' + cls + '"' : '') + title + '>' + esc(v) + '</td>');
+          const cls = sizeStyle[c] ? (cellClass[c] ? cellClass[c] + ' is-sized' : 'is-sized') : cellClass[c];
+          const title = v.length > TITLE_LENGTH || sizeStyle[c] ? ' title="' + esc(v) + '"' : '';
+          out.push('<td' + (cls ? ' class="' + cls + '"' : '') + sizeStyle[c] + title + '>' + esc(v) + '</td>');
         }
         out.push('</tr>');
       });
@@ -91,6 +96,13 @@
       }
     }
 
+    /** 列幅を記憶する名前（結果は列のキー、① / ② は役割と列名。元のシート表示は対象外） */
+    _sizeId(col, model) {
+      if (model.mode === 'result') return col.key;
+      if (model.mode === 'data') return 'd:' + (model.role || '') + ':' + col.label;
+      return null;
+    }
+
     _cellClasses(model) {
       return model.columns.map((col, c) => {
         const list = [];
@@ -102,25 +114,29 @@
       });
     }
 
-    _th(col, mode) {
+    _th(col, mode, sizeId) {
+      const style = this.sizer.styleOf(sizeId);
+      const sized = style ? ' is-sized' : '';
+      const grip = sizeId ? this.sizer.handle(sizeId) : '';
       if (mode === 'raw') {
         return '<th class="is-colhead' + (col.isStart ? ' is-start-col' : '') + '" data-col="' + col.colIndex + '" title="クリックして開始列に指定">' +
           esc(col.label) + '</th>';
       }
       if (mode === 'data') {
-        return '<th><div class="lq-th"><span class="lq-th__name">' + esc(col.label) + '</span><span class="lq-th__letter">' +
-          esc(col.letter || '') + '</span></div></th>';
+        return '<th class="is-resizable' + sized + '"' + style + '><div class="lq-th"><span class="lq-th__name">' + esc(col.label) + '</span><span class="lq-th__letter">' +
+          esc(col.letter || '') + '</span></div>' + grip + '</th>';
       }
-      const cls = ['is-sortable'];
+      const cls = ['is-sortable', 'is-resizable'];
+      if (style) cls.push('is-sized');
       if (col.sortDir) cls.push('is-sorted');
       if (col.kind === 'condition') cls.push('is-cond');
       if (col.kind === 'meta') cls.push('is-meta');
       const sortIcon = SORT_ICON[col.sortDir] || 'sort';
       const sortText = col.sortDir === 'asc' ? '昇順' : (col.sortDir === 'desc' ? '降順' : '');
-      return '<th class="' + cls.join(' ') + '" data-key="' + esc(col.key) + '" draggable="true" title="' +
+      return '<th class="' + cls.join(' ') + '"' + style + ' data-key="' + esc(col.key) + '" draggable="true" title="' +
         esc(col.label) + '：クリックで並べ替え（昇順→降順→解除）・ドラッグで列を移動' + (sortText ? '（現在 ' + sortText + '）' : '') + '">' +
         '<div class="lq-th">' + (BADGE[col.kind] || '') + '<span class="lq-th__name">' + esc(col.label) + '</span>' +
-        '<i class="fa-solid fa-' + sortIcon + ' lq-th__sort" aria-hidden="true"></i></div></th>';
+        '<i class="fa-solid fa-' + sortIcon + ' lq-th__sort" aria-hidden="true"></i></div>' + grip + '</th>';
     }
 
     _rowHead(head, ri, mode) {
@@ -135,7 +151,7 @@
     }
 
     _onClick(e) {
-      if (!this.model) return;
+      if (!this.model || this.sizer.justResized || e.target.closest('.lq-colresize')) return;
       const btn = e.target.closest('.lq-grid__rowbtn');
       if (btn) {
         const row = this.model.rows[Number(btn.dataset.row)];

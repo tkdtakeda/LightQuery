@@ -171,6 +171,17 @@
   --h-control: 32px;
   --h-control-lg: 40px;
   --h-row: 30px;
+  /* 表の見た目（3 段階）：列の間隔・行の高さ・文字サイズ */
+  --grid-pad-s: var(--space-3);
+  --grid-pad-m: var(--space-5);
+  --grid-pad-l: var(--space-7);
+  --grid-row-s: 24px;
+  --grid-row-m: var(--h-row);
+  --grid-row-l: 38px;
+  --grid-font-s: var(--fs-xs);
+  --grid-font-m: var(--fs-sm);
+  --grid-font-l: var(--fs-lg);
+  --w-col-grip: 7px;
   --h-rail-item: 58px;
   --h-dropzone: 220px;
   --w-rail: 72px;

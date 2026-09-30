@@ -44,6 +44,7 @@
         onRowHead: (head, anchor) => this._onRowHead(head, anchor),
         onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col)
       });
+      this.display = new LQ.GridDisplay(ctx, this.gridwrap);
       LQ.FormNav.attach(this.pager);
       ctx.bus.on('change', (e) => this._schedule(e));
       this.render();
@@ -114,6 +115,7 @@
       this.gridwrap.classList.remove('is-stale');
       if (tab === 'result') this._renderResult();
       else this._renderDataset(tab);
+      this.tools.appendChild(this.display.button());
       if (focusKey) this._restoreFocus(focusKey);
     }
 

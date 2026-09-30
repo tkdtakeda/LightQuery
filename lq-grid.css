@@ -163,6 +163,19 @@
   transition: opacity var(--dur-normal) var(--ease-standard);
 }
 
+.lq-gridwrap {
+  --grid-pad: var(--grid-pad-m);
+  --grid-row: var(--grid-row-m);
+  --grid-font: var(--grid-font-m);
+}
+
+.lq-gridwrap[data-pad="s"] { --grid-pad: var(--grid-pad-s); }
+.lq-gridwrap[data-pad="l"] { --grid-pad: var(--grid-pad-l); }
+.lq-gridwrap[data-row="s"] { --grid-row: var(--grid-row-s); }
+.lq-gridwrap[data-row="l"] { --grid-row: var(--grid-row-l); }
+.lq-gridwrap[data-font="s"] { --grid-font: var(--grid-font-s); }
+.lq-gridwrap[data-font="l"] { --grid-font: var(--grid-font-l); }
+
 .lq-gridwrap.is-stale {
   opacity: var(--opacity-stale);
 }
@@ -176,14 +189,13 @@
 .lq-grid {
   border-collapse: separate;
   border-spacing: 0;
-  font-size: var(--fs-sm);
-  min-width: 100%;
+  font-size: var(--grid-font);
 }
 
 .lq-grid th,
 .lq-grid td {
-  height: var(--h-row);
-  padding: 0 var(--space-5);
+  height: var(--grid-row);
+  padding: 0 var(--grid-pad);
   border-bottom: var(--border-width) solid var(--color-border);
   border-right: var(--border-width) solid var(--color-border-soft);
   white-space: nowrap;
@@ -276,9 +288,46 @@
 }
 
 .lq-th__name {
+  min-width: 0;
   max-width: var(--w-col-max);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 列幅の手動調整：見出しの右端のつまみ */
+.lq-grid th.is-resizable {
+  position: sticky;
+}
+
+.lq-grid th.is-sized,
+.lq-grid td.is-sized {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lq-grid th.is-sized .lq-th__name {
+  max-width: none;
+}
+
+.lq-colresize {
+  position: absolute;
+  top: 0;
+  right: calc(var(--w-col-grip) / -2);
+  bottom: 0;
+  z-index: var(--z-sticky);
+  width: var(--w-col-grip);
+  cursor: col-resize;
+}
+
+.lq-colresize:hover,
+.is-col-resizing .lq-colresize {
+  background: var(--color-primary-soft);
+}
+
+.is-col-resizing,
+.is-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .lq-th__letter {
@@ -575,4 +624,34 @@
 .lq-step__arrow {
   align-self: center;
   color: var(--color-text-disabled);
+}
+
+/* ---------- 表の見た目（列の間隔・行の間隔・文字サイズ） ---------- */
+.lq-display {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.lq-display__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lq-display__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: var(--fw-medium);
+}
+
+.lq-display__label .lq-field__hint {
+  margin-left: auto;
+  font-weight: var(--fw-regular);
+}
+
+.lq-btn.is-customized {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
