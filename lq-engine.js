@@ -6,6 +6,7 @@
  *   ・複数一致：最初の 1 行のみ / すべての組み合わせ
  *   ・「完全一致」が必須の条件は索引で候補を絞り込み、処理は小分けにして進捗を通知する
  *   ・完全一致・一致しないでは、② の値・固定値の「*」をワイルドカードとして当てはめる（照合ルールで切替）
+ *   ・範囲（pair）は ② の値を 2 つ（開始・終了）使い、空欄の側は無制限。期間は ② の値を期間として読む
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -210,10 +211,23 @@
     static describeCondition(c) {
       const op = Operators.get(c.op);
       const left = c.left ? '① ' + c.left : '（① 未選択）';
-      const right = c.right.type === 'column'
-        ? (c.right.col ? '② ' + c.right.col : '（② 未選択）')
-        : '固定値「' + (c.right.value || '') + '」';
-      return c.label + '：' + left + ' が ' + right + ' ' + (op ? op.phrase : '（比較方法未選択）');
+      return c.label + '：' + left + ' が ' + QueryEngine.describeRight(c, op) + ' ' + (op ? op.phrase : '（比較方法未選択）');
+    }
+
+    /** 比べる相手の文章表現（範囲は「開始〜終了」、空欄の側は「指定なし」） */
+    static describeRight(c, op) {
+      const r = c.right;
+      if (op && op.pair) {
+        if (r.type === 'column') return (r.col ? '② ' + r.col : '（指定なし）') + '〜' + (r.col2 ? '② ' + r.col2 : '（指定なし）');
+        const v = (x) => (Normalizer.isBlank(x) ? '（指定なし）' : '「' + x + '」');
+        return '固定値' + v(r.value) + '〜' + v(r.value2);
+      }
+      if (r.type === 'column') return r.col ? '② ' + r.col : '（② 未選択）';
+      if (op && op.rightPrep === 'period') {
+        const p = LQ.Period.parse(r.value);
+        return '固定値「' + (r.value || '') + '」' + (p && p.label !== r.value ? '［' + LQ.Period.describe(p) + '］' : '');
+      }
+      return '固定値「' + (r.value || '') + '」';
     }
 
     /** 条件 1 件の不備を調べる */
@@ -221,15 +235,34 @@
       const out = [];
       if (!c.left) out.push({ field: 'left', code: 'left', message: '① の列を選んでください' });
       else if (source && source.findColumn(c.left) < 0) out.push({ field: 'left', code: 'leftMissing', message: '① に列「' + c.left + '」がありません' });
-      if (!Operators.get(c.op)) out.push({ field: 'op', code: 'op', message: '比較方法を選んでください' });
+      const op = Operators.get(c.op);
+      if (!op) out.push({ field: 'op', code: 'op', message: '比較方法を選んでください' });
+      if (op && op.pair) return out.concat(this._checkPair(c, condition));
       if (c.right.type === 'column') {
         if (!condition) out.push({ field: 'right', code: 'noConditionData', message: '② 条件データが読み込まれていません（固定値にすることもできます）' });
         else if (!c.right.col) out.push({ field: 'right', code: 'right', message: '② の列を選ぶか、固定値を入力してください' });
         else if (condition.findColumn(c.right.col) < 0) out.push({ field: 'right', code: 'rightMissing', message: '② に列「' + c.right.col + '」がありません' });
       } else if (Normalizer.isBlank(c.right.value)) {
         out.push({ field: 'right', code: 'value', message: '固定値を入力してください' });
+      } else if (op && op.rightPrep === 'period' && !LQ.Period.parse(c.right.value)) {
+        out.push({ field: 'right', code: 'period', message: '「' + c.right.value + '」は期間として読めません（例：2024・2024/05・2024年度・今月・直近30日）' });
       }
       return out;
+    }
+
+    /** 範囲：開始・終了の少なくとも一方が必要 */
+    _checkPair(c, condition) {
+      const r = c.right;
+      if (r.type === 'column') {
+        if (!condition) return [{ field: 'right', code: 'noConditionData', message: '② 条件データが読み込まれていません（固定値にすることもできます）' }];
+        if (!r.col && !r.col2) return [{ field: 'right', code: 'right', message: '② の開始の列・終了の列の少なくとも一方を選んでください' }];
+        const missing = [r.col, r.col2].filter((name) => name && condition.findColumn(name) < 0);
+        return missing.length ? [{ field: 'right', code: 'rightMissing', message: '② に列「' + missing[0] + '」がありません' }] : [];
+      }
+      if (Normalizer.isBlank(r.value) && Normalizer.isBlank(r.value2)) {
+        return [{ field: 'right', code: 'value', message: '開始・終了の少なくとも一方を入力してください（空欄の側は制限なし）' }];
+      }
+      return [];
     }
 
     /**
@@ -339,10 +372,13 @@
           pattern: null, valuePattern: null, patternCount: 0 };
         const lc = source.findColumn(c.left);
         const glob = op.wildcard && norm.rules.wildcard;
+        const rprep = op.rightPrep || op.prep;
         p.left = await this._column(source, lc, op.prep, norm, tick);
-        if (p.isColumn) {
+        if (op.pair) {
+          await this._preparePair(p, c, condition, norm, tick);
+        } else if (p.isColumn) {
           const rc = condition.findColumn(c.right.col);
-          p.right = await this._column(condition, rc, op.prep, norm, tick);
+          p.right = await this._column(condition, rc, rprep, norm, tick);
           p.blank = await this._column(condition, rc, 'blank', norm, tick);
           for (let r = 0; r < p.blank.length; r++) p.blankCount += p.blank[r];
           if (glob) {
@@ -351,7 +387,7 @@
             if (p.patternCount) p.pattern = pattern;
           }
         } else {
-          p.value = norm.converter(op.prep)(c.right.value);
+          p.value = norm.converter(rprep)(c.right.value);
           if (glob) p.valuePattern = norm.glob(c.right.value);
           if (p.valuePattern) p.patternCount = 1;
         }
@@ -468,6 +504,28 @@
       };
     }
 
+    /** 範囲：開始・終了の値（列の片方だけでもよい）。② の行はどちらも空欄なら判定しない */
+    async _preparePair(p, c, condition, norm, tick) {
+      const r = c.right;
+      const convert = norm.converter('typed');
+      if (!p.isColumn) {
+        p.value = Normalizer.isBlank(r.value) ? undefined : convert(r.value);
+        p.value2 = Normalizer.isBlank(r.value2) ? undefined : convert(r.value2);
+        return;
+      }
+      const idx = [r.col, r.col2].map((name) => (name ? condition.findColumn(name) : -1));
+      p.right = idx[0] >= 0 ? await this._column(condition, idx[0], 'typed', norm, tick) : null;
+      p.right2 = idx[1] >= 0 ? await this._column(condition, idx[1], 'typed', norm, tick) : null;
+      const blanks = [];
+      for (let i = 0; i < 2; i++) if (idx[i] >= 0) blanks.push(await this._column(condition, idx[i], 'blank', norm, tick));
+      const M = condition.rowCount;
+      p.blank = new Uint8Array(M);
+      for (let row = 0; row < M; row++) {
+        p.blank[row] = blanks.every((b) => b[row] === 1) ? 1 : 0;
+        p.blankCount += p.blank[row];
+      }
+    }
+
     /** 列の値を下ごしらえする（データセットの版とルールが同じなら再利用） */
     async _column(ds, colIdx, prep, norm, tick) {
       let entry = this._cache.get(ds);
@@ -475,7 +533,7 @@
         entry = { version: ds.version, map: new Map() };
         this._cache.set(ds, entry);
       }
-      const key = colIdx + '|' + prep + '|' + (prep === 'blank' ? '' : norm.signature);
+      const key = colIdx + '|' + prep + '|' + (prep === 'blank' ? '' : norm.signature) + (prep === 'period' ? '|' + LQ.Period.todayKey() : '');
       const n = ds.rowCount;
       if (entry.map.has(key)) {
         await tick(n);
@@ -521,6 +579,22 @@
         const L = p.left;
         const LT = p.leftText;
         const neg = p.op.negative;
+        if (p.op.pair) {
+          const R = p.right;
+          const R2 = p.right2;
+          const V = p.value;
+          const V2 = p.value2;
+          const B = p.blank;
+          return (x, r) => {
+            if (p.isColumn && B[r] === 1) return -1;
+            const res = p.isColumn ? test(L[x], R ? R[r] : undefined, R2 ? R2[r] : undefined) : test(L[x], V, V2);
+            if (res === null) {
+              p.incomparable++;
+              return 0;
+            }
+            return res ? 1 : 0;
+          };
+        }
         if (p.isColumn) {
           const R = p.right;
           const B = p.blank;
@@ -585,6 +659,7 @@
         const op = Operators.get(c.op);
         const leftValue = ctx.source.cell(x, ctx.source.findColumn(c.left));
         const base = { label: label, leftName: '① ' + c.left, leftValue: leftValue, phrase: op.phrase };
+        if (op.pair) return this._explainPair(ctx, c, op, norm, base, r);
         if (c.right.type === 'column') {
           base.rightName = '② ' + c.right.col;
           if (r < 0 || !ctx.condition) return Object.assign(base, { state: 'none', rightValue: '' });
@@ -600,12 +675,38 @@
           base.phrase = (op.negative ? 'に当てはまらない' : 'に当てはまる') + '（* はワイルドカード：' + LQ.Wildcard.kindLabel(pattern.kind) + '）';
           return base;
         }
-        const convert = norm.converter(op.prep);
-        const res = op.test(convert(leftValue), convert(base.rightValue));
+        const rightValue = norm.converter(op.rightPrep || op.prep)(base.rightValue);
+        if (op.rightPrep === 'period' && rightValue) base.phrase = op.phrase + '（' + LQ.Period.describe(rightValue) + '）';
+        const res = op.test(norm.converter(op.prep)(leftValue), rightValue);
         base.state = res === null ? 'incomparable' : (res ? 'true' : 'false');
         return base;
       });
       return { items: items, exprJa: Logic.toJapanese(check.ast) };
+    }
+
+    /** 範囲の判定根拠（開始・終了の値を「〜」でつなぐ。空欄の側は「指定なし」） */
+    _explainPair(ctx, c, op, norm, base, r) {
+      const R = c.right;
+      let lo;
+      let hi;
+      if (R.type === 'column') {
+        base.rightName = (R.col ? '② ' + R.col : '指定なし') + '〜' + (R.col2 ? '② ' + R.col2 : '指定なし');
+        if (r < 0 || !ctx.condition) return Object.assign(base, { state: 'none', rightValue: '' });
+        const cellOf = (name) => (name ? ctx.condition.cell(r, ctx.condition.findColumn(name)) : '');
+        lo = cellOf(R.col);
+        hi = cellOf(R.col2);
+      } else {
+        base.rightName = '固定値';
+        lo = R.value;
+        hi = R.value2;
+      }
+      const shown = (v) => (Normalizer.isBlank(v) ? '指定なし' : String(v));
+      base.rightValue = shown(lo) + '〜' + shown(hi);
+      if (Normalizer.isBlank(lo) && Normalizer.isBlank(hi)) return Object.assign(base, { state: 'ignored' });
+      const convert = norm.converter('typed');
+      const res = op.test(convert(base.leftValue), Normalizer.isBlank(lo) ? undefined : convert(lo), Normalizer.isBlank(hi) ? undefined : convert(hi));
+      base.state = res === null ? 'incomparable' : (res ? 'true' : 'false');
+      return base;
     }
   }
 

@@ -91,6 +91,8 @@
   const C = (left, op, right) => ({ left: left, op: op, right: right });
   const col = (name) => ({ type: 'column', col: name, value: '' });
   const fixed = (value) => ({ type: 'value', col: '', value: value });
+  const cols = (from, to) => ({ type: 'column', col: from, value: '', col2: to, value2: '' });
+  const fixedRange = (from, to) => ({ type: 'value', col: '', value: from, col2: '', value2: to });
   const Q = (conditions, extra) => Object.assign({ conditions: conditions, logic: { mode: 'and', expr: '' } }, extra || {});
   const orders = (seed) => {
     const rand = createRandom(seed);
@@ -315,6 +317,28 @@
           source: { name: ORDERS_NAME, grid: orders(1010) },
           profiles: [{ name: '担当チームの取引先', condition: { name: 'サンプル_取引先パターン.csv', grid: cond }, query: Q([C('顧客名', 'eq', col('顧客名'))]) }],
           output: ['s:受注番号', 's:受注日', 's:顧客名', 'c:顧客名', 'c:担当', 'c:メモ', 's:商品名', 's:金額']
+        };
+      }
+    },
+    {
+      id: 'dates',
+      icon: 'calendar-days',
+      title: '日付の範囲・期間で抽出',
+      desc: '受注日で「上期（2025/04/01〜2025/09/30）」を範囲で、「2025年12月」を期間で抽出します。「キャンペーン期間」は ② の地域ごとの開始日〜終了日で判定し、空欄の側は制限なし（大阪は 11/1 以降、福岡は 6/30 まで）です。',
+      tags: ['範囲（から〜まで）', '期間（年月）', '② の開始日・終了日', 'それぞれに出力'],
+      build() {
+        const campaign = [['地域', '開始日', '終了日', 'キャンペーン'],
+          ['東京', '2025/05/01', '2025/05/31', '初夏セール'], ['大阪', '2025/11/01', '', '秋冬フェア（終了日なし）'], ['福岡', '', '2025/06/30', '開業記念（開始日なし）']];
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1111) },
+          profiles: [
+            { name: '上期（4〜9月）', condition: null, query: Q([C('受注日', 'between', fixedRange('2025/04/01', '2025/09/30'))]) },
+            { name: '2025年12月', condition: null, query: Q([C('受注日', 'period', fixed('2025/12'))]) },
+            { name: 'キャンペーン期間', condition: { name: 'サンプル_キャンペーン期間.csv', grid: campaign },
+              query: Q([C('地域', 'eq', col('地域')), C('受注日', 'between', cols('開始日', '終了日'))]) }
+          ],
+          combine: { mode: 'independent', includeUnmatched: false },
+          output: ['m:profile', 's:受注番号', 's:受注日', 's:地域', 's:商品名', 's:金額', 'c:キャンペーン', 'c:開始日', 'c:終了日']
         };
       }
     },

@@ -3,7 +3,7 @@
  * 抽出条件パネル：上に抽出条件の一覧（ProfileListView）、下に選択中の抽出条件の編集
  *   （名前・② 条件データ・照合ルール（全体／個別）・組み合わせ・条件の一覧・抽出のしかた）。
  *   条件は「① 列 が ② 列 を含む」の語順で並べ、同名列の提案・除外リストのヒントを出す。
- *   条件の行は id ごとに使い回し、入力中のフォーカスを失わないようにする。
+ *   条件の行（ConditionRow）は id ごとに使い回し、入力中のフォーカスを失わないようにする。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -15,20 +15,12 @@
   const Flash = LQ.Flash;
   const h = Dom.h;
 
-  const FIXED = '__fixed__';
   const SUGGEST_LIMIT = 8;
   const MODE_OPTIONS = [
     { value: 'and', label: 'すべて満たす', icon: 'layer-group', title: 'すべての条件を満たす（AND）' },
     { value: 'or', label: 'いずれか満たす', icon: 'code-branch', title: 'いずれかの条件を満たす（OR）' },
     { value: 'expr', label: '式で指定', icon: 'code', title: '(A or B) and C のように式で指定する' }
   ];
-
-  function operatorOptions() {
-    return LQ.Operators.groups().map((g) => ({
-      group: g.label,
-      items: g.items.map((op) => ({ value: op.id, label: op.phrase.indexOf(op.name) !== -1 ? op.phrase : op.phrase + '（' + op.name + '）' }))
-    }));
-  }
 
   class QueryPanel {
     constructor(ctx) {
@@ -144,63 +136,6 @@
       return this.extraction.el;
     }
 
-    _buildRow(c) {
-      const id = c.id;
-      const find = () => this.state.findCondition(id);
-      const row = { id: id };
-      row.label = UI.badge('label', c.label);
-      row.left = h('select', { class: 'lq-select lq-select--sm', title: '① 元データの列' });
-      row.left.addEventListener('change', () => {
-        const cur = find();
-        if (!cur || row.left.value === cur.left) return;
-        this.state.updateCondition(id, { left: row.left.value });
-        Flash.el(row.left);
-      });
-      row.right = h('select', { class: 'lq-select lq-select--sm', title: '比べる相手：② 条件データの列、または固定値' });
-      row.right.addEventListener('change', () => {
-        const cur = find();
-        if (!cur) return;
-        if (row.right.value === FIXED) {
-          this.state.updateCondition(id, { right: { type: 'value' } });
-          row.value.focus();
-          return;
-        }
-        if (cur.right.type === 'column' && cur.right.col === row.right.value) return;
-        this.state.updateCondition(id, { right: { type: 'column', col: row.right.value } });
-        Flash.el(row.right);
-      });
-      row.value = h('input', { class: 'lq-input lq-input--sm', type: 'text', placeholder: '固定値（例：1000）', title: '比べる固定値（① の値と比べます）' });
-      const commitValue = () => {
-        const cur = find();
-        if (!cur || cur.right.value === row.value.value) return;
-        this.state.updateCondition(id, { right: { value: row.value.value } });
-      };
-      row.debounce = Util.debounce(commitValue, 300);
-      row.value.addEventListener('input', row.debounce);
-      row.value.addEventListener('change', () => {
-        row.debounce.cancel();
-        commitValue();
-        Flash.el(row.value);
-      });
-      row.back = UI.iconButton('table-list', '② の列から選ぶ', () => {
-        this.state.updateCondition(id, { right: { type: 'column' } });
-        row.right.focus();
-      }, 'lq-btn--sm');
-      row.rightBox = h('div', { class: 'lq-cond__right' });
-      row.op = h('select', { class: 'lq-select lq-select--sm', title: '比較方法' });
-      UI.fillSelect(row.op, operatorOptions(), c.op);
-      row.op.addEventListener('change', () => {
-        const cur = find();
-        if (!cur || cur.op === row.op.value) return;
-        this.state.updateCondition(id, { op: row.op.value });
-        Flash.el(row.op);
-      });
-      row.del = UI.iconButton('trash-can', '条件 ' + c.label + ' を削除（元に戻せます）', () => this.app.profiles.removeCondition(id), 'lq-btn--sm');
-      row.issue = h('div', { class: 'lq-cond__issue', hidden: true });
-      row.el = h('div', { class: 'lq-cond', dataset: { id: id } }, [row.label, row.left, h('span', { class: 'lq-cond__ga', text: 'が' }), row.rightBox, row.op, row.del, row.issue]);
-      return row;
-    }
-
     _commitExpr() {
       if (this.exprInput.value === this.state.query.logic.expr) return;
       this.state.setExpr(this.exprInput.value);
@@ -259,11 +194,11 @@
         let row = this.rows.get(c.id);
         const isNew = !row;
         if (isNew) {
-          row = this._buildRow(c);
+          row = new LQ.ConditionRow(this.ctx, c);
           this.rows.set(c.id, row);
         }
         if (this.condList.children[i] !== row.el) this.condList.insertBefore(row.el, this.condList.children[i] || null);
-        this._updateRow(row, c, v, colsChanged || isNew);
+        row.update(c, v, colsChanged || isNew);
         if (isNew && d.added === c.id) Flash.el(row.el);
       });
       this.countBadge.textContent = q.conditions.length + ' 件';
@@ -385,53 +320,6 @@
       return h('div', { class: 'lq-condcard__store is-warn' }, [Dom.icon('triangle-exclamation'), h('span', { text: LQ.ProfileStore.reasonText(st.reason) })]);
     }
 
-    _updateRow(row, c, v, colsChanged) {
-      const s = this.state;
-      const src = s.datasets.source;
-      const cond = s.datasets.condition;
-      if (colsChanged || row.left.value !== c.left) {
-        const opts = src ? src.columns.map((col) => ({ value: col.name, label: col.name })) : [];
-        if (c.left && (!src || src.findColumn(c.left) < 0)) opts.push({ value: c.left, label: c.left + '（見つかりません）' });
-        UI.fillSelect(row.left, opts, c.left, src ? '① の列を選択' : '① 未読み込み');
-      }
-      if (c.right.type === 'value') {
-        if (row.rightBox.firstChild !== row.value) {
-          Dom.clear(row.rightBox);
-          Dom.append(row.rightBox, [row.value, row.back]);
-        }
-        if (document.activeElement !== row.value) row.value.value = c.right.value || '';
-      } else {
-        if (row.rightBox.firstChild !== row.right) {
-          Dom.clear(row.rightBox);
-          row.rightBox.appendChild(row.right);
-        }
-        if (colsChanged || row.right.value !== (c.right.col || '')) {
-          const opts = cond ? cond.columns.map((col) => ({ value: col.name, label: col.name })) : [];
-          if (c.right.col && (!cond || cond.findColumn(c.right.col) < 0)) opts.push({ value: c.right.col, label: c.right.col + '（見つかりません）' });
-          opts.push({ group: '固定値', items: [{ value: FIXED, label: '✎ 固定値を入力…' }] });
-          UI.fillSelect(row.right, opts, c.right.col, cond ? '② の列を選択' : '② 未読み込み（固定値は可）');
-        }
-      }
-      if (row.op.value !== c.op) row.op.value = c.op;
-      const issues = v.issues.filter((i) => i.condId === c.id);
-      const err = issues.find((i) => i.level === 'error');
-      const warn = issues.find((i) => i.level === 'warn');
-      row.el.classList.toggle('is-invalid', !!err);
-      row.el.classList.toggle('is-unused', !err && !!warn && warn.code === 'unused');
-      [row.left, row.right, row.value, row.op].forEach((el) => el.classList.remove('is-invalid'));
-      if (err) {
-        let target = row.right;
-        if (err.field === 'left') target = row.left;
-        else if (err.field === 'op') target = row.op;
-        else if (c.right.type === 'value') target = row.value;
-        target.classList.add('is-invalid');
-      }
-      const shown = err || warn;
-      row.issue.hidden = !shown;
-      Dom.clear(row.issue);
-      if (shown) row.issue.appendChild(UI.status(err ? 'warn' : 'info', shown.message.replace(/^条件 [A-Z]：/, '')));
-    }
-
     _renderExprStatus(v) {
       Dom.clear(this.exprStatus);
       const q = this.state.query;
@@ -533,10 +421,7 @@
     _focusCondition(id, field) {
       const row = this.rows.get(id);
       if (!row) return;
-      const c = this.state.findCondition(id);
-      let el = row.left;
-      if (field === 'right') el = c && c.right.type === 'value' ? row.value : row.right;
-      else if (field === 'op') el = row.op;
+      const el = row.focusTarget(field);
       row.el.scrollIntoView({ block: 'nearest' });
       el.focus();
       Flash.el(row.el);

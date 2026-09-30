@@ -165,6 +165,16 @@
   transition: border-color var(--dur-fast) var(--ease-standard);
 }
 
+.lq-cond.is-pair {
+  grid-template-columns: var(--w-label-badge) minmax(0, 2fr) auto minmax(0, 3fr) var(--w-select-op) var(--h-control);
+}
+
+.lq-cond.is-pair .lq-cond__right .lq-input,
+.lq-cond.is-pair .lq-cond__right .lq-select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .lq-cond.is-invalid {
   border-left-color: var(--color-warning);
   background: var(--color-warning-soft);

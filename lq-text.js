@@ -266,6 +266,10 @@
     converter(prep) {
       if (prep === 'key') return (v) => this.key(v);
       if (prep === 'glob') return (v) => this.glob(v);
+      if (prep === 'period') {
+        const now = new Date();
+        return (v) => LQ.Period.parse(v, now);
+      }
       if (prep === 'typed') return (v) => this.typed(v);
       return (v) => this.text(v);
     }
