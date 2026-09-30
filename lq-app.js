@@ -1,5 +1,654 @@
 /* =========================================================================
  * LightQuery - lq-app.js
+ * 操作：出力の操作・抽出条件の操作・組み立てと主要動作
+ * （下の区切りごとに独立した部品。読み込み順どおりに並べている）
+ * ========================================================================= */
+
+/* =========================================================================
+ * ── 出力の操作 ──
+ * 出力の操作：表示中の結果（絞り込み・並べ替え・列）を表にし、Excel・CSV・クリップボードへ出力する。
+ *   Excel は「まとめ＋抽出条件ごとのシート」にも分けられ、「集計」シートも付けられる。出力の根拠（抽出条件シート）の行も作る。
+ *   集計タブを表示中は、集計の表を出力する。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+  const Util = LQ.Util;
+  const Async = LQ.Async;
+  const fmt = Util.formatInt;
+
+  class ExportActions {
+    constructor(app) {
+      this.app = app;
+      this.state = app.state;
+      this.toasts = app.toasts;
+    }
+
+    _defsOf(view) {
+      return view.resolveColumns(this.state.output.columns).filter((d) => d.available);
+    }
+
+    /**
+     * 出力する表を用意する。
+     * @param {{split?:boolean, aggregate?:boolean}} opts split：まとめ＋抽出条件ごとのシートにも分ける（Excel 用）／
+     *        aggregate：「集計」シートを付ける（Excel 用）
+     * @returns {{kind:'result'|'aggregate', view:LQ.ResultView, defs:Array, table:object, sheets:Array|null, aggregate:object|null}|null}
+     */
+    prepare(opts) {
+      const o = opts || {};
+      const view = this.app.main.resultView();
+      if (!view) return null;
+      const agg = this.app.main.aggregate.computed();
+      if (this.state.view.tab === 'aggregate' && agg) {
+        const table = LQ.Aggregator.toTable(agg);
+        return { kind: 'aggregate', view: view, defs: table.defs, table: table, sheets: [{ name: '集計', table: table }], aggregate: agg };
+      }
+      const defs = this._defsOf(view);
+      if (!defs.length) return null;
+      const out = { kind: 'result', view: view, defs: defs, table: view.toTable(defs), sheets: null, aggregate: null };
+      if (o.split && view.multi) out.sheets = this._sheets(view);
+      if (o.aggregate && agg) {
+        out.aggregate = agg;
+        out.sheets = (out.sheets || [{ name: '抽出結果', table: out.table }]).concat([{ name: '集計', table: LQ.Aggregator.toTable(agg) }]);
+      }
+      return out;
+    }
+
+    /** 集計を出力できるか（抽出結果があり、集計する値が設定されている） */
+    hasAggregate() {
+      return !!this.app.main.aggregate.computed();
+    }
+
+    /** まとめ＋抽出条件ごと（優先順位の順）＋該当なし のシート。並び順は画面と同じ */
+    _sheets(view) {
+      const all = view.derive(null);
+      const sheets = [{ name: 'まとめ', table: all.toTable(this._defsOf(all)) }];
+      view.parts.forEach((part, i) => {
+        const v = view.derive(i);
+        const defs = this._defsOf(v);
+        if (defs.length) sheets.push({ name: part.priority + '_' + view.partName(i), table: v.toTable(defs) });
+      });
+      if (view.counts().unmatched) {
+        const v = view.derive(-1);
+        const defs = this._defsOf(v);
+        if (defs.length) sheets.push({ name: '該当なし', table: v.toTable(defs) });
+      }
+      return sheets;
+    }
+
+    /**
+     * @param {string} formatId
+     * @param {{fileName:string, protect:boolean, split:boolean}} options
+     */
+    async exportResult(formatId, options) {
+      const s = this.state;
+      const opts = options || {};
+      const xlsx = formatId === 'xlsx';
+      const prepared = this.prepare({ split: xlsx && !!opts.split, aggregate: xlsx && !!opts.aggregate });
+      if (!prepared) {
+        this.toasts.show({ type: 'warn', title: '出力できる列がありません', message: '出力列パネルで列を選んでください。' });
+        return;
+      }
+      const format = LQ.Exporters.get(formatId);
+      s.setBusy({ kind: 'export', label: '出力中…', detail: format.label + 'を作成しています' });
+      await Async.paint();
+      try {
+        const out = await LQ.Exporters.build(formatId, prepared.table, { metaLines: this.metaLines(prepared), protect: !!opts.protect, sheets: prepared.sheets });
+        const fileName = Util.sanitizeFileName(opts.fileName) + '.' + format.ext;
+        LQ.Exporters.download(out.blob, fileName);
+        LQ.Prefs.set('exportFormat', formatId);
+        const size = prepared.sheets && prepared.sheets.length > 1
+          ? 'シート ' + prepared.sheets.length + ' 枚・' + prepared.sheets[0].name + ' ' + fmt(prepared.sheets[0].table.rowCount) + ' 行'
+          : fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列';
+        this.toasts.show({ type: 'success', title: '出力しました', message: fileName + '（' + size + '・' + Util.formatBytes(out.blob.size) + '）' });
+        out.warnings.forEach((w) => this.toasts.show({ type: 'warn', title: '文字の置き換えがあります', message: w }));
+      } catch (err) {
+        this.toasts.show({ type: 'error', title: '出力できませんでした', message: err.message });
+      } finally {
+        s.setBusy(null);
+      }
+    }
+
+    async copyResult() {
+      const prepared = this.prepare();
+      if (!prepared) return;
+      const text = LQ.Exporters.toClipboardText(prepared.table);
+      const ok = await LQ.Exporters.copyText(text);
+      if (ok) {
+        this.toasts.show({ type: 'success', title: 'クリップボードにコピーしました', message: fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列（見出し付き）。Excel に貼り付けられます。' });
+      } else {
+        this.toasts.show({ type: 'error', title: 'コピーできませんでした', message: 'ブラウザがクリップボードへの書き込みを許可していません。Excel 形式で出力してください。' });
+      }
+    }
+
+    /** 既定のファイル名（絞り込み中はその抽出条件の名前を入れる） */
+    defaultFileName(split) {
+      const src = this.state.datasets.source;
+      const view = this.app.main.resultView();
+      let scope = '抽出結果';
+      if (!split && view && view.filter !== null) scope = view.filter < 0 ? '該当なし' : view.partName(view.filter);
+      if (this.state.view.tab === 'aggregate' && this.hasAggregate()) scope = (view && view.filter !== null ? scope + '_' : '') + '集計';
+      return Util.sanitizeFileName((src ? Util.baseName(src.name) : 'LightQuery') + '_' + scope + '_' + Util.timestamp());
+    }
+
+    _describeDataset(ds) {
+      const src = ds.source;
+      const parts = [src.storedRef ? '保存データ（元：' + (src.storedRef.kindLabel || '不明') + '）' : src.kindLabel];
+      const sheet = src.hasSheets ? src.sheetName : (src.storedRef ? src.storedRef.sheetName : '');
+      if (sheet) parts.push('シート「' + sheet + '」');
+      if (src.encoding) parts.push(LQ.EncodingDetector.label(src.encoding.value));
+      parts.push(ds.settings.hasHeader ? 'ヘッダー ' + ds.settings.headerRow + ' 行目' : 'ヘッダーなし');
+      parts.push('範囲 ' + ds.stats.rangeText);
+      parts.push(fmt(ds.rowCount) + ' 行');
+      return ds.name + '（' + parts.join('・') + '）';
+    }
+
+    /** 抽出条件 1 件分の根拠の行 */
+    _partLines(part, head) {
+      const st = part.stats;
+      const snap = part.snapshot;
+      const join = LQ.QueryEngine.JOIN_KINDS.find((j) => j.id === st.joinKind);
+      const match = LQ.QueryEngine.MATCH_MODES.find((m) => m.id === st.matchMode);
+      const lines = [];
+      if (head) lines.push(['抽出条件', head]);
+      if (part.condition) lines.push(['② 条件データ', this._describeDataset(part.condition)]);
+      snap.conditions.forEach((text, i) => lines.push([i === 0 ? '条件' : '', text]));
+      lines.push(['組み合わせ', snap.exprJa]);
+      lines.push(['出力する行', join.label + '（' + join.note + '）']);
+      if (st.needsCondition && st.joinKind !== 'anti') lines.push(['複数一致したとき', match.label]);
+      if (part.ownRules) lines.push(['照合ルール（個別）', snap.rules]);
+      const shadow = part.hits - part.assigned;
+      lines.push(['件数', '該当 ' + fmt(part.hits) + ' 行・出力 ' + fmt(part.rows) + ' 行' +
+        (shadow > 0 ? '（うち ' + fmt(shadow) + ' 行は優先順位が上の抽出条件に振り分け）' : '')]);
+      return lines;
+    }
+
+    metaLines(prepared) {
+      const s = this.state;
+      const view = prepared.view;
+      const res = view.result;
+      const st = res.stats;
+      const multi = view.parts.length > 1;
+      const lines = [['項目', '内容'], ['出力日時', Util.dateTimeText(new Date())], ['① 元データ', this._describeDataset(s.datasets.source)]];
+      if (multi) {
+        const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
+        lines.push(['重複の扱い', mode.label + '：' + mode.desc]);
+      }
+      if (st.includeUnmatched) lines.push(['該当なしの行', 'どの抽出条件にも該当しない行も「該当なし」として出力']);
+      view.parts.forEach((part, i) => {
+        this._partLines(part, multi ? part.priority + ' 位「' + view.partName(i) + '」' : '').forEach((line) => lines.push(line));
+      });
+      const own = res.snapshot.ownRules || 0;
+      if (own < view.parts.length) lines.push([own ? '照合ルール（全体の設定）' : '照合ルール', res.snapshot.rules]);
+      lines.push(['結果', '① ' + fmt(st.sourceRows) + ' 行中 ' + fmt(st.matchedSources) + ' 行が該当・出力 ' + fmt(st.outputRows) + ' 行' +
+        (st.includeUnmatched ? '（該当なし ' + fmt(st.unmatchedRows) + ' 行を含む）' : '')]);
+      if (prepared.aggregate) {
+        lines.push(['集計', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(prepared.aggregate.rowCount) + ' 行・' + fmt(prepared.aggregate.groupCount) + ' グループ）']);
+        prepared.aggregate.notes.forEach((n) => lines.push(['', n]));
+      }
+      if (prepared.sheets && prepared.sheets.length > 1) lines.push(['シート', prepared.sheets.map((sh) => sh.name).join('、')]);
+      else if (view.filter !== null) lines.push(['出力した範囲', view.filter < 0 ? '該当なしの行のみ' : '抽出条件「' + view.partName(view.filter) + '」の行のみ']);
+      if (s.view.sort) lines.push(['並び順', LQ.ResultView.nameOf(s.view.sort.key) + '（' + (s.view.sort.dir === 'desc' ? '降順' : '昇順') + '）']);
+      lines.push(['出力した列', prepared.defs.map((d) => d.name).join('、')]);
+      if (s.isStale()) lines.push(['注意', '出力時点の画面の条件は、この結果を作った条件から変更されています']);
+      lines.push(['作成', 'LightQuery（簡易クエリ）']);
+      return lines;
+    }
+  }
+
+  LQ.ExportActions = ExportActions;
+})(window);
+
+/* =========================================================================
+ * ── 抽出条件の操作 ──
+ * 抽出条件の操作：選択・追加・複製・削除・優先順位・有効／無効・振り分けの設定・照合ルールの対象、
+ *   条件（A・B…）の追加と削除、表（ファイル・シート）からの作成、JSON の書き出し／読み込み、サンプルの読み込み／消去。
+ *   消去や置き換えは確認ダイアログではなく、通知の「元に戻す」で取り消せるようにする。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+  const Util = LQ.Util;
+  const Async = LQ.Async;
+
+  class ProfileActions {
+    constructor(app) {
+      this.app = app;
+      this.state = app.state;
+      this.bus = app.bus;
+      this.toasts = app.toasts;
+    }
+
+    _undo(snap, title) {
+      return [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, title) }];
+    }
+
+    _limit() {
+      this.toasts.show({ type: 'warn', title: '抽出条件は最大 ' + LQ.Profile.MAX + ' 件です', message: '使わない抽出条件を削除するか、JSON に書き出してから一覧から外してください。' });
+    }
+
+    /* =================================================================
+     * 一覧
+     * ================================================================= */
+
+    select(id) {
+      this.state.setActive(id);
+      this.state.openPanel('query');
+    }
+
+    /** 空の抽出条件を一覧の最後（最も低い優先順位）に追加し、名前の入力へ進む */
+    add() {
+      const s = this.state;
+      if (!s.profiles.canAdd()) {
+        this._limit();
+        return null;
+      }
+      const p = s.addProfile({ name: s.profiles.defaultName() });
+      s.openPanel('query');
+      this.bus.emit('focus-profile-name', { id: p.id });
+      return p;
+    }
+
+    /** 複製して元のすぐ下に入れる */
+    duplicate(id) {
+      const s = this.state;
+      const p = s.profiles.find(id);
+      if (!p) return;
+      if (!s.profiles.canAdd()) {
+        this._limit();
+        return;
+      }
+      const copy = p.duplicate();
+      copy.name = p.name + ' のコピー';
+      s.addProfile(copy, s.profiles.indexOf(id) + 1);
+      s.openPanel('query');
+      this.toasts.show({
+        type: 'success',
+        title: '「' + p.name + '」を複製しました',
+        message: '「' + copy.name + '」を ' + s.profiles.rank(copy.id) + ' 位（元のすぐ下）に入れました。' + (p.isSample ? 'サンプルの複製は、自分の抽出条件として保存されます。' : '')
+      });
+    }
+
+    remove(id) {
+      const s = this.state;
+      const snap = s.snapshot();
+      const removed = s.removeProfile(id);
+      if (!removed) return;
+      this.toasts.show({
+        type: 'info',
+        title: '抽出条件「' + removed.name + '」を削除しました',
+        message: '残りは ' + s.profiles.length + ' 件です。',
+        actions: this._undo(snap, '抽出条件「' + removed.name + '」を元に戻しました')
+      });
+    }
+
+    /** @returns {boolean} 動いたか */
+    moveTo(id, index) {
+      return this.state.moveProfile(id, index);
+    }
+
+    moveBy(id, delta) {
+      return this.state.moveProfileBy(id, delta);
+    }
+
+    setEnabled(id, enabled) {
+      this.state.setProfileEnabled(id, enabled);
+    }
+
+    setCombine(patch) {
+      this.state.setCombine(patch);
+    }
+
+    /**
+     * 照合ルールの対象を切り替える。own：今の全体の設定を写して、この抽出条件だけの設定にする /
+     * global：個別の設定を外して全体の設定を使う（元に戻せる）
+     */
+    setRulesScope(id, scope) {
+      const s = this.state;
+      const p = s.profiles.find(id);
+      if (!p || (scope === 'own') === !!p.rules) return;
+      const snap = s.snapshot();
+      const undo = this._undo(snap, '「' + p.name + '」の照合ルールを元に戻しました');
+      if (scope === 'own') {
+        s.setProfileRules(id, s.rules);
+        this.toasts.show({ type: 'success', title: '「' + p.name + '」だけの照合ルールにしました',
+          message: '今の全体の設定を写しました。ここで変えた項目は、この抽出条件だけに使います。', actions: undo });
+        return;
+      }
+      const own = p.rules;
+      const same = LQ.Normalizer.sameRules(own, s.rules);
+      s.setProfileRules(id, null);
+      this.toasts.show({ type: 'success', title: '「' + p.name + '」は全体の設定で比べます',
+        message: same ? '個別の設定は全体の設定と同じでした。' : '外した個別の設定：' + new LQ.Normalizer(own).describe(), actions: undo });
+    }
+
+    /* =================================================================
+     * 条件（選択中の抽出条件）
+     * ================================================================= */
+
+    addCondition(init) {
+      const s = this.state;
+      if (!s.canAddCondition()) {
+        this.toasts.show({ type: 'warn', title: '条件は最大 ' + LQ.AppState.MAX_CONDITIONS + ' 件です', message: '不要な条件を削除してから追加してください。' });
+        return null;
+      }
+      const base = init || { right: { type: s.datasets.condition ? 'column' : 'value' } };
+      const c = s.addCondition(base);
+      this.bus.emit('focus-condition', { id: c.id, field: base.left ? 'right' : 'left' });
+      return c;
+    }
+
+    /** ① と ② で同じ名前の列を「完全一致」の条件としてまとめて追加 */
+    addSameNameConditions(names) {
+      const s = this.state;
+      const added = [];
+      names.forEach((name) => {
+        if (!s.canAddCondition()) return;
+        added.push(s.addCondition({ left: name, op: 'eq', right: { type: 'column', col: name } }).label);
+      });
+      if (added.length) this.toasts.show({ type: 'success', title: '条件 ' + added.join('・') + ' を追加しました', message: '同じ名前の列を「完全一致」で対応付けました。' });
+    }
+
+    removeCondition(id) {
+      const s = this.state;
+      const snap = s.snapshot();
+      const removed = s.removeCondition(id);
+      if (!removed) return;
+      this.toasts.show({
+        type: 'info',
+        title: '条件 ' + removed.label + ' を削除しました',
+        message: LQ.QueryEngine.describeCondition(removed),
+        actions: this._undo(snap, '条件 ' + removed.label + ' を元に戻しました')
+      });
+    }
+
+    /** 否定の条件だけのとき：「含む／一致」＋「一致しなかった行」に切り替える（NG リストの使い方） */
+    convertToExclusion() {
+      const s = this.state;
+      const snap = s.snapshot();
+      s.query.conditions.forEach((c) => {
+        const op = LQ.Operators.get(c.op);
+        if (op && op.negative && op.positive) s.updateCondition(c.id, { op: op.positive });
+      });
+      s.setJoinKind('anti');
+      this.toasts.show({
+        type: 'success',
+        title: '除外リストの設定に切り替えました',
+        message: '比較方法を「含む／完全一致」にし、出力する行を「一致しなかった行」にしました。',
+        actions: this._undo(snap, '切り替える前に戻しました')
+      });
+    }
+
+    /* =================================================================
+     * 表（ファイル・シート）から作る
+     * ================================================================= */
+
+    /** 条件データ（表）を選んで一覧の最後に加える（② のタブ・パネルから）。上限に達していればファイルを選ぶ前に知らせる */
+    addTables() {
+      const s = this.state;
+      if (!s.activeProfile.isBlank() && !s.profiles.canAdd()) {
+        this._limit();
+        return;
+      }
+      this.app.pickFile('append');
+    }
+
+    /**
+     * 選んだ表ごとに抽出条件を作る。選択中が空の抽出条件なら 1 件目はそこに入れ、
+     * 残りは選択中の下（append のときは一覧の最後）に並べる。
+     * @param {Array<{dataset:LQ.Dataset, name:string}>} tables
+     * @param {{append?:boolean}} opts append：② のタブ・パネルの「条件データを追加」から（画面はそのまま、追加した表を表示する）
+     */
+    createFromTables(tables, opts) {
+      const s = this.state;
+      const append = !!(opts && opts.append);
+      if (!tables.length) return;
+      const snap = s.snapshot();
+      const active = s.activeProfile;
+      const rest = tables.slice();
+      const made = [];
+      if (active.isBlank()) {
+        const t = rest.shift();
+        s.setProfileCondition(active.id, t.dataset);
+        s.renameProfile(active.id, t.name);
+        made.push(active);
+      }
+      const created = rest.map((t) => {
+        const p = new LQ.Profile({ name: t.name });
+        p.setCondition(t.dataset);
+        return p;
+      });
+      const at = append ? s.profiles.length : s.profiles.indexOf(active.id) + 1;
+      const added = created.length ? s.insertProfiles(created, at, !made.length) : [];
+      added.forEach((p) => made.push(p));
+      const skipped = created.length - added.length;
+      if (!made.length) {
+        this._limit();
+        return;
+      }
+      const list = made.map((p) => '「' + p.name + '」（' + s.profiles.rank(p.id) + ' 位）').join('・');
+      const limit = skipped ? '上限（' + LQ.Profile.MAX + ' 件）のため ' + skipped + ' 件は作れませんでした。' : '';
+      const undo = this._undo(snap, (append ? '条件データを追加する' : '表から作る') + '前の一覧に戻しました');
+      if (append) {
+        s.setTab('condition');
+        this.toasts.show({
+          type: 'success',
+          title: '条件データを ' + made.length + ' 件追加しました',
+          message: list + '。「条件を設定」で、① のどの列と比べるかを決めてください。' + limit,
+          actions: [{ label: '条件を設定', icon: 'filter', primary: true, onClick: () => s.openPanel('query') }].concat(undo)
+        });
+        return;
+      }
+      s.openPanel('query');
+      this.toasts.show({
+        type: 'success',
+        title: '抽出条件を ' + made.length + ' 件用意しました',
+        message: list + '。一覧で 1 件ずつ選び、① のどの列と比べるか（条件）を設定してください。' + limit,
+        actions: undo
+      });
+    }
+
+    /* =================================================================
+     * JSON の書き出し・読み込み
+     * ================================================================= */
+
+    defaultJsonName(scope, profile) {
+      return scope === 'all'
+        ? 'LightQuery_抽出条件一式_' + Util.timestamp()
+        : 'LightQuery_抽出条件_' + Util.sanitizeFileName(profile.name) + '_' + Util.timestamp();
+    }
+
+    /** @param {{scope:'one'|'all', id?:string, withData:boolean, fileName:string}} opts */
+    exportJson(opts) {
+      const s = this.state;
+      let obj;
+      let count = 1;
+      if (opts.scope === 'all') {
+        obj = LQ.Bundle.exportLibrary(s, opts.withData);
+        count = s.profiles.length;
+      } else {
+        const p = s.profiles.find(opts.id) || s.activeProfile;
+        obj = LQ.Bundle.exportProfile(p, s.profiles.rank(p.id), opts.withData, s.rules);
+      }
+      const blob = new Blob([LQ.Bundle.stringify(obj)], { type: 'application/json' });
+      const name = Util.sanitizeFileName(opts.fileName) + '.json';
+      LQ.Exporters.download(blob, name);
+      this.toasts.show({
+        type: 'success',
+        title: '抽出条件を書き出しました',
+        message: name + '（' + count + ' 件・' + (opts.withData ? '② のデータを含む' : '② はファイル名のみ') + '・' + Util.formatBytes(blob.size) +
+          '）。「読込」またはドラッグ＆ドロップで再利用できます。'
+      });
+    }
+
+    async importJsonFile(file) {
+      if (this.app._blockedByBusy()) return;
+      let obj;
+      try {
+        obj = JSON.parse(await file.text());
+      } catch (err) {
+        this.toasts.show({ type: 'error', title: '抽出条件を読み込めませんでした', message: file.name + ' は JSON 形式ではありません。' });
+        return;
+      }
+      let bundle;
+      try {
+        bundle = LQ.Bundle.parse(obj, file.name);
+      } catch (err) {
+        this.toasts.show({ type: 'error', title: '抽出条件を読み込めませんでした', message: file.name + '：' + err.message });
+        return;
+      }
+      if (bundle.kind === 'library' && !this._ownListIsBlank()) {
+        this.app.profileDialogs.openImportChoice({ fileName: file.name, count: bundle.profiles.length },
+          (mode) => this.applyBundle(bundle, mode, file.name));
+        return;
+      }
+      this.applyBundle(bundle, bundle.kind === 'library' ? 'replace' : 'add', file.name);
+    }
+
+    /** 自分の抽出条件が空（追加したままのものだけ）か */
+    _ownListIsBlank() {
+      return this.state.userProfiles().every((p) => p.isBlank());
+    }
+
+    /**
+     * 読み込んだ抽出条件を適用する。サンプル表示中ならサンプルを閉じてから適用する。
+     * 一式（旧形式を含む）で置き換えるときは、全体の照合ルール・振り分け・出力列・表示件数・① の読み込み範囲もファイルの内容にする。
+     * それ以外（追加・1 件のファイル）は今の設定を変えず、ファイルの全体の照合ルールが今と違えば、
+     * それを使っていた抽出条件に個別の設定として付ける（書き出し元と同じ結果になるように）。
+     * @param {object} bundle LQ.Bundle.parse の結果
+     * @param {'replace'|'add'} mode
+     */
+    applyBundle(bundle, mode, fileName) {
+      const s = this.state;
+      const snap = s.snapshot();
+      const leftSample = !!s.sampleStash || s.profiles.items.some((p) => p.isSample);
+      if (leftSample) s.exitSample();
+      const replace = mode === 'replace' || this._ownListIsBlank();
+      let added = bundle.profiles;
+      if (replace) s.replaceProfiles(bundle.profiles, bundle.profiles[0].id);
+      else added = s.insertProfiles(bundle.profiles, s.profiles.length, true);
+      const whole = replace && bundle.kind !== 'profile';
+      if (whole) {
+        if (bundle.rules) s.setRules(bundle.rules);
+        if (bundle.combine) s.setCombine(bundle.combine);
+        if (bundle.output) s.importOutputColumns(bundle.output.columns);
+        if (bundle.view) s.setPageSize(bundle.view.pageSize);
+      }
+      const adopted = whole ? 0 : this._adoptRules(added, bundle.rules);
+      const readApplied = whole && bundle.read ? this._applySourceRead(bundle.read.source) : false;
+      s.openPanel('query');
+      const missing = added.filter((p) => !p.condition && p.conditionRef && p.conditionRef.fileName).length;
+      const skipped = bundle.skipped + (bundle.profiles.length - added.length);
+      const notes = [];
+      if (missing) notes.push('② のデータが入っていない ' + missing + ' 件は、使う前に ② を読み込んでください（前回のファイル名を表示しています）');
+      if (adopted) notes.push('ファイルの照合ルールが今の全体の設定と違うため、' + adopted + ' 件には個別の照合ルールとして付けました');
+      if (readApplied) notes.push('① の読み込み範囲も適用しました');
+      if (skipped) notes.push('上限（' + LQ.Profile.MAX + ' 件）のため ' + skipped + ' 件は読み込みませんでした');
+      if (leftSample) notes.push('サンプルは閉じました');
+      this.toasts.show({
+        type: 'success',
+        title: '抽出条件を ' + added.length + ' 件読み込みました' + (replace ? '' : '（一覧の後ろに追加）'),
+        message: fileName + (notes.length ? '。' + notes.join('。') + '。' : ''),
+        actions: this._undo(snap, '読み込む前の抽出条件に戻しました')
+      });
+    }
+
+    /**
+     * 書き出し元の全体の照合ルールが今の全体の設定と違うとき、それを使っていた抽出条件に個別の設定として付ける。
+     * @returns {number} 付けた件数
+     */
+    _adoptRules(list, rules) {
+      const s = this.state;
+      if (!rules || LQ.Normalizer.sameRules(rules, s.rules)) return 0;
+      let count = 0;
+      list.forEach((p) => {
+        if (p.rules) return;
+        s.setProfileRules(p.id, rules);
+        count++;
+      });
+      return count;
+    }
+
+    /** 一括・旧形式の JSON に入っている ① の読み込み範囲を、読み込み済みの ① に適用する */
+    _applySourceRead(read) {
+      const s = this.state;
+      const ds = s.datasets.source;
+      if (!ds || ds.isSample || !read || (!read.settings && !read.choices)) return false;
+      try {
+        if (ds.source.applyChoices(read.choices)) ds.reload(read.settings);
+        else if (read.settings) ds.applySettings(LQ.Dataset.normalizeSettings(read.settings));
+      } catch (err) {
+        return false;
+      }
+      s.datasetChanged('source');
+      return true;
+    }
+
+    /* =================================================================
+     * サンプル
+     * ================================================================= */
+
+    async loadSample(id) {
+      const s = this.state;
+      if (this.app._blockedByBusy()) return;
+      const snap = s.snapshot();
+      const hadStash = !!s.sampleStash;
+      s.setBusy({ kind: 'read', label: '準備中…', detail: 'サンプルデータを作成しています' });
+      await Async.paint();
+      let built = null;
+      try {
+        built = LQ.Samples.build(id);
+        const make = (role, spec) => new LQ.Dataset(role, LQ.SourceFile.fromGrid(spec.grid, spec.name, 'sample'), { isSample: true, settings: spec.settings || null });
+        const profiles = built.profiles.map((spec) => {
+          const p = new LQ.Profile({ name: spec.name, origin: 'sample', query: LQ.QueryOps.fromPlain(spec.query), rules: spec.rules || null });
+          if (spec.condition) p.setCondition(make('condition', spec.condition));
+          return p;
+        });
+        s.enterSample(make('source', built.source), profiles, built.combine || null);
+        s.applyOutputPreset(built.output);
+        s.setAggregate(built.aggregate || (s.sampleStash ? s.sampleStash.aggregate : s.aggregate));
+        s.setTab(built.tab || 'result');
+      } catch (err) {
+        built = null;
+        this.toasts.show({ type: 'error', title: 'サンプルを読み込めませんでした', message: err.message });
+      } finally {
+        s.setBusy(null);
+      }
+      if (!built) return;
+      const stashed = !hadStash && s.sampleStash ? s.sampleStash.profiles.filter((p) => !p.isBlank()).length : 0;
+      this.toasts.show({
+        type: 'success',
+        title: 'サンプル「' + built.title + '」を読み込みました',
+        message: '右上の「' + this.app.cta().label + '」で結果を確認できます。' +
+          (stashed ? '自分の抽出条件 ' + stashed + ' 件は退避しました（「サンプルデータのみクリア」で戻ります）。' : ''),
+        actions: this._undo(snap, 'サンプルを読み込む前に戻しました')
+      });
+    }
+
+    /** サンプルの ①・② と抽出条件だけを消し、退避していた自分の ① と抽出条件に戻す */
+    clearSamples() {
+      const s = this.state;
+      if (!s.hasSample() || this.app._blockedByBusy()) return;
+      const snap = s.snapshot();
+      const back = s.sampleStash ? s.sampleStash.profiles.filter((p) => !p.isBlank()).length : 0;
+      s.exitSample();
+      this.toasts.show({
+        type: 'info',
+        title: 'サンプルデータを消去しました',
+        message: 'サンプルの ①・② と抽出条件を消去しました。' +
+          (back ? '退避していた自分の抽出条件 ' + back + ' 件を戻しました。' : '自分で読み込んだデータと抽出条件は残っています。'),
+        actions: this._undo(snap, 'サンプルデータを元に戻しました')
+      });
+    }
+  }
+
+  LQ.ProfileActions = ProfileActions;
+})(window);
+
+/* =========================================================================
+ * ── 組み立てと主要動作 ──
  * アプリ本体（組み立て役）：状態・エンジン・画面部品をつなぎ、利用者の操作（アクション）を実行する。
  *   ・主要動作（CTA）は cta() が「次にすることを 1 つだけ」決める
  *   ・消去や置き換えは確認ダイアログではなく「元に戻す」を通知に付ける

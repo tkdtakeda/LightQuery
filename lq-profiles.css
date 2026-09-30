@@ -1,6 +1,12 @@
-@charset "UTF-8";
 /* =========================================================================
  * LightQuery - lq-profiles.css
+ * 見た目：抽出条件の一覧と編集・条件データの切替・集計パネル
+ * （下の区切りごとに独立した部品。読み込み順どおりに並べている）
+ * ========================================================================= */
+
+@charset "UTF-8";
+/* =========================================================================
+ * ── 抽出条件の一覧と編集 ──
  * 複数の抽出条件まわり：一覧（順位・有効／無効・名前・状態）、編集欄の見出しと ② のカード、開閉できる区画、
  *   結果の絞り込み、表の選択・読み込み方法の小窓、結果の根拠（抽出条件ごと）、
  *   照合ルールの対象（全体の設定／抽出条件ごと）、出力列の覚えている並び
@@ -684,4 +690,199 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+@charset "UTF-8";
+/* =========================================================================
+ * ── 条件データの切替 ──
+ * 条件データ（抽出条件ごとの ②）の切替：メインの ② タブの切替ボタン（結果の絞り込みと同じ形）と、
+ *   ② パネルの一覧。選択中は青（画面全体で共通の「選択」の色）、未読み込みは破線で示す。
+ * 値はすべて lq-tokens.css のトークンを参照する。
+ * ========================================================================= */
+
+/* ---------- ② タブの切替ボタン ---------- */
+.lq-condbar .lq-filterbar__label .lq-badge {
+  margin-right: var(--space-1);
+}
+
+.lq-fchip.is-disabled:not(.is-active) .lq-fchip__label {
+  color: var(--color-text-disabled);
+}
+
+.lq-fchip--add {
+  border-style: dashed;
+  border-color: var(--color-primary-line);
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.lq-fchip--add:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-faint);
+}
+
+/* ---------- ② パネルの一覧 ---------- */
+/* 一覧の下に続く読み込み設定（別の入れ物）にも、区画の区切りを付ける */
+.lq-section + .lq-dsbody > .lq-section:first-child {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.lq-condtables {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lq-condtable {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-right: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--indicator-width) solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-condtable:hover {
+  border-color: var(--color-primary-line);
+}
+
+.lq-condtable.is-active {
+  border-color: var(--color-primary-line);
+  border-left-color: var(--color-primary);
+  background: var(--color-primary-faint);
+}
+
+.lq-condtable.is-empty {
+  border-style: dashed;
+}
+
+.lq-condtable.is-active.is-empty {
+  border-left-style: solid;
+}
+
+.lq-condtable__main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+
+.lq-condtable__main .lq-badge {
+  flex-shrink: 0;
+}
+
+.lq-condtable__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.lq-condtable__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-bold);
+}
+
+.lq-condtable__main:hover .lq-condtable__name {
+  color: var(--color-primary);
+}
+
+.lq-condtable__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--color-text-sub);
+}
+
+.lq-condtable.is-empty .lq-condtable__meta {
+  color: var(--color-warning-strong);
+}
+
+.lq-condtable.is-disabled .lq-condtable__name,
+.lq-condtable.is-disabled .lq-condtable__meta {
+  color: var(--color-text-disabled);
+}
+
+.lq-condtable > .lq-btn {
+  flex-shrink: 0;
+}
+
+/* =========================================================================
+ * ── 集計パネル ──
+ * 集計パネル（グループにする列の一覧・集計する値の行・順位）
+ * ========================================================================= */
+.lq-agglist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  list-style: none;
+}
+
+.lq-agglist__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--h-control);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--indicator-width) solid var(--color-primary-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.lq-agglist__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lq-aggmeasures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.lq-aggmeasure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.8fr) var(--h-control);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--indicator-width) solid var(--color-accent-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.lq-aggmeasure .lq-select {
+  width: 100%;
+}
+
+.lq-aggrank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
