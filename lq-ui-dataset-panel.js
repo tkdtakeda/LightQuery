@@ -138,6 +138,8 @@
           Flash.input(this.f.sheet);
         });
         children.push(UI.field('シート', this.f.sheet, 'シートを切り替えると、読み込み範囲を自動で判定し直します'));
+        this.f.extentReason = h('div', { class: 'lq-reason' });
+        children.push(this.f.extentReason);
       }
       if (src.hasEncoding) {
         this.f.encoding = h('select', { class: 'lq-select' });
@@ -305,6 +307,7 @@
       ]);
       if (this.f.sheet) {
         UI.fillSelect(this.f.sheet, src.sheetNames.map((n) => ({ value: n, label: n })), src.sheetName);
+        this._extentReason(src.extent);
       }
       if (this.f.encoding) {
         const detected = src.encodingChoice === 'auto' && src.encoding ? LQ.EncodingDetector.label(src.encoding.value) : '';
@@ -330,6 +333,18 @@
       Dom.append(this.f.autoReason, [Dom.icon('wand-magic-sparkles'),
         h('span', { text: (isAuto ? '自動判定のまま：' : '自動判定の結果（現在は変更済み）：') + ds.auto.reasons.join('／') })]);
       this._updateResult(ds);
+    }
+
+    /** Excel に記録された使用範囲の外にもデータがあったときだけ、実際の範囲で読んだことを示す */
+    _extentReason(extent) {
+      const el = this.f.extentReason;
+      Dom.clear(el);
+      el.hidden = !(extent && extent.beyond);
+      if (el.hidden) return;
+      Dom.append(el, [Dom.icon('circle-info'), h('span', {
+        text: 'Excel に記録された使用範囲' + (extent.declared ? '（' + extent.declared + '）' : '') + 'の外にもデータがあったため、実際のデータの範囲（' +
+          extent.actual + '）で読み込みました。'
+      })]);
     }
 
     _reason(el, info, fallback) {

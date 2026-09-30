@@ -3,6 +3,7 @@
  * 比較方法（演算子）の登録簿。新しい比較方法は register() で追加するだけでよい。
  *   prep：値の下ごしらえ方法（key＝同値判定用 / text＝文字列比較用 / typed＝大小比較用）
  *   test(left, right)：true / false / null（比較できない）を返す
+ *   wildcard：② の値・固定値の「*」をワイルドカードとして扱う（照合ルールが ON のとき。negative なら当てはまらない行が真）
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -41,7 +42,7 @@
 
   const Operators = {
     register(def) {
-      registry.set(def.id, Object.freeze(Object.assign({ negative: false, positive: null }, def)));
+      registry.set(def.id, Object.freeze(Object.assign({ negative: false, positive: null, wildcard: false }, def)));
     },
 
     get(id) {
@@ -67,12 +68,12 @@
   };
 
   Operators.register({
-    id: 'eq', name: '完全一致', phrase: 'と完全一致', group: 'match', order: 10, prep: 'key',
+    id: 'eq', name: '完全一致', phrase: 'と完全一致', group: 'match', order: 10, prep: 'key', wildcard: true,
     test: (l, r) => l === r
   });
   Operators.register({
     id: 'neq', name: '一致しない', phrase: 'と一致しない', group: 'match', order: 20, prep: 'key',
-    negative: true, positive: 'eq',
+    negative: true, positive: 'eq', wildcard: true,
     test: (l, r) => l !== r
   });
   Operators.register({

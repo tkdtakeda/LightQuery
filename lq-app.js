@@ -130,8 +130,17 @@
           status: rerun ? { kind: 'warn', text: '条件が変わりました（結果は未反映）' } : { kind: 'info', text: this._runSummary() } };
       }
       if (s.result.length === 0) return { id: 'review', label: '条件を見直す', icon: 'sliders', status: { kind: 'warn', text: '一致する行はありませんでした' } };
+      if (!this._hasOutputColumn()) {
+        return { id: 'chooseColumns', label: '出力する列を選ぶ', icon: 'table-columns', status: { kind: 'warn', text: '出力できる列が 0 列のため出力できません（左の「出力列」で選びます）' } };
+      }
       return { id: 'export', label: fmt(s.result.length) + ' 行を出力する', icon: 'file-export',
         status: { kind: 'ok', text: 'Excel・CSV・コピーで出力できます' } };
+    }
+
+    /** 表示・出力できる列が 1 列以上あるか */
+    _hasOutputColumn() {
+      const view = this.main ? this.main.resultView() : null;
+      return !view || view.resolveColumns(this.state.output.columns).some((d) => d.available);
     }
 
     /** 不備のある抽出条件を直すための CTA（抽出条件が複数なら名前を添える） */
@@ -181,6 +190,7 @@
           break;
         case 'run': this.run(); break;
         case 'review': this.state.openPanel('query'); break;
+        case 'chooseColumns': this.state.openPanel('output'); break;
         case 'export': this.resultDialogs.openExport(anchor); break;
         default: break;
       }

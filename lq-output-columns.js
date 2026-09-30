@@ -105,6 +105,19 @@
       return true;
     }
 
+    /** keys の列をまとめて切り替える。@returns {boolean} 変わった列があるか */
+    setManyVisible(keys, visible) {
+      const set = new Set(keys);
+      let changed = false;
+      this.columns.forEach((c) => {
+        if (!set.has(c.key) || c.visible === visible) return;
+        c.visible = visible;
+        changed = true;
+      });
+      if (changed) this._remember();
+      return changed;
+    }
+
     /** prefix：'s:' / 'c:' / 'm:' */
     setGroupVisible(prefix, visible) {
       this.columns.forEach((c) => {

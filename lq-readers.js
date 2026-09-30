@@ -328,41 +328,88 @@
       });
     },
 
-    /** 空でない最初のシート名（なければ先頭） */
+    /** 値の入ったセルがある最初のシート名（なければ先頭） */
     firstUsedSheet(workbook) {
       const names = workbook.SheetNames || [];
-      const used = names.find((name) => {
-        const ws = workbook.Sheets[name];
-        return ws && ws['!ref'];
-      });
+      const used = names.find((name) => ExcelReader.hasData(workbook, name));
       return used || names[0] || '';
     },
 
-    sheetToGrid(workbook, name) {
+    /** 値の入ったセルがあるシートか（Excel に記録された使用範囲ではなく実際のセルで判定。最初の 1 つで打ち切る） */
+    hasData(workbook, name) {
       const XLSX = global.XLSX;
       const ws = workbook.Sheets[name];
-      if (!ws || !ws['!ref']) return [];
-      const range = XLSX.utils.decode_range(ws['!ref']);
+      if (!ws) return false;
+      const filled = (cell) => cellToText(XLSX, cell, false) !== '';
+      const dense = ws['!data'];
+      if (dense) return dense.some((rowCells) => !!rowCells && rowCells.some(filled));
+      return Object.keys(ws).some((key) => key.charAt(0) !== '!' && filled(ws[key]));
+    },
+
+    /** 実際のデータが記録された使用範囲の外にはみ出しているか */
+    isBeyond(declared, actual) {
+      if (!actual) return false;
+      if (!declared) return true;
+      const XLSX = global.XLSX;
+      const d = XLSX.utils.decode_range(declared);
+      const a = XLSX.utils.decode_range(actual);
+      return a.s.r < d.s.r || a.s.c < d.s.c || a.e.r > d.e.r || a.e.c > d.e.c;
+    },
+
+    /**
+     * シートを grid にする。Excel に記録された使用範囲（!ref）は信用せず、値の入ったセルの範囲を使う。
+     * 記録より外にあるデータも読み、書式だけで広がった範囲の空行は作らない。
+     * @returns {{grid:string[][], declared:string, actual:string}} declared：記録された範囲 / actual：実際の範囲（値がなければ ''）
+     */
+    readSheet(workbook, name) {
+      const XLSX = global.XLSX;
+      const ws = workbook.Sheets[name];
+      const declared = ws && ws['!ref'] ? ws['!ref'] : '';
+      if (!ws) return { grid: [], declared: declared, actual: '' };
       const props = workbook.Workbook && workbook.Workbook.WBProps;
       const date1904 = !!(props && props.date1904);
+      const rows = [];
+      const put = (r, c, cell) => {
+        const text = cellToText(XLSX, cell, date1904);
+        if (text === '') return;
+        (rows[r] || (rows[r] = []))[c] = text;
+      };
       const dense = ws['!data'];
-      const grid = [];
-      for (let r = 0; r <= range.e.r; r++) {
-        const rowCells = dense ? dense[r] : null;
-        const row = [];
-        let last = -1;
-        if (r >= range.s.r) {
-          for (let c = 0; c <= range.e.c; c++) {
-            const cell = dense ? (rowCells ? rowCells[c] : undefined) : ws[XLSX.utils.encode_cell({ r: r, c: c })];
-            const text = c >= range.s.c ? cellToText(XLSX, cell, date1904) : '';
-            row.push(text);
-            if (text !== '') last = c;
-          }
-        }
-        row.length = last + 1;
-        grid.push(row);
+      if (dense) {
+        dense.forEach((rowCells, r) => {
+          if (rowCells) rowCells.forEach((cell, c) => put(r, c, cell));
+        });
+      } else {
+        Object.keys(ws).forEach((key) => {
+          if (key.charAt(0) === '!') return;
+          const at = XLSX.utils.decode_cell(key);
+          put(at.r, at.c, ws[key]);
+        });
       }
-      return grid;
+      const grid = new Array(rows.length);
+      let minR = -1;
+      let minC = Infinity;
+      let maxC = -1;
+      for (let r = 0; r < rows.length; r++) {
+        const src = rows[r];
+        const row = [];
+        if (src) {
+          for (let c = 0; c < src.length; c++) {
+            const text = src[c];
+            if (text === undefined) {
+              row.push('');
+              continue;
+            }
+            row.push(text);
+            if (c < minC) minC = c;
+          }
+          if (minR < 0) minR = r;
+          if (src.length - 1 > maxC) maxC = src.length - 1;
+        }
+        grid[r] = row;
+      }
+      const actual = minR < 0 ? '' : XLSX.utils.encode_range({ s: { r: minR, c: minC }, e: { r: rows.length - 1, c: maxC } });
+      return { grid: grid, declared: declared, actual: actual };
     }
   };
 
@@ -418,6 +465,7 @@
       this.delimiter = null;
       this.sheetName = '';
       this.sheetNames = [];
+      this.extent = null;
       this._bytes = null;
       this._text = null;
       this._workbook = null;
@@ -502,7 +550,9 @@
 
     build() {
       if (this.kind === 'excel') {
-        this.grid = ExcelReader.sheetToGrid(this._workbook, this.sheetName);
+        const sheet = ExcelReader.readSheet(this._workbook, this.sheetName);
+        this.grid = sheet.grid;
+        this.extent = { declared: sheet.declared, actual: sheet.actual, beyond: ExcelReader.isBeyond(sheet.declared, sheet.actual) };
         return;
       }
       if (this.kind === 'sample' || this.kind === 'stored') return;
@@ -546,10 +596,7 @@
     /** 中身のあるシート名（Excel 以外は空） */
     usedSheetNames() {
       if (!this.hasSheets || !this._workbook) return [];
-      return this.sheetNames.filter((name) => {
-        const ws = this._workbook.Sheets[name];
-        return !!(ws && ws['!ref']);
-      });
+      return this.sheetNames.filter((name) => ExcelReader.hasData(this._workbook, name));
     }
 
     /** 同じファイルを別の抽出条件で使うための複製（元のバイト列・ブックは共有し、設定は別々に持つ） */
@@ -561,6 +608,7 @@
       copy.delimiter = this.delimiter;
       copy.sheetName = this.sheetName;
       copy.sheetNames = this.sheetNames.slice();
+      copy.extent = this.extent ? Object.assign({}, this.extent) : null;
       copy.storedRef = this.storedRef ? Object.assign({}, this.storedRef) : undefined;
       copy._bytes = this._bytes;
       copy._text = this._text;

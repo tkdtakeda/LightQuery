@@ -104,12 +104,58 @@
   };
 
   /* ---------------------------------------------------------------------
+   * Wildcard：② の値の「*」（0 文字以上の任意の文字）による当てはめ。「?」や「~*」は扱わない。
+   *   山田* ＝ 前方一致 / *田 ＝ 後方一致 / *山田* ＝ 含む / 山*郎 ＝ パターン / * ＝ 空欄以外すべて
+   *   値は照合ルールでそろえた文字列（Normalizer.text）どうしで比べる。
+   * ------------------------------------------------------------------- */
+  const WILDCARD_KIND = Object.freeze({ startsWith: '前方一致', endsWith: '後方一致', contains: '含む', pattern: 'パターン', any: '空欄以外すべて' });
+
+  const Wildcard = {
+    kindLabel(kind) {
+      return WILDCARD_KIND[kind] || '';
+    },
+
+    /** @returns {{source:string, kind:string, test:function(string):boolean}} */
+    compile(source) {
+      const parts = source.split('*');
+      const head = parts[0];
+      const tail = parts[parts.length - 1];
+      const mids = parts.slice(1, -1).filter((m) => m !== '');
+      let kind = 'pattern';
+      if (!mids.length) {
+        if (head && !tail) kind = 'startsWith';
+        else if (!head && tail) kind = 'endsWith';
+        else if (!head && !tail) kind = 'any';
+      } else if (mids.length === 1 && !head && !tail) {
+        kind = 'contains';
+      }
+      const min = mids.reduce((n, m) => n + m.length, head.length + tail.length);
+      return {
+        source: source,
+        kind: kind,
+        test(text) {
+          if (text === '' || text.length < min) return false;
+          if (!text.startsWith(head) || !text.endsWith(tail)) return false;
+          const end = text.length - tail.length;
+          let pos = head.length;
+          for (let i = 0; i < mids.length; i++) {
+            const at = text.indexOf(mids[i], pos);
+            if (at < 0 || at + mids[i].length > end) return false;
+            pos = at + mids[i].length;
+          }
+          return true;
+        }
+      };
+    }
+  };
+
+  /* ---------------------------------------------------------------------
    * Normalizer：照合ルールに従って値をそろえる
    *   text()  … 含む・前方一致などの文字列比較用
    *   key()   … 完全一致・一致しない用（数値・日付・文字列で同値を判定）
    *   typed() … 以上・未満などの大小比較や並べ替え用
    * ------------------------------------------------------------------- */
-  const DEFAULT_RULES = Object.freeze({ space: 'trim', width: true, caseless: true, numeric: true, date: true });
+  const DEFAULT_RULES = Object.freeze({ space: 'trim', width: true, caseless: true, numeric: true, date: true, wildcard: true });
   const SPACE_VALUES = ['trim', 'all', 'keep'];
   const TYPE = Object.freeze({ EMPTY: 0, NUMBER: 1, DATE: 2, TEXT: 3 });
   const EMPTY_TYPED = Object.freeze({ t: TYPE.EMPTY, n: 0, s: '' });
@@ -159,7 +205,7 @@
     /** ルールの組み合わせを表す文字列（計算結果の再利用・結果が最新かの判定に使う。欠けている項目は初期値） */
     static signatureOf(rules) {
       const r = Object.assign({}, DEFAULT_RULES, rules || {});
-      return [r.space, r.width ? 1 : 0, r.caseless ? 1 : 0, r.numeric ? 1 : 0, r.date ? 1 : 0].join('|');
+      return [r.space, r.width ? 1 : 0, r.caseless ? 1 : 0, r.numeric ? 1 : 0, r.date ? 1 : 0, r.wildcard ? 1 : 0].join('|');
     }
 
     get signature() {
@@ -206,9 +252,17 @@
       return { t: TYPE.TEXT, n: 0, s: this.text(value) };
     }
 
-    /** prep 種別（key / text / typed）に応じた変換関数を返す */
+    /** 「*」を含む値ならワイルドカードの型（Wildcard.compile の結果）、それ以外・ルールが OFF なら null */
+    glob(value) {
+      if (!this.rules.wildcard || Normalizer.isBlank(value)) return null;
+      const s = this.text(value);
+      return s.indexOf('*') === -1 ? null : Wildcard.compile(s);
+    }
+
+    /** prep 種別（key / text / typed / glob）に応じた変換関数を返す */
     converter(prep) {
       if (prep === 'key') return (v) => this.key(v);
+      if (prep === 'glob') return (v) => this.glob(v);
       if (prep === 'typed') return (v) => this.typed(v);
       return (v) => this.text(v);
     }
@@ -222,11 +276,13 @@
         r.width ? '全角・半角を区別しない' : '全角・半角を区別',
         r.caseless ? '大文字・小文字を区別しない' : '大文字・小文字を区別',
         r.numeric ? '数値は数値で比較' : '数値も文字で比較',
-        r.date ? '日付は日付で比較' : '日付も文字で比較'
+        r.date ? '日付は日付で比較' : '日付も文字で比較',
+        r.wildcard ? '完全一致で * はワイルドカード' : '* も文字として比較'
       ].join('・');
     }
   }
 
+  LQ.Wildcard = Wildcard;
   LQ.ValueParser = ValueParser;
   LQ.Normalizer = Normalizer;
 })(window);

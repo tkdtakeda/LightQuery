@@ -454,6 +454,11 @@
       this._emit('output', { group: prefix });
     }
 
+    /** 指定した列（keys）の表示をまとめて切り替える（一覧の「すべて」用） */
+    setColumnsVisible(keys, visible) {
+      if (this.output.setManyVisible(keys, visible)) this._emit('output', { many: true });
+    }
+
     /** key を targetKey の前（after=true なら後ろ）へ移す */
     moveColumn(key, targetKey, after) {
       if (this.output.move(key, targetKey, after)) this._emit('output', { moved: key });

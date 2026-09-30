@@ -5,6 +5,7 @@
  *   ・出力する行：一致した行（内部結合）/ 一致しなかった行（左反結合）/ すべての行（左外部結合）
  *   ・複数一致：最初の 1 行のみ / すべての組み合わせ
  *   ・「完全一致」が必須の条件は索引で候補を絞り込み、処理は小分けにして進捗を通知する
+ *   ・完全一致・一致しないでは、② の値・固定値の「*」をワイルドカードとして当てはめる（照合ルールで切替）
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -61,8 +62,9 @@
     eq(p, M) {
       const map = new Map();
       const always = [];
+      const pattern = p.pattern;
       for (let r = 0; r < M; r++) {
-        if (p.blank[r]) {
+        if (p.blank[r] || (pattern && pattern[r])) {
           always.push(r);
           continue;
         }
@@ -333,16 +335,27 @@
       for (let i = 0; i < conds.length; i++) {
         const c = conds[i];
         const op = Operators.get(c.op);
-        const p = { cond: c, label: c.label, op: op, test: op.test, isColumn: c.right.type === 'column', incomparable: 0, blankCount: 0 };
-        p.left = await this._column(source, source.findColumn(c.left), op.prep, norm, tick);
+        const p = { cond: c, label: c.label, op: op, test: op.test, isColumn: c.right.type === 'column', incomparable: 0, blankCount: 0,
+          pattern: null, valuePattern: null, patternCount: 0 };
+        const lc = source.findColumn(c.left);
+        const glob = op.wildcard && norm.rules.wildcard;
+        p.left = await this._column(source, lc, op.prep, norm, tick);
         if (p.isColumn) {
           const rc = condition.findColumn(c.right.col);
           p.right = await this._column(condition, rc, op.prep, norm, tick);
           p.blank = await this._column(condition, rc, 'blank', norm, tick);
           for (let r = 0; r < p.blank.length; r++) p.blankCount += p.blank[r];
+          if (glob) {
+            const pattern = await this._column(condition, rc, 'glob', norm, tick);
+            for (let r = 0; r < pattern.length; r++) if (pattern[r]) p.patternCount++;
+            if (p.patternCount) p.pattern = pattern;
+          }
         } else {
           p.value = norm.converter(op.prep)(c.right.value);
+          if (glob) p.valuePattern = norm.glob(c.right.value);
+          if (p.valuePattern) p.patternCount = 1;
         }
+        if (p.patternCount) p.leftText = await this._column(source, lc, 'text', norm, tick);
         prepared.push(p);
       }
       const byLabel = new Map(prepared.map((p) => [p.label, p]));
@@ -438,7 +451,9 @@
           perCondition: prepared.map((p) => ({
             label: p.label,
             incomparable: p.incomparable,
-            blankRows: p.isColumn ? p.blankCount : 0
+            blankRows: p.isColumn ? p.blankCount : 0,
+            wildcardRows: p.isColumn ? p.patternCount : 0,
+            wildcardValue: !!p.valuePattern
           }))
         },
         snapshot: {
@@ -504,11 +519,15 @@
         const p = byLabel.get(node.label);
         const test = p.test;
         const L = p.left;
+        const LT = p.leftText;
+        const neg = p.op.negative;
         if (p.isColumn) {
           const R = p.right;
           const B = p.blank;
+          const P = p.pattern;
           return (x, r) => {
             if (B[r] === 1) return -1;
+            if (P && P[r]) return P[r].test(LT[x]) !== neg ? 1 : 0;
             const res = test(L[x], R[r]);
             if (res === null) {
               p.incomparable++;
@@ -518,6 +537,8 @@
           };
         }
         const value = p.value;
+        const VP = p.valuePattern;
+        if (VP) return (x) => (VP.test(LT[x]) !== neg ? 1 : 0);
         return (x) => {
           const res = test(L[x], value);
           if (res === null) {
@@ -572,6 +593,12 @@
         } else {
           base.rightName = '固定値';
           base.rightValue = c.right.value;
+        }
+        const pattern = op.wildcard ? norm.glob(base.rightValue) : null;
+        if (pattern) {
+          base.state = pattern.test(norm.text(leftValue)) !== op.negative ? 'true' : 'false';
+          base.phrase = (op.negative ? 'に当てはまらない' : 'に当てはまる') + '（* はワイルドカード：' + LQ.Wildcard.kindLabel(pattern.kind) + '）';
+          return base;
         }
         const convert = norm.converter(op.prep);
         const res = op.test(convert(leftValue), convert(base.rightValue));
