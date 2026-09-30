@@ -5,10 +5,13 @@
  * ========================================================================= */
 
 /* ---------- タブ ---------- */
+/* 幅が足りないときは、①ほかのタブの件数を省き、②それでも入らなければ右の道具を次の行へ送る（重ねない） */
 .lq-tabbar {
+  container-type: inline-size;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
-  gap: var(--space-5);
+  gap: 0 var(--space-5);
   min-width: 0;
   padding: 0 var(--space-6);
   border-bottom: var(--border-width) solid var(--color-border);
@@ -17,6 +20,7 @@
 
 .lq-tabs {
   display: flex;
+  flex: 0 1 auto;
   align-items: flex-end;
   gap: var(--space-1);
   min-width: 0;
@@ -79,10 +83,23 @@
 
 .lq-tabbar__tools {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--space-4);
   margin-left: auto;
+  padding: var(--space-2) 0;
   align-self: center;
+}
+
+/* 区切りの幅は CSS の仕様上トークン（カスタムプロパティ）を使えないため、ここだけ数値で書く */
+@container (max-width: 1100px) {
+  .lq-tab:not(.is-active) .lq-tab__count {
+    display: none;
+  }
+
+  .lq-tab {
+    padding: 0 var(--space-5);
+  }
 }
 
 /* ---------- 要約・注意帯 ---------- */

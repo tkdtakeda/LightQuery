@@ -306,7 +306,7 @@ ol {
 .lq-main {
   grid-area: main;
   display: grid;
-  grid-template-rows: var(--h-tabbar) auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(var(--h-tabbar), auto) auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
   background: var(--color-bg);
