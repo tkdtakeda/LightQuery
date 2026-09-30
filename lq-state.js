@@ -50,10 +50,11 @@
       this.sampleStash = null;
       this.rules = Object.assign({}, Normalizer.DEFAULT_RULES, Normalizer.cleanRules(Prefs.get('rules', null)) || {});
       this.output = new LQ.OutputColumns();
+      this.aggregate = LQ.AggregateSettings.clean(Prefs.get('aggregate', null));
       this.view = {
         tab: 'result',
         pageSize: clampPageSize(Prefs.get('pageSize', DEFAULT_PAGE_SIZE)),
-        pages: { result: 0, source: 0, condition: 0 },
+        pages: { result: 0, source: 0, condition: 0, aggregate: 0 },
         sort: null,
         filter: null,
         raw: { source: false, condition: false }
@@ -269,7 +270,8 @@
           activeId: this.activeId,
           source: src && !src.isSample ? src : null,
           combine: Util.clone(this.combine),
-          outputMemory: Util.clone(this.output.memory)
+          outputMemory: Util.clone(this.output.memory),
+          aggregate: Util.clone(this.aggregate)
         };
       } else {
         own = this.profiles.items.filter((p) => !p.isSample);
@@ -295,6 +297,8 @@
       if (stash) {
         this.combine = stash.combine;
         this.output.setMemory(stash.outputMemory);
+        this.aggregate = LQ.AggregateSettings.clean(stash.aggregate);
+        this._emit('aggregate', {});
       }
       const active = stash && stash.profiles.some((p) => p.id === stash.activeId) ? stash.activeId : null;
       this.replaceProfiles((stash ? stash.profiles : []).concat(own), active);
@@ -491,6 +495,13 @@
       this._emit('output', { reset: true });
     }
 
+    /** 集計の設定を変える（サンプル表示中は記憶しない） */
+    setAggregate(settings) {
+      this.aggregate = LQ.AggregateSettings.clean(settings);
+      if (!this.sampleStash) Prefs.set('aggregate', this.aggregate);
+      this._emit('aggregate', {});
+    }
+
     columnCounts() {
       return this.output.counts();
     }
@@ -615,12 +626,14 @@
         activeId: this.activeId,
         combine: Util.clone(this.combine),
         rules: Util.clone(this.rules),
+        aggregate: Util.clone(this.aggregate),
         sampleStash: stash ? {
           profiles: stash.profiles.map((p) => p.snapshot()),
           activeId: stash.activeId,
           source: stash.source,
           combine: Util.clone(stash.combine),
-          outputMemory: Util.clone(stash.outputMemory)
+          outputMemory: Util.clone(stash.outputMemory),
+          aggregate: Util.clone(stash.aggregate)
         } : null,
         output: this.output.snapshot(),
         view: Util.clone(this.view),
@@ -645,8 +658,13 @@
         activeId: st.activeId,
         source: st.source,
         combine: cleanCombine(st.combine),
-        outputMemory: Util.clone(st.outputMemory || [])
+        outputMemory: Util.clone(st.outputMemory || []),
+        aggregate: LQ.AggregateSettings.clean(st.aggregate)
       } : null;
+      if (snap.aggregate) {
+        this.aggregate = LQ.AggregateSettings.clean(snap.aggregate);
+        if (!this.sampleStash) Prefs.set('aggregate', this.aggregate);
+      }
       this.output.restore(snap.output);
       this.view = Util.clone(snap.view);
       const src = this.datasets.source;
@@ -654,7 +672,7 @@
         snap.profiles.every((s) => !s.condition || s.condition.version === s.conditionVersion);
       this.result = same ? snap.result : null;
       this.resultSignature = same ? snap.resultSignature : null;
-      ['datasets', 'profiles', 'query', 'rules', 'output', 'result', 'view'].forEach((topic) => this._emit(topic, { restored: true }));
+      ['datasets', 'profiles', 'query', 'rules', 'output', 'result', 'view', 'aggregate'].forEach((topic) => this._emit(topic, { restored: true }));
     }
   }
 

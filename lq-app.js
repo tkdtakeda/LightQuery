@@ -47,7 +47,8 @@
         condition: new LQ.DatasetPanel(ctx, 'condition'),
         query: new LQ.QueryPanel(ctx),
         rules: new LQ.RulesPanel(ctx),
-        output: new LQ.OutputPanel(ctx)
+        output: new LQ.OutputPanel(ctx),
+        aggregate: new LQ.AggregatePanel(ctx)
       };
       this.main = new LQ.MainView(ctx);
       this.shell = new LQ.Shell(ctx, this.panels);
@@ -130,6 +131,11 @@
           status: rerun ? { kind: 'warn', text: '条件が変わりました（結果は未反映）' } : { kind: 'info', text: this._runSummary() } };
       }
       if (s.result.length === 0) return { id: 'review', label: '条件を見直す', icon: 'sliders', status: { kind: 'warn', text: '一致する行はありませんでした' } };
+      const agg = s.view.tab === 'aggregate' && this.main ? this.main.aggregate.computed() : null;
+      if (agg) {
+        return { id: 'export', label: fmt(agg.groupCount) + ' グループの集計を出力する', icon: 'file-export',
+          status: { kind: 'ok', text: '集計の表を Excel・CSV・コピーで出力できます' } };
+      }
       if (!this._hasOutputColumn()) {
         return { id: 'chooseColumns', label: '出力する列を選ぶ', icon: 'table-columns', status: { kind: 'warn', text: '出力できる列が 0 列のため出力できません（左の「出力列」で選びます）' } };
       }
@@ -501,7 +507,7 @@
           return;
         }
         s.setResult(result, signature);
-        s.setTab('result');
+        if (s.view.tab !== 'aggregate') s.setTab('result');
         this._announce(result);
       } catch (err) {
         this.toasts.show({ type: 'error', title: '抽出できませんでした', message: err.message });

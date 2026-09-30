@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-main.js
- * メイン領域：タブ（抽出結果 / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
+ * メイン領域：タブ（抽出結果 / 集計 / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
  *   空の状態（はじめに・次の一歩）。② のタブは選択中の抽出条件の ② を表示し、
  *   上の切替ボタン（CondTableBar）で表示する条件データ（＝選択中の抽出条件）を切り替える。
  *   注意帯は描き直すたびに作るため、ボタンのフォーカスは data-focus-key で戻す。
@@ -45,6 +45,7 @@
         onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col)
       });
       this.display = new LQ.GridDisplay(ctx, this.gridwrap);
+      this.aggregate = new LQ.AggregateTab(this);
       LQ.FormNav.attach(this.pager);
       ctx.bus.on('change', (e) => this._schedule(e));
       this.render();
@@ -114,6 +115,7 @@
       Dom.clear(this.pager);
       this.gridwrap.classList.remove('is-stale');
       if (tab === 'result') this._renderResult();
+      else if (tab === 'aggregate') this.aggregate.render();
       else this._renderDataset(tab);
       this.tools.appendChild(this.display.button());
       if (focusKey) this._restoreFocus(focusKey);
@@ -135,6 +137,7 @@
       const res = s.result;
       const specs = [
         { id: 'result', icon: 'filter', label: '抽出結果', count: res ? Util.formatInt(res.length) + ' 行' : '未実行', stale: s.isStale() },
+        { id: 'aggregate', icon: 'calculator', label: '集計', count: this.aggregate.tabCount(), stale: !!res && s.isStale() },
         { id: 'source', role: 'source' },
         { id: 'condition', role: 'condition' }
       ];

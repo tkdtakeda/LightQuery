@@ -343,6 +343,27 @@
       }
     },
     {
+      id: 'aggregate',
+      icon: 'calculator',
+      title: '抽出結果を地域ごとに集計（件数・合計・平均・標準偏差・順位）',
+      desc: '上期（2025/04/01〜2025/09/30）の受注を抽出し、集計タブで地域ごとの件数・金額の合計・平均・標準偏差、最初と最後の受注日を求め、合計金額の大きい順に順位を付けます。左の「集計」で列や集計のしかたを変えられます。',
+      tags: ['集計', 'グループごと', '順位', '範囲'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1212) },
+          profiles: [{ name: '上期の受注', condition: null, query: Q([C('受注日', 'between', fixedRange('2025/04/01', '2025/09/30'))]) }],
+          output: ORDER_HEADER.map((h) => 's:' + h),
+          aggregate: {
+            groupBy: ['s:地域'],
+            count: true,
+            measures: [{ key: 's:金額', fn: 'sum' }, { key: 's:金額', fn: 'avg' }, { key: 's:金額', fn: 'stdev' }, { key: 's:受注日', fn: 'min' }, { key: 's:受注日', fn: 'max' }],
+            rank: { target: 'sum|s:金額', dir: 'desc' }
+          },
+          tab: 'aggregate'
+        };
+      }
+    },
+    {
       id: 'perf',
       icon: 'gauge-high',
       title: '10 万行で速度を確認',

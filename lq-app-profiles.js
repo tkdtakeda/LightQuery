@@ -406,7 +406,8 @@
         });
         s.enterSample(make('source', built.source), profiles, built.combine || null);
         s.applyOutputPreset(built.output);
-        s.setTab('result');
+        s.setAggregate(built.aggregate || (s.sampleStash ? s.sampleStash.aggregate : s.aggregate));
+        s.setTab(built.tab || 'result');
       } catch (err) {
         built = null;
         this.toasts.show({ type: 'error', title: 'サンプルを読み込めませんでした', message: err.message });

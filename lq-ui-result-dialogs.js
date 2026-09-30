@@ -70,7 +70,13 @@
         return;
       }
       const view = prepared.view;
-      const multi = view.multi;
+      const isAgg = prepared.kind === 'aggregate';
+      const multi = view.multi && !isAgg;
+      const canAgg = !isAgg && this.app.exporter.hasAggregate();
+      const aggCheck = h('input', { type: 'checkbox', checked: LQ.Prefs.get('exportAggregate', true) });
+      aggCheck.addEventListener('change', () => LQ.Prefs.set('exportAggregate', aggCheck.checked));
+      const aggLabel = canAgg ? h('label', { class: 'lq-switch' }, [aggCheck, h('span', { class: 'lq-switch__track' }),
+        h('span', { text: '「集計」シートを付ける（' + LQ.Aggregator.describe(this.state.aggregate) + '）' })]) : null;
       const formats = LQ.Exporters.formats;
       let formatId = LQ.Prefs.get('exportFormat', 'xlsx');
       if (!LQ.Exporters.availability(formatId).ok) formatId = (formats.find((f) => LQ.Exporters.availability(f.id).ok) || formats[1]).id;
@@ -103,9 +109,14 @@
         });
         if (scopeList) scopeList.set(scope, { split: !isXlsx });
         protect.disabled = !fmtDef.protectable;
+        if (aggLabel) {
+          aggCheck.disabled = !isXlsx;
+          aggLabel.title = isXlsx ? '' : '集計シートは Excel 形式のときだけ付けられます（CSV は集計タブを表示中に出力すると集計の表になります）';
+        }
         protectLabel.title = fmtDef.protectable ? '' : 'Excel 形式では不要です（値の種類をそのまま保存します）';
         downloadBtn.lastChild.textContent = 'ダウンロード（.' + fmtDef.ext + '）';
-        title.textContent = scope === 'split'
+        if (isAgg) title.textContent = '出力：集計 ' + fmt(prepared.table.rowCount) + ' グループ × ' + prepared.defs.length + ' 列';
+        else title.textContent = scope === 'split'
           ? '出力：まとめ ' + fmt(view.result.length) + ' 行＋抽出条件ごとのシート'
           : '出力：' + fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列';
         if (!nameEdited) nameInput.value = this.app.exporter.defaultFileName(scope === 'split');
@@ -128,7 +139,8 @@
       });
       const run = () => {
         this.pop.close();
-        this.app.exporter.exportResult(formatId, { fileName: nameInput.value, protect: protect.checked && !protect.disabled, split: scope === 'split' });
+        this.app.exporter.exportResult(formatId, { fileName: nameInput.value, protect: protect.checked && !protect.disabled, split: scope === 'split',
+          aggregate: !!aggLabel && aggCheck.checked && !aggCheck.disabled });
       };
       downloadBtn.addEventListener('click', run);
       nameInput.addEventListener('keydown', (e) => {
@@ -145,6 +157,8 @@
       const body = h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
         UI.field('ファイルの形式', list),
         scopeList ? UI.field('出力する範囲', scopeList.el) : null,
+        isAgg ? UI.note('info', '集計タブを表示中のため、集計の表を出力します。抽出結果の行を出力するときは「抽出結果」タブに切り替えてください。') : null,
+        aggLabel,
         protectLabel,
         UI.field('ファイル名', h('div', { class: 'lq-export-name' }, [nameInput, h('span', { class: 'lq-muted', text: '＋拡張子' })])),
         h('p', { class: 'lq-field__hint', text: '並び順・列の並びは画面の表示と同じです。' + (this.state.isStale() ? '注意：表示中の結果は条件変更前のものです。' : '') })

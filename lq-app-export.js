@@ -1,7 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-app-export.js
  * 出力の操作：表示中の結果（絞り込み・並べ替え・列）を表にし、Excel・CSV・クリップボードへ出力する。
- *   Excel は「まとめ＋抽出条件ごとのシート」にも分けられる。出力の根拠（抽出条件シート）の行も作る。
+ *   Excel は「まとめ＋抽出条件ごとのシート」にも分けられ、「集計」シートも付けられる。出力の根拠（抽出条件シート）の行も作る。
+ *   集計タブを表示中は、集計の表を出力する。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -24,17 +25,33 @@
 
     /**
      * 出力する表を用意する。
-     * @param {{split?:boolean}} opts split：まとめ＋抽出条件ごとのシートにも分ける（Excel 用）
-     * @returns {{view:LQ.ResultView, defs:Array, table:object, sheets:Array|null}|null}
+     * @param {{split?:boolean, aggregate?:boolean}} opts split：まとめ＋抽出条件ごとのシートにも分ける（Excel 用）／
+     *        aggregate：「集計」シートを付ける（Excel 用）
+     * @returns {{kind:'result'|'aggregate', view:LQ.ResultView, defs:Array, table:object, sheets:Array|null, aggregate:object|null}|null}
      */
     prepare(opts) {
+      const o = opts || {};
       const view = this.app.main.resultView();
       if (!view) return null;
+      const agg = this.app.main.aggregate.computed();
+      if (this.state.view.tab === 'aggregate' && agg) {
+        const table = LQ.Aggregator.toTable(agg);
+        return { kind: 'aggregate', view: view, defs: table.defs, table: table, sheets: [{ name: '集計', table: table }], aggregate: agg };
+      }
       const defs = this._defsOf(view);
       if (!defs.length) return null;
-      const out = { view: view, defs: defs, table: view.toTable(defs), sheets: null };
-      if (opts && opts.split && view.multi) out.sheets = this._sheets(view);
+      const out = { kind: 'result', view: view, defs: defs, table: view.toTable(defs), sheets: null, aggregate: null };
+      if (o.split && view.multi) out.sheets = this._sheets(view);
+      if (o.aggregate && agg) {
+        out.aggregate = agg;
+        out.sheets = (out.sheets || [{ name: '抽出結果', table: out.table }]).concat([{ name: '集計', table: LQ.Aggregator.toTable(agg) }]);
+      }
       return out;
+    }
+
+    /** 集計を出力できるか（抽出結果があり、集計する値が設定されている） */
+    hasAggregate() {
+      return !!this.app.main.aggregate.computed();
     }
 
     /** まとめ＋抽出条件ごと（優先順位の順）＋該当なし のシート。並び順は画面と同じ */
@@ -61,7 +78,8 @@
     async exportResult(formatId, options) {
       const s = this.state;
       const opts = options || {};
-      const prepared = this.prepare({ split: formatId === 'xlsx' && !!opts.split });
+      const xlsx = formatId === 'xlsx';
+      const prepared = this.prepare({ split: xlsx && !!opts.split, aggregate: xlsx && !!opts.aggregate });
       if (!prepared) {
         this.toasts.show({ type: 'warn', title: '出力できる列がありません', message: '出力列パネルで列を選んでください。' });
         return;
@@ -74,8 +92,8 @@
         const fileName = Util.sanitizeFileName(opts.fileName) + '.' + format.ext;
         LQ.Exporters.download(out.blob, fileName);
         LQ.Prefs.set('exportFormat', formatId);
-        const size = prepared.sheets
-          ? 'シート ' + prepared.sheets.length + ' 枚・まとめ ' + fmt(prepared.sheets[0].table.rowCount) + ' 行'
+        const size = prepared.sheets && prepared.sheets.length > 1
+          ? 'シート ' + prepared.sheets.length + ' 枚・' + prepared.sheets[0].name + ' ' + fmt(prepared.sheets[0].table.rowCount) + ' 行'
           : fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列';
         this.toasts.show({ type: 'success', title: '出力しました', message: fileName + '（' + size + '・' + Util.formatBytes(out.blob.size) + '）' });
         out.warnings.forEach((w) => this.toasts.show({ type: 'warn', title: '文字の置き換えがあります', message: w }));
@@ -104,6 +122,7 @@
       const view = this.app.main.resultView();
       let scope = '抽出結果';
       if (!split && view && view.filter !== null) scope = view.filter < 0 ? '該当なし' : view.partName(view.filter);
+      if (this.state.view.tab === 'aggregate' && this.hasAggregate()) scope = (view && view.filter !== null ? scope + '_' : '') + '集計';
       return Util.sanitizeFileName((src ? Util.baseName(src.name) : 'LightQuery') + '_' + scope + '_' + Util.timestamp());
     }
 
@@ -158,7 +177,11 @@
       if (own < view.parts.length) lines.push([own ? '照合ルール（全体の設定）' : '照合ルール', res.snapshot.rules]);
       lines.push(['結果', '① ' + fmt(st.sourceRows) + ' 行中 ' + fmt(st.matchedSources) + ' 行が該当・出力 ' + fmt(st.outputRows) + ' 行' +
         (st.includeUnmatched ? '（該当なし ' + fmt(st.unmatchedRows) + ' 行を含む）' : '')]);
-      if (prepared.sheets) lines.push(['シート', prepared.sheets.map((sh) => sh.name).join('、')]);
+      if (prepared.aggregate) {
+        lines.push(['集計', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(prepared.aggregate.rowCount) + ' 行・' + fmt(prepared.aggregate.groupCount) + ' グループ）']);
+        prepared.aggregate.notes.forEach((n) => lines.push(['', n]));
+      }
+      if (prepared.sheets && prepared.sheets.length > 1) lines.push(['シート', prepared.sheets.map((sh) => sh.name).join('、')]);
       else if (view.filter !== null) lines.push(['出力した範囲', view.filter < 0 ? '該当なしの行のみ' : '抽出条件「' + view.partName(view.filter) + '」の行のみ']);
       if (s.view.sort) lines.push(['並び順', LQ.ResultView.nameOf(s.view.sort.key) + '（' + (s.view.sort.dir === 'desc' ? '降順' : '昇順') + '）']);
       lines.push(['出力した列', prepared.defs.map((d) => d.name).join('、')]);
