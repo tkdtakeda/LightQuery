@@ -104,7 +104,7 @@
   };
 
   /* ---------------------------------------------------------------------
-   * Wildcard：② の値の「*」（0 文字以上の任意の文字）による当てはめ。「?」や「~*」は扱わない。
+   * Wildcard：② の値の「*」「＊」（0 文字以上の任意の文字）による当てはめ。「?」や「~*」は扱わない。
    *   山田* ＝ 前方一致 / *田 ＝ 後方一致 / *山田* ＝ 含む / 山*郎 ＝ パターン / * ＝ 空欄以外すべて
    *   値は照合ルールでそろえた文字列（Normalizer.text）どうしで比べる。
    * ------------------------------------------------------------------- */
@@ -252,10 +252,13 @@
       return { t: TYPE.TEXT, n: 0, s: this.text(value) };
     }
 
-    /** 「*」を含む値ならワイルドカードの型（Wildcard.compile の結果）、それ以外・ルールが OFF なら null */
+    /**
+     * 「*」を含む値ならワイルドカードの型（Wildcard.compile の結果）、それ以外・ルールが OFF なら null。
+     * 全角の「＊」は、全角・半角を区別する設定でも「*」として扱う（ほかの文字は設定どおり区別する）。
+     */
     glob(value) {
       if (!this.rules.wildcard || Normalizer.isBlank(value)) return null;
-      const s = this.text(value);
+      const s = this.text(value).replace(/＊/g, '*');
       return s.indexOf('*') === -1 ? null : Wildcard.compile(s);
     }
 
