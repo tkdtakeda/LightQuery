@@ -195,6 +195,10 @@
   --w-toast: 400px;
   --w-modal: 960px;
   --w-modal-form: 760px;
+  --w-venn: 96px;
+  --opacity-venn: 0.45;
+  --stroke-venn: 1.5;
+  --dash-venn: 3 2;
   --h-modal: 82dvh;
   --w-chip-max: 300px;
   --brand-sub-display: block;

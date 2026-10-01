@@ -422,6 +422,28 @@
       return UI.section('条件', [this.emptyNote, this.condList, h('div', { class: 'lq-row' }, [this.addBtn]), this.suggestBox, this.hintBox], [this.countBadge]);
     }
 
+    /**
+     * 出力する行のベン図（左の円＝①、右の円＝②。塗った部分が出力される ① の行）。
+     *   inner：重なり / anti：① のうち重ならない部分 / left：① 全体
+     */
+    static venn(kind) {
+      const id = 'lq-venn-' + kind;
+      const c1 = '<circle cx="46" cy="32" r="24"/>';
+      const c2 = '<circle cx="74" cy="32" r="24"/>';
+      let fill;
+      if (kind === 'inner') {
+        fill = '<clipPath id="' + id + '">' + c1 + '</clipPath><g clip-path="url(#' + id + ')"><circle class="lq-venn__fill" cx="74" cy="32" r="24"/></g>';
+      } else if (kind === 'anti') {
+        fill = '<mask id="' + id + '"><rect width="120" height="64" fill="white"/><circle cx="74" cy="32" r="24" fill="black"/></mask>' +
+          '<circle class="lq-venn__fill" cx="46" cy="32" r="24" mask="url(#' + id + ')"/>';
+      } else {
+        fill = '<circle class="lq-venn__fill" cx="46" cy="32" r="24"/>';
+      }
+      return '<svg class="lq-venn" viewBox="0 0 120 64" aria-hidden="true">' + fill +
+        '<g class="lq-venn__src">' + c1 + '</g><g class="lq-venn__cond">' + c2 + '</g>' +
+        '<text class="lq-venn__label lq-venn__label--src" x="32" y="36">①</text><text class="lq-venn__label lq-venn__label--cond" x="88" y="36">②</text></svg>';
+    }
+
     _buildExtraction() {
       this.joinChoices = new Map();
       const joinList = h('div', { class: 'lq-choice-list', role: 'radiogroup' });
@@ -430,8 +452,10 @@
         const el = h('label', { class: 'lq-choice' }, [
           radio,
           h('span', { class: 'lq-choice__title' }, [j.label, h('span', { class: 'lq-choice__note', text: '（' + j.note + '）' })]),
-          h('span', { class: 'lq-choice__desc', text: j.desc })
+          h('span', { class: 'lq-choice__desc', text: j.desc }),
+          h('span', { class: 'lq-choice__figure', title: '塗った部分の ① の行を出力します', html: QueryPanel.venn(j.id) })
         ]);
+        el.classList.add('lq-choice--figure');
         radio.addEventListener('change', () => {
           if (radio.checked && this.state.query.joinKind !== j.id) this.state.setJoinKind(j.id);
         });
