@@ -290,6 +290,7 @@
     }
 
     _emit(topic, detail) {
+      if (topic === 'output') this._syncStash('outputMemory', this.output.memory);
       this.bus.emit(topic, detail || {});
       this.bus.emit('change', { topic: topic, detail: detail || {} });
     }
@@ -332,8 +333,25 @@
     _replaceDerived(role, defs) {
       this.derived[role] = LQ.Derive.cleanList(defs);
       LQ.Derive.setDefs(role, this.derived[role]);
-      if (!this.sampleStash) Prefs.set('derived', this.derived);
+      if (this.keepsUserSettings) {
+        Prefs.set('derived', this.derived);
+        this._syncStash('derived', this.derived);
+      }
       this._datasetsOf(role).forEach((ds) => ds.refreshDerived());
+    }
+
+    /**
+     * 列の表示・列の追加・集計の設定を記憶するか。サンプルの抽出条件が残っていても、
+     * ① が自分のデータなら記憶する（同じ列名のファイルを次に読み込んだときに使えるように）
+     */
+    get keepsUserSettings() {
+      const src = this.datasets.source;
+      return !this.sampleStash || !(src && src.isSample);
+    }
+
+    /** 自分の ① を表示中に変えた設定は、退避している設定にも写す（「サンプルデータのみクリア」で戻らないように） */
+    _syncStash(key, value) {
+      if (this.sampleStash && this.keepsUserSettings) this.sampleStash[key] = Util.clone(value);
     }
 
     /** ① / ②（選択中の抽出条件）の絞り込みを置き換える。結果は未反映になる */
@@ -573,7 +591,7 @@
 
     /** 保存の対象：自分の出力列の並び（サンプル表示中は退避した並び） */
     userOutputMemory() {
-      return this.sampleStash ? this.sampleStash.outputMemory : this.output.memory;
+      return this.sampleStash && !this.keepsUserSettings ? this.sampleStash.outputMemory : this.output.memory;
     }
 
     /** ①・抽出条件・出力列の並び・結果をすべて初期状態に戻す */
@@ -747,7 +765,10 @@
     /** 集計の設定を変える（サンプル表示中は記憶しない） */
     setAggregate(settings) {
       this.aggregate = LQ.AggregateSettings.clean(settings);
-      if (!this.sampleStash) Prefs.set('aggregate', this.aggregate);
+      if (this.keepsUserSettings) {
+        Prefs.set('aggregate', this.aggregate);
+        this._syncStash('aggregate', this.aggregate);
+      }
       this._emit('aggregate', {});
     }
 
