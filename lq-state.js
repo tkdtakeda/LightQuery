@@ -336,6 +336,14 @@
       this._datasetsOf(role).forEach((ds) => ds.refreshDerived());
     }
 
+    /** ① / ②（選択中の抽出条件）の絞り込みを置き換える。結果は未反映になる */
+    setFilters(role, filters) {
+      const ds = this.datasets[role];
+      if (!ds) return;
+      ds.setFilters(filters);
+      this._afterDatasetChange(role);
+    }
+
     /** 役割ごとの読み込み済みの表（② は退避中のものも含むすべての抽出条件） */
     _datasetsOf(role) {
       if (role === 'source') {

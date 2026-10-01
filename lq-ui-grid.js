@@ -345,8 +345,12 @@
           : '';
         const cls = 'is-resizable' + sized + (col.toggleKey ? ' is-toggle' + (col.off ? ' is-off' : '') : '');
         const eye = col.toggleKey ? this._eye(col.off) : '';
+        const funnel = col.filterName !== undefined
+          ? '<span class="lq-th__filter' + (col.filtered ? ' is-active' : '') + '" data-filter="' + esc(col.filterName) + '" title="' +
+            esc(col.filterName + (col.filtered ? '：絞り込み中（押すと直す・外す）' : '：この列で絞り込む')) + '"><i class="fa-solid fa-filter" aria-hidden="true"></i></span>'
+          : '';
         return '<th class="' + cls + '"' + style + toggle + '><div class="lq-th">' + eye + '<span class="lq-th__name">' + esc(col.label) + '</span><span class="lq-th__letter">' +
-          esc(col.letter || '') + '</span></div>' + grip + '</th>';
+          esc(col.letter || '') + '</span>' + funnel + '</div>' + grip + '</th>';
       }
       const cls = ['is-sortable', 'is-resizable'];
       if (style) cls.push('is-sized');
@@ -420,6 +424,11 @@
       const th = e.target.closest('th[data-key]');
       if (th && this.model.mode === 'result') {
         this.handlers.onSort(th.dataset.key);
+        return;
+      }
+      const funnel = e.target.closest('[data-filter]');
+      if (funnel && this.handlers.onFilterColumn) {
+        this.handlers.onFilterColumn(funnel.dataset.filter, funnel);
         return;
       }
       const toggle = e.target.closest('[data-toggle]');

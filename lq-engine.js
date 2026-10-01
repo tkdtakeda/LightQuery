@@ -206,6 +206,18 @@
       return first.concat(groups.filter((g) => first.indexOf(g) === -1));
     },
 
+    /** 比較方法の選択肢（グループ付き。日付の列なら日付向けの呼び方） */
+    menu(isDate) {
+      return Operators.groups(isDate).map((g) => ({
+        group: g.label,
+        items: g.items.map((op) => {
+          let label = op.phrase.indexOf(op.name) !== -1 ? op.phrase : op.phrase + '（' + op.name + '）';
+          if (op.pair || op.rightPrep) label = op.name;
+          return { value: op.id, label: isDate && op.date ? Operators.nameOf(op, true) : label };
+        })
+      }));
+    },
+
     /** 画面に出す呼び方（日付の列なら日付向け） */
     nameOf(op, isDate) {
       return isDate && op.date ? op.date.name : op.name;

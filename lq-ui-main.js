@@ -43,7 +43,8 @@
         onMove: (key, target, after) => this.state.moveColumn(key, target, after),
         onRowHead: (head, anchor) => this._onRowHead(head, anchor),
         onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col),
-        onToggleColumn: (key, visible) => this.state.setColumnVisible(key, visible)
+        onToggleColumn: (key, visible) => this.state.setColumnVisible(key, visible),
+        onFilterColumn: (name, anchor) => this.app.filterEditor.open(anchor, this.state.view.tab, name)
       });
       this.display = new LQ.GridDisplay(ctx, this.gridwrap);
       this.aggregate = new LQ.AggregateTab(this);
@@ -454,6 +455,11 @@
       this.tools.appendChild(seg.el);
       this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => s.togglePanel(role) }, [Dom.icon('sliders'), '読み込み設定']));
       this._renderDatasetSummary(ds, raw);
+      const filterBar = LQ.FilterBar.render(this.ctx, ds, role);
+      if (filterBar) {
+        this.info.appendChild(filterBar);
+        if (raw) this.info.appendChild(UI.note('info', '「読み込み範囲」表示は元のシートのままのため、絞り込みで外した行も表示しています。絞り込み後の行は「データ」表示で確かめられます。'));
+      }
       const total = raw ? ds.rawRowCount : ds.rowCount;
       const paging = this._paging(role, total);
       this.grid.render(raw ? this._rawModel(ds, paging) : this._dataModel(ds, paging));
@@ -523,7 +529,8 @@
         scrollKey: 'data:' + ds.id + ':' + ds.version + ':' + paging.page,
         columns: ds.columns.map((c) => {
           const toggleKey = (ds.role === 'source' ? 's:' : 'c:') + c.name;
-          return { key: 'd:' + c.index, label: c.name, letter: c.letter, toggleKey: toggleKey, off: !isVisible(toggleKey) };
+          return { key: 'd:' + c.index, label: c.name, letter: c.letter, toggleKey: toggleKey, off: !isVisible(toggleKey),
+            filterName: c.name, filtered: (ds.filters || []).some((f) => f.col === c.name) };
         }),
         rows: rows,
         numeric: this._numericColumns(rows, ds.colCount)

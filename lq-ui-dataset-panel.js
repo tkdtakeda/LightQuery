@@ -287,6 +287,7 @@
       this.chips = new ColumnChips(ctx, this.isSource ? 's:' : 'c:');
       if (!ctx.app.derivedEditor) ctx.app.derivedEditor = new LQ.DerivedEditor(ctx);
       this.derived = new LQ.DerivedSection(ctx, role, ctx.app.derivedEditor);
+      this.filterSection = new LQ.FilterSection(ctx, role);
       this._builtKey = undefined;
       ctx.bus.on('datasets', () => this.refresh());
       ctx.bus.on('change', (e) => {
@@ -329,6 +330,7 @@
       this.body.appendChild(this._fileSection(ds));
       this.body.appendChild(this._rangeSection());
       this.body.appendChild(this._resultSection());
+      this.body.appendChild(this.filterSection.el);
       this.body.appendChild(this.derived.el);
     }
 
@@ -621,6 +623,7 @@
           '・元の表は ' + Util.formatInt(ds.rawRowCount) + ' 行'
       })]);
       this.chips.setDataset(ds);
+      this.filterSection.render(ds);
       this.derived.render(ds);
     }
   }

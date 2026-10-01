@@ -886,3 +886,128 @@
   flex-direction: column;
   gap: var(--space-3);
 }
+
+/* ---------- ① / ② の絞り込み（抽出の前に行を減らす） ---------- */
+.lq-tag--filter {
+  border-color: var(--color-primary-line);
+  background: var(--color-primary-faint);
+  color: var(--color-primary-strong);
+}
+
+.lq-filterbar--rows .lq-filterbar__label {
+  color: var(--color-primary-strong);
+}
+
+.lq-ftag {
+  display: inline-flex;
+  align-items: center;
+  max-width: var(--w-fchip-max);
+  height: var(--h-control-sm);
+  border: var(--border-width) solid var(--color-primary-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-faint);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+}
+
+.lq-ftag.is-off {
+  border-color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.lq-ftag__body {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.lq-ftag__x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--h-control-sm);
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-sub);
+  cursor: pointer;
+}
+
+.lq-ftag__x:hover,
+.lq-ftag__body:hover {
+  color: var(--color-primary);
+}
+
+/* 見出しの漏斗（押すとその列の絞り込みの小窓） */
+.lq-th__filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--h-control-xs);
+  height: var(--h-control-xs);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-disabled);
+  font-size: var(--icon-xs);
+  cursor: pointer;
+}
+
+.lq-th__filter:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
+}
+
+.lq-th__filter.is-active {
+  background: var(--color-primary);
+  color: var(--color-surface);
+}
+
+/* 絞り込みの小窓 */
+.lq-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lq-filter__values {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--h-colpick);
+  overflow: auto;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.lq-filter__value {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+
+.lq-filter__value:hover {
+  background: var(--color-surface-hover);
+}
+
+.lq-filter__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lq-filter__count {
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}

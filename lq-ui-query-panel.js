@@ -57,18 +57,6 @@
     }
   };
 
-  function operatorOptions(isDate) {
-    const Operators = LQ.Operators;
-    return Operators.groups(isDate).map((g) => ({
-      group: g.label,
-      items: g.items.map((op) => {
-        let label = op.phrase.indexOf(op.name) !== -1 ? op.phrase : op.phrase + '（' + op.name + '）';
-        if (op.pair || op.rightPrep) label = op.name;
-        return { value: op.id, label: isDate && op.date ? Operators.nameOf(op, true) : label };
-      })
-    }));
-  }
-
   /** 期間の候補（画面に 1 つだけ置く datalist） */
   function ensurePeriodList() {
     if (document.getElementById(PERIOD_LIST_ID)) return;
@@ -250,7 +238,7 @@
       const opKey = isDate ? 'date' : 'plain';
       if (this._opKey !== opKey) {
         this._opKey = opKey;
-        UI.fillSelect(this.op, operatorOptions(isDate), c.op);
+        UI.fillSelect(this.op, LQ.Operators.menu(isDate), c.op);
         this.op.title = isDate ? '比較方法（① が日付の列のため、日付向けの呼び方で表示しています）' : '比較方法';
       }
       if (this.op.value !== c.op) this.op.value = c.op;
@@ -312,6 +300,11 @@
   }
 
   LQ.ConditionRow = ConditionRow;
+  /** 期間の候補の datalist を用意して、その id を返す（絞り込みの画面でも使う） */
+  DateColumns.periodList = () => {
+    ensurePeriodList();
+    return PERIOD_LIST_ID;
+  };
   LQ.DateColumns = DateColumns;
 })(window);
 

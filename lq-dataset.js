@@ -174,7 +174,9 @@
       this.columns = columns;
       this._colIndex = new Map(columns.map((col) => [col.name, col.index]));
       this.rowIdx = Int32Array.from(rows);
+      this._baseRowIdx = this.rowIdx;
       this._appendDerived();
+      this._applyFilters();
       this.stats = {
         rows: rows.length,
         cols: columns.length,
@@ -205,10 +207,80 @@
 
     /** 追加した列（読み替え・計算）を作り直す（定義が変わったとき） */
     refreshDerived() {
+      this.rowIdx = this._baseRowIdx || this.rowIdx;
       this.columns = this.columns.filter((c) => !c.derived);
       this._colIndex = new Map(this.columns.map((col) => [col.name, col.index]));
       this._appendDerived();
+      this._applyFilters();
       this.version++;
+    }
+
+    /** 絞り込みを置き換える（[] で外す）。読み込み範囲を変えても掛けたまま残す */
+    setFilters(filters) {
+      this.filters = (filters || []).slice();
+      this.refreshDerived();
+    }
+
+    /** 絞り込み前の行数 */
+    get baseRowCount() {
+      return this._baseRowIdx ? this._baseRowIdx.length : this.rowIdx.length;
+    }
+
+    /** 絞り込み前の b 行目・列 c の値（値の一覧・残る行数の見込みに使う） */
+    baseCell(b, c) {
+      const col = this.columns[c];
+      if (!col) return '';
+      if (col.values) return (col.baseValues || col.values)[b];
+      const base = this._baseRowIdx || this.rowIdx;
+      const row = this.grid[base[b]];
+      const v = row ? row[col.src] : undefined;
+      return v === undefined || v === null ? '' : v;
+    }
+
+    /** filters をすべて満たす行が、絞り込み前の行のうち何行あるか（掛ける前の見込み） */
+    countWith(filters) {
+      const cell = (r, c) => this.baseCell(r, c);
+      const tests = filters.map((f) => LQ.RowFilter.compile(f, this, cell).test).filter(Boolean);
+      const n = this.baseRowCount;
+      let kept = 0;
+      for (let r = 0; r < n; r++) {
+        let ok = true;
+        for (let i = 0; i < tests.length && ok; i++) ok = tests[i](r);
+        if (ok) kept++;
+      }
+      return kept;
+    }
+
+    /**
+     * 絞り込みを当てはめる（すべてを満たす行だけ残す）。追加した列の値も残した行にそろえる。
+     * 結果は filterInfo（{base, kept, items:[{id, ok, message}]}）に残す。
+     */
+    _applyFilters() {
+      const filters = this.filters || [];
+      this.filterInfo = null;
+      if (!filters.length) return;
+      const n = this.rowIdx.length;
+      const items = [];
+      const tests = [];
+      filters.forEach((f) => {
+        const compiled = LQ.RowFilter.compile(f, this);
+        items.push({ id: f.id, ok: !!compiled.test, message: compiled.message || '' });
+        if (compiled.test) tests.push(compiled.test);
+      });
+      const keep = [];
+      for (let r = 0; r < n; r++) {
+        let ok = true;
+        for (let i = 0; i < tests.length && ok; i++) ok = tests[i](r);
+        if (ok) keep.push(r);
+      }
+      const base = this.rowIdx;
+      this.rowIdx = Int32Array.from(keep, (r) => base[r]);
+      this.columns.forEach((c) => {
+        if (!c.values) return;
+        c.baseValues = c.values;
+        c.values = keep.map((r) => c.baseValues[r]);
+      });
+      this.filterInfo = { base: n, kept: keep.length, items: items };
     }
 
     /** 定義の順に列を加える（前に加えた列も式・読み替えの元にできる）。結果は derivedInfo に残す */
@@ -700,4 +772,76 @@
   };
 
   LQ.Derive = Derive;
+})(window);
+
+/* =========================================================================
+ * ── 絞り込み（① / ② の行を前もって減らす） ──
+ * 列ごとの絞り込み。すべてを満たす行だけを残す（Excel のオートフィルターと同じ AND）。
+ *   条件で絞る（mode:'op'）：比較方法（抽出条件と同じ登録簿）と値。ワイルドカード・範囲・期間も同じ書き方
+ *   値を選ぶ（mode:'values'）：選んだ値のどれかと同じ行（空欄は '' で表す）
+ *   値は初期値の照合ルール（前後の空白・全角半角・大文字小文字をそろえ、数値・日付として比較）でそろえる。
+ *   絞り込みはブラウザに記憶しない（読み込み直すと外れる）。
+ *   定義：{id, col, mode:'op'|'values', op, value, value2, values:[]}
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+
+  function normalizer() {
+    return new LQ.Normalizer(LQ.Normalizer.DEFAULT_RULES);
+  }
+
+  const RowFilter = {
+    /**
+     * @param {object} f 絞り込みの定義
+     * @param {LQ.Dataset} ds
+     * @returns {{test:function(number):boolean|null, message?:string}}
+     */
+    compile(f, ds, cellOf) {
+      const at = cellOf || ((r, c) => ds.cell(r, c));
+      const col = ds.findColumn(f.col);
+      if (col < 0) return { test: null, message: '列「' + f.col + '」がないため、この絞り込みは使っていません' };
+      const norm = normalizer();
+      if (f.mode === 'values') {
+        const set = new Set((f.values || []).map((v) => norm.text(v)));
+        return { test: (r) => set.has(norm.text(at(r, col))) };
+      }
+      const op = LQ.Operators.get(f.op);
+      if (!op) return { test: null, message: '比較方法を選んでください' };
+      const blank = LQ.Normalizer.isBlank;
+      if (op.pair) {
+        if (blank(f.value) && blank(f.value2)) return { test: null, message: '開始・終了の少なくとも一方を入力してください' };
+        const conv = norm.converter('typed');
+        const lo = blank(f.value) ? undefined : conv(f.value);
+        const hi = blank(f.value2) ? undefined : conv(f.value2);
+        return { test: (r) => op.test(conv(at(r, col)), lo, hi) === true };
+      }
+      if (blank(f.value)) return { test: null, message: '値を入力してください' };
+      const pattern = op.wildcard ? norm.glob(f.value) : null;
+      if (pattern) return { test: (r) => pattern.test(norm.text(at(r, col))) !== op.negative };
+      const right = norm.converter(op.rightPrep || op.prep)(f.value);
+      if (op.rightPrep === 'period' && !right) return { test: null, message: '「' + f.value + '」は期間として読めません（例：2024/05・今月・直近30日）' };
+      const left = norm.converter(op.prep);
+      return { test: (r) => op.test(left(at(r, col)), right) === true };
+    },
+
+    /** 絞り込みの文章（タグ・根拠用） */
+    describe(f, isDate) {
+      if (f.mode === 'values') {
+        const shown = f.values.slice(0, 3).map((v) => (v === '' ? '（空欄）' : v));
+        return f.col + '：' + shown.join('・') + (f.values.length > 3 ? ' ほか ' + (f.values.length - 3) + ' 件' : '');
+      }
+      const op = LQ.Operators.get(f.op);
+      if (!op) return f.col;
+      const phrase = LQ.Operators.phraseOf(op, isDate);
+      if (op.pair) {
+        const v = (x) => (LQ.Normalizer.isBlank(x) ? '（指定なし）' : '「' + x + '」');
+        return f.col + ' が ' + v(f.value) + '〜' + v(f.value2) + ' ' + phrase;
+      }
+      return f.col + ' が「' + f.value + '」' + phrase;
+    }
+  };
+
+  LQ.RowFilter = RowFilter;
 })(window);

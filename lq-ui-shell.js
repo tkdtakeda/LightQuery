@@ -102,7 +102,9 @@
           owner,
           h('span', { class: 'lq-chip__name', text: ds.name }),
           owner ? null : h('span', { class: 'lq-chip__meta', text: Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列' }),
-          ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample', text: 'サンプル' }) : null
+          ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample', text: 'サンプル' }) : null,
+          ds.filterInfo ? h('span', { class: 'lq-tag lq-tag--filter', title: '絞り込み中：' + Util.formatInt(ds.baseRowCount) + ' 行中 ' + Util.formatInt(ds.rowCount) + ' 行' },
+            [Dom.icon('filter'), '絞り込み中']) : null
         ]));
       });
     }
