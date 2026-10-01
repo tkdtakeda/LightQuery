@@ -431,3 +431,137 @@
 
   LQ.ProfileStore = ProfileStore;
 })(window);
+
+/* =========================================================================
+ * ── 読み込みの記憶（毎月差し替える表のために） ──
+ * ① と、② の抽出条件ごとに、読み込み範囲（シート・ヘッダー行・データ開始行・開始列）と絞り込みを記憶し、
+ * 次に表を読み込んだときに当てはめる。
+ *   ・読み込み範囲：当てはめた結果の列名が、記憶した列名の 8 割以上と一致したときだけ使う（違う構成の表なら自動判定のまま）。
+ *                   終了行は月ごとに行数が変わるため引き継がない
+ *   ・絞り込み：列名で当てはめる。「値を選ぶ」は前回選んだ値だけを残し、前回の一覧になかった値（新しい値）は外して知らせる
+ *   キーは ① が 'source'、② が 'cond:' + 抽出条件の id。サンプルの表は記憶しない。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+  const Prefs = LQ.Prefs;
+  const READ_KEY = 'loadMemory.read';
+  const FILTER_KEY = 'loadMemory.filters';
+  const MATCH_RATIO = 0.8;
+  const MAX_ENTRIES = 60;
+  const NEW_VALUE_LIMIT = 5;
+
+  function load(key) {
+    const v = Prefs.get(key, null);
+    return v && typeof v === 'object' ? v : {};
+  }
+
+  function save(key, map) {
+    const keys = Object.keys(map);
+    if (keys.length > MAX_ENTRIES) keys.slice(0, keys.length - MAX_ENTRIES).forEach((k) => delete map[k]);
+    Prefs.set(key, map);
+  }
+
+  function baseNames(ds) {
+    return ds.columns.filter((c) => !c.derived).map((c) => c.name);
+  }
+
+  function matchRatio(remembered, names) {
+    if (!remembered.length) return 0;
+    const set = new Set(names);
+    return remembered.filter((n) => set.has(n)).length / remembered.length;
+  }
+
+  const LoadMemory = {
+    keyOf(role, profileId) {
+      return role === 'source' ? 'source' : 'cond:' + profileId;
+    },
+
+    /** 今の読み込み範囲を記憶する */
+    rememberRead(key, ds) {
+      if (!ds || ds.isSample) return;
+      const map = load(READ_KEY);
+      const s = ds.settings;
+      delete map[key];
+      map[key] = {
+        sheet: ds.source.hasSheets ? ds.source.sheetName : '',
+        settings: { hasHeader: s.hasHeader, headerRow: s.headerRow, startRow: s.startRow, startCol: s.startCol },
+        columns: baseNames(ds)
+      };
+      save(READ_KEY, map);
+    },
+
+    /**
+     * 記憶した読み込み範囲を当てはめる（列名が合わなければ元に戻す）。
+     * @returns {string|null} 当てはめたときの説明
+     */
+    applyRead(key, ds) {
+      const m = load(READ_KEY)[key];
+      if (!m || !m.settings || !Array.isArray(m.columns)) return null;
+      const before = { choices: ds.source.exportChoices(), settings: Object.assign({}, ds.settings) };
+      const autoRatio = matchRatio(m.columns, baseNames(ds));
+      try {
+        const sheetChanged = m.sheet && ds.source.hasSheets && ds.source.sheetNames.indexOf(m.sheet) !== -1 && m.sheet !== ds.source.sheetName
+          ? ds.source.applyChoices({ sheet: m.sheet }) : false;
+        if (sheetChanged) ds.reload(null);
+        ds.applySettings(Object.assign({}, m.settings, { endRow: null }));
+      } catch (err) {
+        return null;
+      }
+      const ratio = matchRatio(m.columns, baseNames(ds));
+      if (ratio < MATCH_RATIO || ratio < autoRatio) {
+        if (ds.source.applyChoices(before.choices)) ds.reload(before.settings);
+        else ds.applySettings(before.settings);
+        return null;
+      }
+      const s = ds.settings;
+      return '前回と同じ読み込み範囲（' + (m.sheet && ds.source.hasSheets ? 'シート「' + m.sheet + '」・' : '') +
+        (s.hasHeader ? 'ヘッダー ' + s.headerRow + ' 行目・' : 'ヘッダーなし・') + 'データ ' + s.startRow + ' 行目から・開始列 ' +
+        LQ.Util.colLetter(s.startCol - 1) + '）を使いました。終了行は月ごとに行数が変わるため引き継いでいません';
+    },
+
+    /** 絞り込みを記憶する（[] なら「絞り込みなし」を記憶） */
+    rememberFilters(key, ds) {
+      if (!ds || ds.isSample) return;
+      const map = load(FILTER_KEY);
+      delete map[key];
+      map[key] = LQ.Util.clone(ds.filters || []);
+      save(FILTER_KEY, map);
+    },
+
+    /**
+     * 記憶した絞り込みを当てはめる。
+     * @returns {{count:number, notes:string[]}|null} 当てはめた件数と、知らせること（新しく出てきた値・列がない）
+     */
+    applyFilters(key, ds) {
+      const list = load(FILTER_KEY)[key];
+      if (!Array.isArray(list) || !list.length) return null;
+      const norm = new LQ.Normalizer(LQ.Normalizer.DEFAULT_RULES);
+      const notes = [];
+      list.forEach((f) => {
+        const c = ds.findColumn(f.col);
+        if (c < 0) {
+          notes.push('列「' + f.col + '」がないため、その絞り込みは使っていません');
+          return;
+        }
+        if (f.mode !== 'values') return;
+        const known = new Set((f.known || f.values || []).map((v) => norm.text(v)));
+        const fresh = new Set();
+        for (let r = 0; r < ds.baseRowCount; r++) {
+          const raw = ds.baseCell(r, c);
+          const v = LQ.Normalizer.isBlank(raw) ? '' : String(raw);
+          if (!known.has(norm.text(v))) fresh.add(v === '' ? '（空欄）' : v);
+        }
+        if (fresh.size) {
+          const shown = Array.from(fresh).slice(0, NEW_VALUE_LIMIT);
+          notes.push('「' + f.col + '」の前回の一覧になかった値 ' + fresh.size + ' 種類（' + shown.join('・') + (fresh.size > NEW_VALUE_LIMIT ? ' ほか' : '') + '）は外しています');
+        }
+      });
+      ds.setFilters(LQ.Util.clone(list));
+      return { count: list.length, notes: notes };
+    }
+  };
+
+  LQ.LoadMemory = LoadMemory;
+})(window);

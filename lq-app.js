@@ -691,6 +691,10 @@
     start() {
       const ctx = this.ctx;
       const restored = this.store.restore();
+      /* 保存してある ② には、記憶した絞り込みを掛け直す（タグと「絞り込み中」の表示で分かる） */
+      this.state.profiles.items.forEach((p) => {
+        if (p.condition && !p.condition.isSample) LQ.LoadMemory.applyFilters(LQ.LoadMemory.keyOf('condition', p.id), p.condition);
+      });
       this.dialogs = new LQ.Dialogs(ctx);
       this.resultDialogs = new LQ.ResultDialogs(ctx);
       this.profileDialogs = new LQ.ProfileDialogs(ctx);
@@ -1037,6 +1041,9 @@
       const ref = target && !target.condition ? target.conditionRef : null;
       const sameFile = !!(ref && ref.fileName && ref.fileName === dataset.name);
       if (sameFile) this._applyRef(dataset, ref);
+      const memKey = LQ.LoadMemory.keyOf(role, target ? target.id : null);
+      const readNote = sameFile || dataset.isSample ? null : LQ.LoadMemory.applyRead(memKey, dataset);
+      const filtered = dataset.isSample ? null : LQ.LoadMemory.applyFilters(memKey, dataset);
       s.setDataset(role, dataset);
       let renamed = null;
       if (target && LQ.Profile.isDefaultName(target.name)) {
@@ -1050,6 +1057,7 @@
       if (src.hasSheets) parts.push('シート「' + src.sheetName + '」');
       const notes = [];
       if (sameFile) notes.push('前回と同じ読み込み範囲を適用しました');
+      if (readNote) notes.push(readNote);
       if (renamed) notes.push('抽出条件の名前を「' + renamed + '」にしました');
       if (!dataset.rowCount) notes.push('データ行がありません。読み込み範囲を確認してください');
       const who = target && s.profiles.length > 1 ? '（抽出条件「' + target.name + '」）' : '';
@@ -1059,7 +1067,20 @@
         message: dataset.name + '：' + parts.join('・') + (notes.length ? '。' + notes.join('。') : ''),
         actions: replaced || renamed ? [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, '読み込む前の状態に戻しました') }] : []
       });
+      if (filtered) this._announceFilters(role, dataset, filtered);
       this.bus.emit('dataset-loaded', { role: role });
+    }
+
+    /** 前回の絞り込みを掛け直したことを、外せるボタン付きで知らせる（気付かずに行が欠けないように） */
+    _announceFilters(role, dataset, filtered) {
+      const s = this.state;
+      const lines = [fmt(dataset.baseRowCount) + ' 行中 ' + fmt(dataset.rowCount) + ' 行を使います'].concat(filtered.notes);
+      this.toasts.show({
+        type: filtered.notes.length ? 'warn' : 'info',
+        title: '前回の絞り込み ' + filtered.count + ' 件を掛けました',
+        message: lines.join('。') + '。',
+        actions: [{ label: 'すべて外す', icon: 'filter-circle-xmark', onClick: () => s.setFilters(role, []) }]
+      });
     }
 
     /** 前回の ② と同じファイルなら、シート・文字コード・読み込み範囲を前回どおりにする */

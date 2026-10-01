@@ -359,7 +359,18 @@
       const ds = this.datasets[role];
       if (!ds) return;
       ds.setFilters(filters);
+      if (this.keepsUserSettings) LQ.LoadMemory.rememberFilters(LQ.LoadMemory.keyOf(role, this.activeId), ds);
       this._afterDatasetChange(role);
+    }
+
+    /** ① と各抽出条件の ② の読み込み範囲を記憶する（次に同じ構成の表を読み込んだときに使う） */
+    _rememberReads() {
+      if (!this.keepsUserSettings) return;
+      const LM = LQ.LoadMemory;
+      if (this.datasets.source) LM.rememberRead('source', this.datasets.source);
+      this.profiles.items.forEach((p) => {
+        if (p.condition) LM.rememberRead(LM.keyOf('condition', p.id), p.condition);
+      });
     }
 
     /** 役割ごとの読み込み済みの表（② は退避中のものも含むすべての抽出条件） */
@@ -375,6 +386,7 @@
     }
 
     _afterDatasetChange(role) {
+      this._rememberReads();
       this._syncOutputColumns();
       this._clearResult();
       this._emit('datasets', { role: role });

@@ -5,7 +5,7 @@
  *                  「値を選ぶ」（値の一覧にチェック）と「条件で絞る」（比較方法＋値）を切り替える。残る行数の見込みを示す
  *   FilterBar    … プレビューの上に、掛けている絞り込みのタグ（× で外す）と「すべて外す」・残っている行数を出す
  *   FilterSection… 読み込みパネルの区画（一覧と「列を選んで絞り込む」）
- *   絞り込みはブラウザに記憶しない（読み込み直すと外れる）。
+ *   絞り込みは ① と、② の抽出条件ごとに列の名前で記憶し、次に読み込んだ表に掛け直す（LoadMemory）。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -234,7 +234,10 @@
     _apply() {
       if (this._problem()) return;
       const f = this.f;
-      if (f.mode === 'values') f.values = f.values.slice();
+      if (f.mode === 'values') {
+        f.values = f.values.slice();
+        f.known = this.values.list.map((v) => v.value);
+      }
       const before = (this.ds.filters || []).slice();
       const list = before.filter((x) => x.col !== f.col).concat([f]);
       this.state.setFilters(this.role, list);
@@ -318,7 +321,7 @@
         if (name) ctx.app.filterEditor.open(this.picker, this.role, name);
       });
       this.el = UI.section('絞り込み（抽出の前に行を減らす）', [this.list, this.picker,
-        h('p', { class: 'lq-field__hint', text: '右の表（データ表示）の見出しの漏斗からも絞り込めます。すべてを満たす行だけを、抽出・集計・出力に使います。読み込み直すと外れます。' })]);
+        h('p', { class: 'lq-field__hint', text: '右の表（データ表示）の見出しの漏斗からも絞り込めます。すべてを満たす行だけを、抽出・集計・出力に使います。列の名前で記憶し、次に同じ列のある表を読み込んだときも掛け直します。' })]);
     }
 
     render(ds) {
