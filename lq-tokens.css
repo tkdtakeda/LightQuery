@@ -182,6 +182,7 @@
   --grid-font-m: var(--fs-sm);
   --grid-font-l: var(--fs-lg);
   --w-col-grip: 7px;
+  --h-colpick: 260px;
   --h-rail-item: 58px;
   --h-dropzone: 220px;
   --w-rail: 72px;

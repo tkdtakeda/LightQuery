@@ -114,6 +114,61 @@
   white-space: nowrap;
 }
 
+/* 読み込み結果の列タグ（押して表示／非表示）。状態はアイコン（目／斜線の目）＋見た目＋文字で示す */
+.lq-colpick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lq-colpick__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lq-colpick__head .lq-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lq-colchips--toggle {
+  max-height: var(--h-colpick);
+  overflow: auto;
+  padding: var(--space-1);
+}
+
+.lq-colchips--toggle .lq-colchip {
+  border: var(--border-width) solid var(--color-border);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-colchips--toggle .lq-colchip.is-on {
+  border-color: var(--color-primary-line);
+  background: var(--color-primary-faint);
+}
+
+.lq-colchips--toggle .lq-colchip.is-on .fa-solid {
+  color: var(--color-primary);
+}
+
+.lq-colchips--toggle .lq-colchip.is-off {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.lq-colchips--toggle .lq-colchip.is-off .lq-colchip__name {
+  text-decoration: line-through;
+}
+
+.lq-colchips--toggle .lq-colchip:hover {
+  border-color: var(--color-primary);
+}
+
 /* ---------- 条件パネル ---------- */
 .lq-expr {
   width: 100%;

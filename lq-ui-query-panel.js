@@ -173,8 +173,38 @@
       Dom.append(this.rightBox, parts);
     }
 
+    /**
+     * 列の選択肢：表示中の列を先に並べ、出力しない（非表示の）列は下のグループにまとめる。
+     * @param {LQ.Dataset|null} ds
+     * @param {string} prefix 出力列のキーの頭（'s:' / 'c:'）
+     * @param {Function} [labelOf] 列名 → 表示名
+     */
+    _columnOptions(ds, prefix, labelOf) {
+      if (!ds) return [];
+      const vis = this._visibility();
+      const item = (col) => ({ value: col.name, label: labelOf ? labelOf(col.name) : col.name });
+      const shown = [];
+      const hidden = [];
+      ds.columns.forEach((col) => {
+        const v = vis.get(prefix + col.name);
+        ((v === undefined ? prefix === 's:' : v) ? shown : hidden).push(item(col));
+      });
+      if (!hidden.length) return shown;
+      return shown.concat([{ group: '非表示の列（出力しない列・' + hidden.length + ' 列）', items: hidden }]);
+    }
+
+    /** 出力列の表示状態（キー → 表示するか） */
+    _visibility() {
+      return new Map(this.state.output.columns.map((c) => [c.key, c.visible]));
+    }
+
+    /** 選択肢の並びが変わったかを判定するための表示状態の目印 */
+    _visibilityKey(prefix) {
+      return this.state.output.columns.filter((c) => c.key.slice(0, 2) === prefix && !c.visible).map((c) => c.key).join('\u0000');
+    }
+
     _fillColumns(select, cond, current, pair, first) {
-      const opts = cond ? cond.columns.map((col) => ({ value: col.name, label: col.name })) : [];
+      const opts = this._columnOptions(cond, 'c:');
       if (current && (!cond || cond.findColumn(current) < 0)) opts.push({ value: current, label: current + '（見つかりません）' });
       if (pair) opts.unshift({ value: NONE, label: first ? '（開始の指定なし）' : '（終了の指定なし）' });
       if (first) opts.push({ group: '固定値', items: [{ value: FIXED, label: '✎ 固定値を入力…' }] });
@@ -196,8 +226,10 @@
       const pair = !!(op && op.pair);
       const period = !!(op && op.rightPrep === 'period');
       const isDate = DateColumns.isDate(src, c.left);
-      if (colsChanged || this.left.value !== c.left) {
-        const opts = src ? src.columns.map((col) => ({ value: col.name, label: col.name + (DateColumns.isDate(src, col.name) ? '（日付）' : '') })) : [];
+      const leftKey = [c.left, this._visibilityKey('s:')].join('|');
+      if (colsChanged || this.left.value !== c.left || this._leftKey !== leftKey) {
+        this._leftKey = leftKey;
+        const opts = this._columnOptions(src, 's:', (name) => name + (DateColumns.isDate(src, name) ? '（日付）' : ''));
         if (c.left && (!src || src.findColumn(c.left) < 0)) opts.push({ value: c.left, label: c.left + '（見つかりません）' });
         UI.fillSelect(this.left, opts, c.left, src ? '① の列を選択' : '① 未読み込み');
       }
@@ -208,7 +240,7 @@
         if (document.activeElement !== this.value2) this.value2.value = c.right.value2 || '';
         this._placeholders(pair, period, isDate);
       } else {
-        const key = [colsChanged, pair, c.right.col, c.right.col2].join('|');
+        const key = [colsChanged, pair, c.right.col, c.right.col2, this._visibilityKey('c:')].join('|');
         if (colsChanged || this._rightKey !== key) {
           this._rightKey = key;
           this._fillColumns(this.right, cond, c.right.col, pair, true);
@@ -322,7 +354,7 @@
       this.el = h('div');
       Dom.append(this.el, [this.list.el, this._buildHead(), this._buildLogic(), this._buildConditions(), this._buildExtraction()]);
       ctx.bus.on('query', (d) => this.update(d));
-      ['datasets', 'profiles', 'store', 'rules'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
+      ['datasets', 'profiles', 'store', 'rules', 'output'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
       ctx.bus.on('focus-condition', (d) => this._focusCondition(d.id, d.field));
       ctx.bus.on('focus-issue', (issue) => this._focusIssue(issue));
       ctx.bus.on('focus-profile-name', () => this._focusName());

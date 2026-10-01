@@ -51,8 +51,9 @@
       this.render();
     }
 
-    /* 進捗の更新だけでは表を描き直さない */
+    /* 進捗の更新だけでは表を描き直さない。列の表示の切替は抽出結果タブにだけ関係する */
     _schedule(e) {
+      if (e && e.topic === 'output' && this.state.view.tab !== 'result') return;
       if (e && e.topic === 'busy') {
         const kind = this.state.busy ? this.state.busy.kind : null;
         if (kind === this._busyKind) return;

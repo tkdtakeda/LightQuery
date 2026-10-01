@@ -178,8 +178,98 @@
   const h = Dom.h;
 
   const KIND_ICON = { excel: 'file-excel', csv: 'file-csv', paste: 'paste', sample: 'flask', stored: 'floppy-disk' };
-  const COLUMN_CHIP_LIMIT = 60;
   const FIELD_LABEL = { hasHeader: 'ヘッダー', headerRow: 'ヘッダー行', startRow: 'データ開始行', startCol: '開始列', endRow: '終了行' };
+
+  /* ---------------------------------------------------------------------
+   * ColumnChips：読み込んだ列のタグ。クリックで表示／非表示（出力列パネルと同じ設定）を切り替える
+   *   列名での絞り込みと「すべて ON／OFF」（絞り込み中は一覧に出ている列だけ）。状態はアイコン＋見た目＋文字で示す
+   * ------------------------------------------------------------------- */
+  class ColumnChips {
+    /**
+     * @param {object} ctx
+     * @param {string} prefix 出力列のキーの頭（① 's:' / ② 'c:'）
+     */
+    constructor(ctx, prefix) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.app = ctx.app;
+      this.prefix = prefix;
+      this.ds = null;
+      this._shown = [];
+      this.filter = h('input', { class: 'lq-input lq-input--sm', type: 'search', placeholder: '列名で絞り込み', title: '列名の一部でタグを絞り込みます' });
+      this.filter.addEventListener('input', () => this.render());
+      this.count = h('span', { class: 'lq-colbulk__count lq-num' });
+      this.allOn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(true) }, [Dom.icon('eye'), 'すべて ON']);
+      this.allOff = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(false) }, [Dom.icon('eye-slash'), 'すべて OFF']);
+      this.list = h('div', { class: 'lq-colchips lq-colchips--toggle' });
+      this.list.addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-key]');
+        if (!chip) return;
+        this.state.setColumnVisible(chip.dataset.key, chip.getAttribute('aria-pressed') !== 'true');
+        const again = this.list.querySelector('[data-key="' + CSS.escape(chip.dataset.key) + '"]');
+        if (again) {
+          again.focus();
+          Flash.el(again);
+        }
+      });
+      this.el = h('div', { class: 'lq-colpick' }, [
+        h('div', { class: 'lq-colpick__head' }, [this.filter, this.allOn, this.allOff]),
+        this.count,
+        this.list,
+        h('p', { class: 'lq-field__hint', text: 'タグを押すと、その列を表示する／しないを切り替えます（出力列パネルと同じ設定）。抽出条件の列の一覧では、表示する列が先に並びます。' })
+      ]);
+      ctx.bus.on('output', () => this.render());
+    }
+
+    setDataset(ds) {
+      this.ds = ds;
+      this.render();
+    }
+
+    render() {
+      Dom.clear(this.list);
+      const ds = this.ds;
+      if (!ds) return;
+      const vis = new Map(this.state.output.columns.map((c) => [c.key, c.visible]));
+      const word = this.filter.value.trim().toLowerCase();
+      const items = ds.columns.filter((c) => !word || c.name.toLowerCase().indexOf(word) !== -1).map((c) => {
+        const key = this.prefix + c.name;
+        const v = vis.get(key);
+        return { col: c, key: key, visible: v === undefined ? this.prefix === 's:' : v };
+      });
+      this._shown = items.map((it) => it.key);
+      const frag = document.createDocumentFragment();
+      items.forEach((it) => {
+        frag.appendChild(h('button', {
+          class: 'lq-colchip' + (it.visible ? ' is-on' : ' is-off'), type: 'button', dataset: { key: it.key },
+          'aria-pressed': it.visible ? 'true' : 'false',
+          title: it.col.letter + ' 列：' + it.col.name + (it.visible ? '（表示中・押すと隠す）' : '（非表示・押すと表示）')
+        }, [Dom.icon(it.visible ? 'eye' : 'eye-slash'), h('span', { class: 'lq-colchip__letter', text: it.col.letter }),
+          h('span', { class: 'lq-colchip__name', text: it.col.name })]));
+      });
+      this.list.appendChild(frag);
+      const on = items.filter((it) => it.visible).length;
+      this.count.textContent = (word ? '絞り込み中の ' + items.length + ' 列のうち' : '全 ' + items.length + ' 列のうち') + ' 表示 ' + on + ' 列';
+      this.allOn.disabled = !items.length || on === items.length;
+      this.allOff.disabled = !items.length || on === 0;
+      this.allOn.title = this.allOn.disabled ? '対象の列はすべて表示中です' : (word ? '一覧に出ている ' : '') + items.length + ' 列を表示にする（元に戻せます）';
+      this.allOff.title = this.allOff.disabled ? '対象の列はすべて非表示です' : (word ? '一覧に出ている ' : '') + items.length + ' 列を非表示にする（元に戻せます）';
+    }
+
+    _bulk(visible) {
+      const keys = this._shown.slice();
+      if (!keys.length) return;
+      const snap = this.state.snapshot();
+      this.state.setColumnsVisible(keys, visible);
+      Flash.el(this.list);
+      this.ctx.toasts.show({
+        type: 'success',
+        title: (this.filter.value.trim() ? '絞り込み中の ' : '') + keys.length + ' 列を' + (visible ? '表示' : '非表示') + 'にしました',
+        message: visible ? '不要な列はタグを押して隠してください。' : '出力したい列のタグを押して表示にしてください。',
+        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '列の表示を元に戻しました') }]
+      });
+    }
+  }
 
   class DatasetPanel {
     constructor(ctx, role) {
@@ -194,6 +284,7 @@
       this.tables = this.isSource ? null : new LQ.CondTableList(ctx);
       this.el = h('div', {}, this.tables ? [this.tables.el, this.body] : [this.body]);
       this.f = {};
+      this.chips = new ColumnChips(ctx, this.isSource ? 's:' : 'c:');
       this._builtKey = undefined;
       ctx.bus.on('datasets', () => this.refresh());
       ctx.bus.on('change', (e) => {
@@ -348,8 +439,7 @@
     _resultSection() {
       this.f.status = h('div');
       this.f.detail = h('div', { class: 'lq-reason' });
-      this.f.columns = h('div', { class: 'lq-colchips' });
-      return UI.section('読み込み結果', [this.f.status, this.f.detail, this.f.columns]);
+      return UI.section('読み込み結果', [this.f.status, this.f.detail, UI.field('列（押して表示／非表示を切り替え）', this.chips.el)]);
     }
 
     _numberInput(key, placeholder) {
@@ -527,15 +617,7 @@
         text: '範囲 ' + ds.stats.rangeText + (ds.stats.skippedEmpty ? '・空行 ' + Util.formatInt(ds.stats.skippedEmpty) + ' 行を除外' : '') +
           '・元の表は ' + Util.formatInt(ds.rawRowCount) + ' 行'
       })]);
-      Dom.clear(this.f.columns);
-      ds.columns.slice(0, COLUMN_CHIP_LIMIT).forEach((c) => {
-        this.f.columns.appendChild(h('span', { class: 'lq-colchip', title: c.letter + ' 列：' + c.name }, [
-          h('span', { class: 'lq-colchip__letter', text: c.letter }), h('span', { class: 'lq-colchip__name', text: c.name })
-        ]));
-      });
-      if (ds.columns.length > COLUMN_CHIP_LIMIT) {
-        this.f.columns.appendChild(h('span', { class: 'lq-colchip', text: '＋' + (ds.columns.length - COLUMN_CHIP_LIMIT) + ' 列' }));
-      }
+      this.chips.setDataset(ds);
     }
   }
 
