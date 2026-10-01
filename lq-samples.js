@@ -364,6 +364,30 @@
       }
     },
     {
+      id: 'condagg',
+      icon: 'list-check',
+      title: '② の顧客ごとに件数・金額・順位を出す（② の行ごとの集計）',
+      desc: '② の重点顧客リストの 1 行ごとに、受注の件数・金額の合計・平均と、合計金額の順位を集計タブに出します。受注が 0 件の顧客（C9999）も 0 件として表に出ます。グループにする列を選ぶ必要はありません。',
+      tags: ['集計', '② の行ごと', '0 件の行も出す', '順位'],
+      build() {
+        const cond = [['顧客ID', '担当', '重点理由'],
+          ['C0012', '佐藤', '大口'], ['C0045', '鈴木', '新規'], ['C0078', '佐藤', '休眠復活'], ['C0101', '高橋', '大口'],
+          ['C0150', '鈴木', '重点'], ['C0202', '高橋', '新規'], ['C9999', '佐藤', '取引予定（受注なし）']];
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1313) },
+          profiles: [{ name: '重点顧客', condition: { name: 'サンプル_重点顧客.csv', grid: cond }, query: Q([C('顧客ID', 'eq', col('顧客ID'))]) }],
+          output: ['s:受注番号', 's:受注日', 's:顧客ID', 's:顧客名', 's:金額', 'c:担当'],
+          aggregate: {
+            mode: 'condRows',
+            count: true,
+            measures: [{ key: 's:金額', fn: 'sum' }, { key: 's:金額', fn: 'avg' }],
+            rank: { target: 'sum|s:金額', dir: 'desc' }
+          },
+          tab: 'aggregate'
+        };
+      }
+    },
+    {
       id: 'perf',
       icon: 'gauge-high',
       title: '10 万行で速度を確認',

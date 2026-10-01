@@ -203,6 +203,8 @@
           matchMode: st.matchMode,
           needsCondition: st.needsCondition,
           ownRules: !!p.ownRules,
+          query: p.query,
+          rules: p.rules || ctx.rules,
           hits: merged.hits[i],
           assigned: merged.assigned[i],
           rows: merged.counts[i],
@@ -594,8 +596,13 @@
     MAX_MEASURES: MAX_MEASURES,
     COUNT_ID: COUNT_ID,
 
+    MODES: [
+      { id: 'condRows', label: '② の行ごと', icon: 'list-check', desc: '② 条件データの 1 行を 1 グループにします（一致が 0 件の行も出します）。列を選ぶ必要はありません。' },
+      { id: 'columns', label: '列を選んで集計', icon: 'table-columns', desc: 'グループにする列を自由に選びます（地域 × カテゴリなど）。' }
+    ],
+
     create() {
-      return { groupBy: [], count: true, measures: [], rank: null };
+      return { mode: 'columns', groupBy: [], count: true, measures: [], rank: null };
     },
 
     clean(raw) {
@@ -603,6 +610,7 @@
       if (!raw || typeof raw !== 'object') return out;
       const isKey = (k) => typeof k === 'string' && /^[scm]:/.test(k);
       if (Array.isArray(raw.groupBy)) out.groupBy = raw.groupBy.filter(isKey).filter((k, i, a) => a.indexOf(k) === i).slice(0, MAX_GROUPS);
+      if (raw.mode === 'condRows') out.mode = 'condRows';
       if (typeof raw.count === 'boolean') out.count = raw.count;
       if (Array.isArray(raw.measures)) {
         out.measures = raw.measures.filter((m) => m && isKey(m.key) && FUNC_IDS.indexOf(m.fn) !== -1)
@@ -802,6 +810,113 @@
       return { header: header, rows: rows, numeric: numeric, groupCount: list.length, rowCount: n, missing: missing, notes: notes };
     },
 
+    /**
+     * ② の行ごとに集計する（② の 1 行＝1 グループ。一致が 0 件の行も出す）。
+     * 抽出の「複数一致」の設定に関係なく、① の行が一致したすべての ② の行に数えるため、
+     * 抽出条件ごとに「すべての組み合わせ」で照合し直し、その抽出条件の結果に入った ① の行だけを数える。
+     * @param {LQ.ResultView} view
+     * @param {object} settings
+     * @param {LQ.QueryEngine} engine
+     * @param {LQ.CancelToken} token
+     * @returns {Promise<object|null>} compute と同じ形（中止したら null）
+     */
+    async computeByCondition(view, settings, engine, token) {
+      const source = view.source;
+      const nameOf = LQ.ResultView.nameOf;
+      const multi = view.parts.length > 1;
+      const scope = view.filter === null ? view.parts.map((p, i) => i) : (view.filter < 0 ? [] : [view.filter]);
+      const missing = [];
+      const notes = [];
+      const measures = [];
+      settings.measures.forEach((m) => {
+        if (m.key.slice(0, 2) !== 's:') {
+          missing.push(nameOf(m.key) + '（② の行ごとの集計では ① の列だけを集計します）');
+          return;
+        }
+        const idx = source.findColumn(nameOf(m.key));
+        if (idx < 0) missing.push(nameOf(m.key));
+        else measures.push({ m: m, idx: idx });
+      });
+      const linked = scope.filter((i) => {
+        const part = view.parts[i];
+        const ok = !!part.condition && part.needsCondition && part.joinKind !== 'anti' && !!part.query;
+        if (!ok) notes.push('「' + view.partName(i) + '」は ② の行がひも付かないため集計していません（固定値だけの条件、または「一致しなかった行」）');
+        return ok;
+      });
+      const condNames = [];
+      linked.forEach((i) => view.parts[i].condition.columns.forEach((c) => {
+        if (condNames.indexOf(c.name) === -1) condNames.push(c.name);
+      }));
+      const header = (multi ? ['抽出条件'] : []).concat(condNames);
+      const first = header.length;
+      if (settings.count) header.push('件数');
+      measures.forEach((x) => header.push(AggregateSettings.measureLabel(x.m)));
+      const rankTarget = settings.rank ? settings.rank.target : null;
+      const rankIdx = rankTarget === COUNT_ID ? -1 : measures.findIndex((x) => AggregateSettings.measureId(x.m) === rankTarget);
+      const useRank = !!settings.rank && (rankTarget === COUNT_ID ? settings.count : rankIdx >= 0);
+      if (useRank) header.push('順位');
+      const skipped = measures.map(() => ({ blank: 0, invalid: 0 }));
+      const rows = [];
+      let pairs = 0;
+      const N = source.rowCount;
+      for (let n = 0; n < linked.length; n++) {
+        const i = linked[n];
+        const part = view.parts[i];
+        const cond = part.condition;
+        const query = Object.assign({}, part.query, { joinKind: 'inner', matchMode: 'all' });
+        const res = await engine.run({ source: source, condition: cond, query: query, rules: part.rules }, { token: token });
+        if (res.cancelled) return null;
+        if (res.stats.truncated) notes.push('「' + view.partName(i) + '」：組み合わせが多すぎるため、途中までで集計しました');
+        const mark = new Uint8Array(N);
+        const prof = view.result.prof;
+        const rsrc = view.result.src;
+        for (let k = 0; k < view.result.length; k++) if (prof[k] === i) mark[rsrc[k]] = 1;
+        const M = cond.rowCount;
+        const counts = new Int32Array(M);
+        const accs = [];
+        for (let r = 0; r < M; r++) accs.push(measures.map(newAcc));
+        for (let j = 0; j < res.length; j++) {
+          const x = res.src[j];
+          const r = res.cond[j];
+          if (!mark[x] || r < 0) continue;
+          counts[r]++;
+          pairs++;
+          for (let t = 0; t < measures.length; t++) {
+            const kind = addValue(accs[r][t], source.cell(x, measures[t].idx));
+            if (kind === 'blank') skipped[t].blank++;
+            else if (kind === 'invalid' || (kind === 'date' && measures[t].m.fn !== 'min' && measures[t].m.fn !== 'max')) skipped[t].invalid++;
+          }
+        }
+        const results = accs.map((list) => list.map((acc, t) => finish(acc, measures[t].m.fn)));
+        const values = useRank ? Array.from(counts).map((c, r) => (rankIdx < 0 ? c : results[r][rankIdx].value)) : null;
+        const rankOf = useRank ? ranks(values, settings.rank.dir) : null;
+        const colIdx = condNames.map((name) => cond.findColumn(name));
+        const order = [];
+        for (let r = 0; r < M; r++) order.push(r);
+        if (rankOf) order.sort((a, b) => ((rankOf[a] === null ? Infinity : rankOf[a]) - (rankOf[b] === null ? Infinity : rankOf[b])) || a - b);
+        order.forEach((r) => {
+          const row = multi ? [view.partName(i)] : [];
+          colIdx.forEach((c) => row.push(c >= 0 ? String(cond.cell(r, c)) : ''));
+          if (settings.count) row.push(String(counts[r]));
+          results[r].forEach((x) => row.push(x.text));
+          if (rankOf) row.push(rankOf[r] === null ? '' : String(rankOf[r]));
+          rows.push(row);
+        });
+      }
+      const numeric = new Set();
+      for (let c = first; c < header.length; c++) numeric.add(c);
+      measures.forEach((x, t) => {
+        const sk = skipped[t];
+        if (!sk.blank && !sk.invalid) return;
+        const parts = [];
+        if (sk.invalid) parts.push('数値として読めない値 ' + LQ.Util.formatInt(sk.invalid) + ' 件');
+        if (sk.blank) parts.push('空欄 ' + LQ.Util.formatInt(sk.blank) + ' 件');
+        notes.push(AggregateSettings.measureLabel(x.m) + '：' + parts.join('・') + 'を除いて計算しました');
+      });
+      if (multi && useRank) notes.push('順位は抽出条件ごとに付けています');
+      return { header: header, rows: rows, numeric: numeric, groupCount: rows.length, rowCount: pairs, missing: missing, notes: notes, byCondition: true };
+    },
+
     /** 出力用の表（Exporters の table と同じ形） */
     toTable(computed) {
       return {
@@ -817,7 +932,8 @@
     /** 設定の文章表現（根拠・出力の記録用） */
     describe(settings) {
       const name = LQ.ResultView.nameOf;
-      const by = settings.groupBy.length ? settings.groupBy.map(name).join(' × ') + ' ごと' : '全体（グループなし）';
+      let by = settings.groupBy.length ? settings.groupBy.map(name).join(' × ') + ' ごと' : '全体（グループなし）';
+      if (settings.mode === 'condRows') by = '② の行ごと';
       const values = (settings.count ? ['件数'] : []).concat(settings.measures.map(AggregateSettings.measureLabel));
       const rank = settings.rank ? '・順位：' + (AggregateSettings.targets(settings).find((t) => t.id === settings.rank.target) || { label: '' }).label +
         '（' + (settings.rank.dir === 'asc' ? '小さい順' : '大きい順') + '）' : '';

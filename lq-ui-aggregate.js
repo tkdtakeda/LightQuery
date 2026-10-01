@@ -26,6 +26,9 @@
       this.state = main.state;
       this._key = null;
       this._computed = null;
+      this._pending = false;
+      this._error = null;
+      this._token = null;
     }
 
     /** 今の集計結果（集計できない状態なら null）。出力にも使う */
@@ -37,9 +40,42 @@
       const key = JSON.stringify([view.result.id, view.filter, s.rules, s.aggregate, names]);
       if (key !== this._key) {
         this._key = key;
-        this._computed = LQ.Aggregator.compute(view, s.aggregate);
+        this._error = null;
+        if (this._token) this._token.cancel();
+        this._token = null;
+        if (s.aggregate.mode === 'condRows') this._startByCondition(view, s.aggregate, key);
+        else {
+          this._pending = false;
+          this._computed = LQ.Aggregator.compute(view, s.aggregate);
+        }
       }
-      return this._computed;
+      return this._pending ? null : this._computed;
+    }
+
+    /** ② の行ごとの集計は照合し直すため、画面を止めずに計算し、終わったら描き直す */
+    _startByCondition(view, settings, key) {
+      const token = new LQ.CancelToken();
+      this._token = token;
+      this._pending = true;
+      this._computed = null;
+      const done = () => {
+        if (token.cancelled || key !== this._key) return false;
+        this._pending = false;
+        this._token = null;
+        this.main.ctx.bus.emit('change', { topic: 'aggregate-ready' });
+        return true;
+      };
+      LQ.Aggregator.computeByCondition(view, settings, this.main.ctx.engine, token).then((c) => {
+        if (c && !token.cancelled && key === this._key) this._computed = c;
+        done();
+      }).catch((err) => {
+        if (key === this._key) this._error = err.message;
+        done();
+      });
+    }
+
+    get pending() {
+      return this._pending;
     }
 
     /** タブの件数表示 */
@@ -48,6 +84,7 @@
       if (!s.result) return '未実行';
       if (!LQ.AggregateSettings.isActive(s.aggregate)) return '未設定';
       const c = this.computed();
+      if (this._pending) return '集計中…';
       return c ? fmt(c.groupCount) + ' グループ' : '';
     }
 
@@ -67,6 +104,11 @@
       }
       const view = main.resultView();
       const c = this.computed();
+      if (this._pending || !c) {
+        main.grid.showEmpty(main._emptyMessage(this._pending ? 'spinner' : 'triangle-exclamation', this._pending ? '② の行ごとに集計しています…' : '集計できませんでした',
+          this._pending ? '抽出条件ごとに ① と ② をすべての組み合わせで照合し直しています。終わると表が表示されます。' : (this._error || '設定を見直してください。')));
+        return;
+      }
       this._renderSummary(view, c);
       main._renderFilterBar(view);
       if (s.isStale()) {
@@ -202,7 +244,32 @@
         this.body.appendChild(UI.note('info', '① を読み込むと、集計に使う列を選べます。'));
         return;
       }
-      Dom.append(this.body, [this._groupSection(keys), this._measureSection(), this._rankSection(), this._footNotes()]);
+      const byCond = this.settings.mode === 'condRows';
+      Dom.append(this.body, [this._modeSection(), byCond ? this._condRowsNote() : this._groupSection(keys), this._measureSection(), this._rankSection(), this._footNotes()]);
+    }
+
+    /* ---------------- 集計のしかた（② の行ごと／列を選ぶ） ---------------- */
+
+    _modeSection() {
+      const st = this.settings;
+      const modes = Settings.MODES;
+      const desc = h('p', { class: 'lq-field__hint', text: (modes.find((m) => m.id === st.mode) || modes[1]).desc });
+      const seg = new LQ.Segmented(modes.map((m) => ({ value: m.id, label: m.label, icon: m.icon, title: m.desc })), st.mode,
+        (v) => this._change((x) => {
+          x.mode = v;
+        }, seg.el), 'lq-seg--block');
+      return UI.section('集計のしかた', [seg.el, desc]);
+    }
+
+    _condRowsNote() {
+      const s = this.state;
+      const linked = s.profiles.enabled().filter((p) => !!p.condition);
+      return UI.section('グループ', [
+        UI.note(linked.length ? 'info' : 'warn', linked.length
+          ? '② 条件データの 1 行が 1 グループです（' + linked.map((p) => '「' + p.name + '」' + LQ.Util.formatInt(p.condition.rowCount) + ' 行').join('・') +
+            '）。① の行が ② の複数の行に一致したときは、一致したすべての行に数えます。'
+          : '② 条件データを使う抽出条件がありません。② を読み込むか「列を選んで集計」を使ってください。')
+      ]);
     }
 
     /* ---------------- グループにする列 ---------------- */
@@ -242,7 +309,8 @@
 
     _measureSection() {
       const st = this.settings;
-      const keys = this._keys(MEASURABLE_META);
+      const all = this._keys(MEASURABLE_META);
+      const keys = st.mode === 'condRows' ? all.filter((k) => k.slice(0, 2) === 's:') : all;
       const box = h('div', { class: 'lq-aggmeasures' });
       const count = UI.switchToggle('件数（グループの行数）', st.count, (checked) => this._change((s) => {
         s.count = checked;
