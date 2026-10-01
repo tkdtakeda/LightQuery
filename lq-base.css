@@ -984,8 +984,13 @@ input[type="radio"] {
   color: var(--color-success-strong);
 }
 
+/* 豆知識は警告（琥珀色の面）と見分けられるよう中立の面にし、電球のアイコンだけ琥珀色にする */
 .lq-note--tip {
-  border-color: var(--color-accent-line);
-  background: var(--color-accent-faint);
-  color: var(--color-accent-strong);
+  border-color: var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-sub);
+}
+
+.lq-note--tip > .fa-solid {
+  color: var(--color-accent);
 }

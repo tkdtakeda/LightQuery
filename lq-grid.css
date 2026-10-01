@@ -638,6 +638,14 @@
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+
+/* 押すとその段階の設定パネルを開く */
+.lq-step:hover {
+  border-color: var(--color-primary);
+  transform: translateY(calc(var(--space-1) * -1));
 }
 
 .lq-step__head {

@@ -648,6 +648,11 @@
     /** 何か集計する設定か（件数・集計する値のどちらかがある） */
     isActive(settings) {
       return !!settings && (settings.count || settings.measures.length > 0);
+    },
+
+    /** 利用者が集計を設定したか（初期値の「全体の件数だけ」は、抽出結果の行数と同じなので集計として扱わない） */
+    isConfigured(settings) {
+      return this.isActive(settings) && (settings.mode === 'condRows' || settings.groupBy.length > 0 || settings.measures.length > 0);
     }
   };
 

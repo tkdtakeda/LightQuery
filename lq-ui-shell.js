@@ -156,8 +156,11 @@
       this._mark('query', this._queryMark());
       const own = s.profiles.items.filter((p) => !!p.rules).length;
       this._mark('rules', own ? { kind: 'count', text: String(own), title: '個別の照合ルールがある抽出条件 ' + own + ' 件' } : null);
+      /* 抽出結果があれば、結果の「列 N / M」と同じ数え方（出力できる列だけ）にする */
       const counts = s.columnCounts();
-      const visible = counts['s:'].visible + counts['c:'].visible + counts['m:'].visible;
+      const view = this.app.main ? this.app.main.resultView() : null;
+      const visible = view ? view.resolveColumns(s.output.columns).filter((d) => d.available).length
+        : counts['s:'].visible + counts['c:'].visible + counts['m:'].visible;
       this._mark('output', s.output.columns.length ? { kind: 'count', text: String(visible), title: '表示する列 ' + visible + ' 列' } : null);
       const agg = s.aggregate;
       const values = (agg.count ? 1 : 0) + agg.measures.length;

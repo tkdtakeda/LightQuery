@@ -798,8 +798,28 @@
       if (!this._hasOutputColumn()) {
         return { id: 'chooseColumns', label: '出力する列を選ぶ', icon: 'table-columns', status: { kind: 'warn', text: '出力できる列が 0 列のため出力できません（左の「出力列」で選びます）' } };
       }
-      return { id: 'export', label: fmt(s.result.length) + ' 行を出力する', icon: 'file-export',
-        status: { kind: 'ok', text: 'Excel・CSV・コピーで出力できます' } };
+      return this._exportCta();
+    }
+
+    /** 出力の CTA：件数は出力ダイアログと同じ数え方（表示中の行）にし、内訳を状態の文に入れる */
+    _exportCta() {
+      const s = this.state;
+      const view = this.main ? this.main.resultView() : null;
+      if (!view) {
+        return { id: 'export', label: fmt(s.result.length) + ' 行を出力する', icon: 'file-export', status: { kind: 'ok', text: 'Excel・CSV・コピーで出力できます' } };
+      }
+      if (view.filter !== null && !view.length) {
+        return { id: 'showAll', label: 'すべての行を表示する', icon: 'list',
+          status: { kind: 'warn', text: '「' + view.partName(view.filter) + '」の行は 0 行のため出力できません' } };
+      }
+      let text = 'Excel・CSV・コピーで出力できます';
+      if (view.filter !== null) {
+        text = '表示中の「' + view.partName(view.filter) + '」の行だけを出力します（全 ' + fmt(view.counts().total) + ' 行は「すべて」を選びます）';
+      } else if (view.multi && view.counts().unmatched) {
+        const c = view.counts();
+        text = '抽出条件の行 ' + fmt(c.total - c.unmatched) + ' 行＋該当なし ' + fmt(c.unmatched) + ' 行を出力します';
+      }
+      return { id: 'export', label: fmt(view.length) + ' 行を出力する', icon: 'file-export', status: { kind: 'ok', text: text } };
     }
 
     /** 表示・出力できる列が 1 列以上あるか */
@@ -856,6 +876,7 @@
         case 'run': this.run(); break;
         case 'review': this.state.openPanel('query'); break;
         case 'chooseColumns': this.state.openPanel('output'); break;
+        case 'showAll': this.state.setFilter(null); break;
         case 'export': this.resultDialogs.openExport(anchor); break;
         default: break;
       }

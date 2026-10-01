@@ -35,7 +35,7 @@
     computed() {
       const s = this.state;
       const view = this.main.resultView();
-      if (!view || !LQ.AggregateSettings.isActive(s.aggregate)) return null;
+      if (!view || !LQ.AggregateSettings.isConfigured(s.aggregate)) return null;
       const names = view.parts.map((p, i) => view.partName(i));
       const key = JSON.stringify([view.result.id, view.filter, s.rules, s.aggregate, names]);
       if (key !== this._key) {
@@ -82,7 +82,7 @@
     tabCount() {
       const s = this.state;
       if (!s.result) return '未実行';
-      if (!LQ.AggregateSettings.isActive(s.aggregate)) return '未設定';
+      if (!LQ.AggregateSettings.isConfigured(s.aggregate)) return '未設定';
       const c = this.computed();
       if (this._pending) return '集計中…';
       return c ? fmt(c.groupCount) + ' グループ' : '';
@@ -97,8 +97,11 @@
         main.grid.showEmpty(main._emptyMessage('calculator', 'まだ抽出していません', '抽出すると、その結果をグループごとに集計できます（件数・合計・平均・標準偏差・最小・最大・順位）。右上のボタンから進めてください。'));
         return;
       }
-      if (!LQ.AggregateSettings.isActive(s.aggregate)) {
-        main.grid.showEmpty(main._emptyMessage('calculator', '集計する値がありません', '「集計の設定」で、件数か集計する値を選んでください。',
+      if (!LQ.AggregateSettings.isConfigured(s.aggregate)) {
+        const empty = LQ.AggregateSettings.isActive(s.aggregate)
+          ? ['まだ集計を設定していません', '「集計の設定」で、グループにする列（地域・カテゴリなど）か集計する値（合計・平均など）を選ぶと、ここに集計の表が出ます。「② の行ごと」も選べます。']
+          : ['集計する値がありません', '「集計の設定」で、件数か集計する値を選んでください。'];
+        main.grid.showEmpty(main._emptyMessage('calculator', empty[0], empty[1],
           h('button', { class: 'lq-btn', type: 'button', onclick: () => s.openPanel('aggregate') }, [Dom.icon('calculator'), '集計を設定する'])));
         return;
       }

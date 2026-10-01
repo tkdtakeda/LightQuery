@@ -163,7 +163,7 @@
  * ── 読み込みパネル ──
  * ① 元データ / ② 条件データの読み込みパネル：
  *   ファイル（選択・シート・文字コード・区切り文字と判定の根拠）、読み込み範囲（ヘッダー・開始行・開始列・終了行）、
- *   読み込み結果（行数・列数・列名）。入力欄は作り直さず値だけ更新し、フォーカスを保つ。
+ *   列の追加、絞り込み、読み込み結果（行数・列数・列名）の順（処理の順）に並べる。入力欄は作り直さず値だけ更新し、フォーカスを保つ。
  *   ② は選択中の抽出条件のもの（抽出条件を切り替えると、このパネルもその ② に切り替わる）。
  *   ② のパネルは上部に条件データの一覧（CondTableList）を置き、ここでも切り替え・追加できる。
  * ========================================================================= */
@@ -327,11 +327,12 @@
         this.body.appendChild(this._emptySection());
         return;
       }
+      /* 処理の順（読み込み範囲 → 列の追加 → 絞り込み）に並べ、その結果の列を最後に出す */
       this.body.appendChild(this._fileSection(ds));
       this.body.appendChild(this._rangeSection());
-      this.body.appendChild(this._resultSection());
-      this.body.appendChild(this.filterSection.el);
       this.body.appendChild(this.derived.el);
+      this.body.appendChild(this.filterSection.el);
+      this.body.appendChild(this._resultSection());
     }
 
     _emptySection() {

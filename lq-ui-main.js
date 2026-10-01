@@ -280,9 +280,13 @@
       } else {
         const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
         const none = st.matchedSources === 0;
+        const unmatched = view.counts().unmatched;
         items = [
           h('span', { class: 'lq-summary__main' + (none ? ' is-none' : '') }, [Dom.icon(none ? 'triangle-exclamation' : 'circle-check'), fmt(st.matchedSources) + ' 行が該当']),
           h('span', { class: 'lq-summary__item lq-num', text: '① ' + fmt(st.sourceRows) + ' 行中 ' + Util.formatPercent(st.matchedSources / Math.max(1, st.sourceRows)) }),
+          /* 「該当なし」も出力するときは、表示・出力の行数（該当＋該当なし）との差をここで示す */
+          unmatched ? h('span', { class: 'lq-summary__item lq-num', title: 'どの抽出条件にも該当しなかった行も、「該当なし」として表示・出力します' },
+            [Dom.icon('circle-plus'), '該当なし ' + fmt(unmatched) + ' 行も出力']) : null,
           h('span', { class: 'lq-summary__item', title: mode.desc }, [Dom.icon(mode.icon), '抽出条件 ' + res.parts.length + ' 件・' + mode.short]),
           shown, time, detailsBtn
         ];
@@ -369,7 +373,17 @@
       const list = h('ol', { class: 'lq-steps' });
       steps.forEach((step, i) => {
         if (i > 0) list.appendChild(h('li', { class: 'lq-step__arrow', 'aria-hidden': 'true' }, Dom.icon('chevron-right')));
-        list.appendChild(h('li', { class: 'lq-step is-' + step.state }, [
+        const act = () => (step.panel ? s.openPanel(step.panel) : this.app.runCta(this.app.shell ? this.app.shell.topbar.cta : null));
+        list.appendChild(h('li', {
+          class: 'lq-step is-' + step.state, role: 'button', tabindex: '0', title: step.panel ? '押すと設定パネルを開きます' : '押すと抽出します',
+          onclick: act,
+          onkeydown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              act();
+            }
+          }
+        }, [
           h('div', { class: 'lq-step__head' }, [Dom.icon(step.state === 'done' ? 'circle-check' : step.icon), step.title,
             step.state === 'done' ? h('span', { class: 'lq-status lq-status--ok', text: '済' }) : null]),
           h('div', { class: 'lq-step__text', text: step.text })
@@ -378,7 +392,7 @@
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: 'あと少しで抽出できます' }),
         list,
-        h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。抽出条件は左の「抽出条件」から確認・変更できます。' })
+        h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。各段階のカードを押すと、その設定を開けます。' })
       ]));
     }
 
@@ -397,10 +411,10 @@
       const hasConds = s.query.conditions.length > 0;
       const condNeeded = !hasConds || v.needsCondition || !v.ok;
       return [
-        { icon: 'table', title: '① 元データ', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
-        { icon: 'list-check', title: '② 条件データ', state: cond ? 'done' : (condNeeded ? 'current' : 'done'),
+        { icon: 'table', title: '① 元データ', panel: 'source', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
+        { icon: 'list-check', title: '② 条件データ', panel: 'condition', state: cond ? 'done' : (condNeeded ? 'current' : 'done'),
           text: cond ? cond.name + '（' + Util.formatInt(cond.rowCount) + ' 行）' : (condNeeded ? '読み込んでください（固定値だけの条件なら不要）' : '固定値だけの条件のため不要') },
-        { icon: 'filter', title: '条件', state: hasConds && v.ok ? 'done' : ((cond || !condNeeded) ? 'current' : 'todo'),
+        { icon: 'filter', title: '条件', panel: 'query', state: hasConds && v.ok ? 'done' : ((cond || !condNeeded) ? 'current' : 'todo'),
           text: hasConds ? (v.ok ? LQ.Logic.toJapanese(v.ast) : v.errors[0].message) : '① と ② の列の対応を決めます' },
         this._runStep(hasConds && v.ok)
       ];
@@ -417,10 +431,10 @@
       const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === s.combine.mode);
       const first = all.first;
       return [
-        { icon: 'table', title: '① 元データ', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
-        { icon: 'list-check', title: '② 条件データ', state: loaded === need.length ? 'done' : 'current',
+        { icon: 'table', title: '① 元データ', panel: 'source', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
+        { icon: 'list-check', title: '② 条件データ', panel: 'condition', state: loaded === need.length ? 'done' : 'current',
           text: need.length ? '読み込み済み ' + loaded + ' / ' + need.length + ' 件（抽出条件ごと）' : '固定値だけの抽出条件のため不要' },
-        { icon: 'filter', title: '抽出条件', state: all.ok ? 'done' : 'current',
+        { icon: 'filter', title: '抽出条件', panel: 'query', state: all.ok ? 'done' : 'current',
           text: all.ok ? '有効 ' + enabled.length + ' 件・' + mode.short : (first ? '「' + first.profile.name + '」：' + first.issue.message : 'すべて無効です') },
         this._runStep(all.ok)
       ];
@@ -462,6 +476,7 @@
       const total = raw ? ds.rawRowCount : ds.rowCount;
       const paging = this._paging(role, total);
       this.grid.render(raw ? this._rawModel(ds, paging) : this._dataModel(ds, paging));
+      this._visDs = ds;
       this._visCount = h('span', { class: 'lq-num', title: (raw ? 'ヘッダー行の列名' : '見出し') + 'を押すと一覧が開き、出力する／しないの切り替えと絞り込みができます（出力列パネル・読み込みパネルの列タグと同じ設定）' });
       this._visCount.textContent = this._visText(this._isVisible());
       const summary = this.info.querySelector('.lq-summary');
@@ -506,11 +521,14 @@
       if (this._visCount) this._visCount.textContent = this._visText(isVisible);
     }
 
+    /** 出力する列の数（読み込みパネルの列タグと同じく、追加した列を含む全列で数える） */
     _visText(isVisible) {
       const model = this.grid.model;
-      const cols = model ? model.columns.filter((c) => c.toggleKey) : [];
+      const ds = this._visDs;
+      const prefix = ds && ds.role === 'source' ? 's:' : 'c:';
+      const keys = ds ? ds.columns.map((c) => prefix + c.name) : [];
       const where = model && model.mode === 'raw' ? 'ヘッダー行の列名' : '見出し';
-      return '出力する列 ' + cols.filter((c) => isVisible(c.toggleKey)).length + ' / ' + cols.length + '（' + where + 'を押すと一覧で切替・絞り込み）';
+      return '出力する列 ' + keys.filter((k) => isVisible(k)).length + ' / ' + keys.length + '（' + where + 'を押すと一覧で切替・絞り込み）';
     }
 
     _dataModel(ds, paging) {

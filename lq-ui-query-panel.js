@@ -310,8 +310,9 @@
 
 /* =========================================================================
  * ── 抽出条件パネル ──
- * 抽出条件パネル：上に抽出条件の一覧（ProfileListView）、下に選択中の抽出条件の編集
- *   （名前・② 条件データ・照合ルール（全体／個別）・組み合わせ・条件の一覧・抽出のしかた）。
+ * 抽出条件パネル：上に抽出条件の一覧（ProfileListView）、下に選択中の抽出条件の編集。
+ *   編集は決める順に並べる：名前・② 条件データ・出力する行 → 条件の一覧 → 組み合わせ（条件が 2 件以上のとき）
+ *   → 照合ルール（全体／個別）→ 詳細（① の 1 行が ② の複数の行に一致したとき。畳んでおく）。
  *   条件は「① 列 が ② 列 を含む」の語順で並べ、同名列の提案・除外リストのヒントを出す。
  *   条件の行（ConditionRow）は id ごとに使い回し、入力中のフォーカスを失わないようにする。
  * ========================================================================= */
@@ -345,7 +346,7 @@
       this._profileId = null;
       this.list = new LQ.ProfileListView(ctx);
       this.el = h('div');
-      Dom.append(this.el, [this.list.el, this._buildHead(), this._buildLogic(), this._buildConditions(), this._buildExtraction()]);
+      Dom.append(this.el, [this.list.el, this._buildHead(), this._buildConditions(), this._buildLogic(), this._buildRules(), this._buildMatch()]);
       ctx.bus.on('query', (d) => this.update(d));
       ['datasets', 'profiles', 'store', 'rules', 'output'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
       ctx.bus.on('focus-condition', (d) => this._focusCondition(d.id, d.field));
@@ -373,18 +374,23 @@
       });
       this.nameInput.addEventListener('change', () => this._commitName());
       this.condCard = h('div', { class: 'lq-condcard' });
-      this.ruleLine = h('div', { class: 'lq-ruleline' });
-      this.ruleField = UI.field('照合ルール（空白・全角半角などのそろえ方）', this.ruleLine);
       this.headTitle = h('span', { class: 'lq-edit__title' });
       this.head = h('section', { class: 'lq-section lq-edit' }, [
         h('h3', { class: 'lq-section__title' }, [Dom.icon('pen-to-square'), this.headTitle]),
         h('div', { class: 'lq-stack' }, [
           UI.field('名前', h('div', { class: 'lq-profname__row' }, [this.rankBadge, this.nameInput])),
           UI.field('② 条件データ（この抽出条件で使う表）', this.condCard),
-          this.ruleField
+          this._buildJoin()
         ])
       ]);
       return this.head;
+    }
+
+    /** 照合ルールの行（抽出条件が 1 つで個別の設定もなければ出さない） */
+    _buildRules() {
+      this.ruleLine = h('div', { class: 'lq-ruleline' });
+      this.ruleField = h('section', { class: 'lq-section' }, [UI.field('照合ルール（空白・全角半角などのそろえ方）', this.ruleLine)]);
+      return this.ruleField;
     }
 
     _buildLogic() {
@@ -402,7 +408,8 @@
         this.exprStatus
       ]);
       this.reading = h('div', { class: 'lq-reading' });
-      return UI.section('組み合わせ', [this.modeSeg.el, this.exprField, UI.field('読み下し', this.reading)]);
+      this.logicSection = UI.section('組み合わせ（条件が 2 件以上のとき）', [this.modeSeg.el, this.exprField, UI.field('読み下し', this.reading)]);
+      return this.logicSection;
     }
 
     _buildConditions() {
@@ -437,32 +444,40 @@
         '<text class="lq-venn__label lq-venn__label--src" x="32" y="36">①</text><text class="lq-venn__label lq-venn__label--cond" x="88" y="36">②</text></svg>';
     }
 
-    _buildExtraction() {
+    /**
+     * 出力する行（一致した行／一致しなかった行／すべての行）。結果を真逆にする選択のため、② のすぐ下に横並びで出す。
+     *   説明は選んでいるものだけを下に出し、ほかは見出しの title で示す
+     */
+    _buildJoin() {
       this.joinChoices = new Map();
-      const joinList = h('div', { class: 'lq-choice-list', role: 'radiogroup' });
+      const joinList = h('div', { class: 'lq-choice-list lq-choice-list--row', role: 'radiogroup' });
       LQ.QueryEngine.JOIN_KINDS.forEach((j) => {
         const radio = h('input', { type: 'radio', name: 'lq-join-kind' });
-        const el = h('label', { class: 'lq-choice' }, [
+        const el = h('label', { class: 'lq-choice lq-choice--compact', title: j.label + '（' + j.note + '）：' + j.desc }, [
           radio,
-          h('span', { class: 'lq-choice__title' }, [j.label, h('span', { class: 'lq-choice__note', text: '（' + j.note + '）' })]),
-          h('span', { class: 'lq-choice__desc', text: j.desc }),
-          h('span', { class: 'lq-choice__figure', title: '塗った部分の ① の行を出力します', html: QueryPanel.venn(j.id) })
+          h('span', { class: 'lq-choice__figure', html: QueryPanel.venn(j.id) }),
+          h('span', { class: 'lq-choice__title' }, [j.label]),
+          h('span', { class: 'lq-choice__note', text: j.note })
         ]);
-        el.classList.add('lq-choice--figure');
         radio.addEventListener('change', () => {
           if (radio.checked && this.state.query.joinKind !== j.id) this.state.setJoinKind(j.id);
         });
         this.joinChoices.set(j.id, { el: el, radio: radio });
         joinList.appendChild(el);
       });
+      this.joinDesc = h('div', { class: 'lq-field__hint' });
+      return UI.field('出力する行（塗った部分の ① の行を出します）', h('div', { class: 'lq-stack' }, [joinList, this.joinDesc]));
+    }
+
+    /** ① の 1 行が ② の複数の行に一致したとき（使う頻度が低いため畳んでおく） */
+    _buildMatch() {
       this.matchSeg = new LQ.Segmented(LQ.QueryEngine.MATCH_MODES.map((m) => ({ value: m.id, label: m.label })), 'first', (v) => {
         this.state.setMatchMode(v);
         Flash.el(this.matchSeg.el);
       }, 'lq-seg--block');
       this.matchDesc = h('div', { class: 'lq-field__hint' });
       this.matchReason = h('div');
-      this.extraction = UI.collapsible('抽出のしかた', [
-        UI.field('出力する行', joinList),
+      this.extraction = UI.collapsible('詳細：② の複数の行に一致したとき', [
         UI.field('① の 1 行が ② の複数の行に一致したとき', this.matchSeg.el),
         this.matchDesc,
         this.matchReason
@@ -507,6 +522,7 @@
       this._renderHead(p, switched);
       this.modeSeg.set(q.logic.mode);
       this.exprField.hidden = q.logic.mode !== 'expr';
+      this.logicSection.hidden = q.conditions.length < 2 && q.logic.mode !== 'expr';
       if (switched || document.activeElement !== this.exprInput) this.exprInput.value = q.logic.expr;
       if ((d.exprChanged || d.logic) && q.logic.mode === 'expr') Flash.el(this.exprInput);
       this._renderExprStatus(v);
@@ -728,6 +744,8 @@
         item.radio.checked = id === q.joinKind;
         item.el.classList.toggle('is-selected', id === q.joinKind);
       });
+      const join = LQ.QueryEngine.JOIN_KINDS.find((j) => j.id === q.joinKind);
+      this.joinDesc.textContent = join ? join.desc : '';
       if (d.joinKind) Flash.el(this.joinChoices.get(q.joinKind).el);
       this.matchSeg.set(q.matchMode);
       let reason = null;
@@ -738,8 +756,7 @@
       this.matchDesc.textContent = mode ? mode.desc : '';
       Dom.clear(this.matchReason);
       if (reason) this.matchReason.appendChild(UI.status('info', reason));
-      const join = LQ.QueryEngine.JOIN_KINDS.find((j) => j.id === q.joinKind);
-      this.extraction.summary.textContent = (join ? join.label : '') + (reason ? '' : '・' + (mode ? mode.label : ''));
+      this.extraction.summary.textContent = reason ? '使いません' : (mode ? mode.label : '');
       if (d.joinKind || d.matchMode) Flash.el(this.extraction.summary);
     }
 
@@ -768,7 +785,14 @@
         Flash.el(this.exprInput, 'warn');
         return;
       }
-      if (issue.code === 'joinKind' || issue.code === 'matchMode') this.extraction.el.open = true;
+      if (issue.code === 'joinKind') {
+        const item = this.joinChoices.get(this.state.query.joinKind);
+        if (item) {
+          item.el.scrollIntoView({ block: 'nearest' });
+          Flash.el(item.el, 'warn');
+        }
+      }
+      if (issue.code === 'matchMode') this.extraction.el.open = true;
       if (issue.condId) this._focusCondition(issue.condId, issue.field);
     }
   }
