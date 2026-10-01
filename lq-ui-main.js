@@ -14,7 +14,9 @@
   const UI = LQ.UI;
   const h = Dom.h;
 
-  const RAW_COL_LIMIT = 200;
+  /* 「読み込み範囲」表示で一度に描くセルの上限（列数 × 表示行数）。超える列は描かず、その旨を表示する */
+  const RAW_CELL_BUDGET = 300000;
+  const RAW_COL_MIN = 200;
   const NUMERIC_RATIO = 0.8;
   const ROLE_TEXT = {
     source: { title: '① 元データ', icon: 'table', badge: ['src', '①'], label: '元データ', sub: '抽出される側のデータ（Excel・CSV）' },
@@ -49,7 +51,27 @@
       this.aggregate = new LQ.AggregateTab(this);
       LQ.FormNav.attach(this.pager);
       ctx.bus.on('change', (e) => this._schedule(e));
+      this._find = null;
+      ctx.bus.on('column-find', (d) => {
+        this._find = d && d.word ? d : null;
+        this._applyFind();
+      });
+      ctx.bus.on('panel', () => this._applyFind());
       this.render();
+    }
+
+    /** 読み込みパネルの列タグで探している列を、そのパネルを開いている間だけプレビューで強調する */
+    _applyFind() {
+      const s = this.state;
+      const f = this._find;
+      const role = s.view.tab;
+      const active = !!f && f.role === role && s.panel === role && !!s.datasets[role];
+      const model = this.grid.model;
+      if (!model || (model.mode !== 'raw' && model.mode !== 'data')) return;
+      const match = LQ.ColumnChips.matches;
+      this.grid.highlightColumns(active ? (col) => (model.mode === 'raw'
+        ? !!col.toggleName && match(col.toggleName, col.label, f.word)
+        : match(col.label, col.letter, f.word)) : null);
     }
 
     /* 進捗の更新だけでは表を描き直さない。列の表示の切替は抽出結果タブにだけ関係する */
@@ -482,6 +504,7 @@
       const summary = this.info.querySelector('.lq-summary');
       if (summary && ds.colCount) summary.appendChild(h('span', { class: 'lq-summary__item' }, [Dom.icon('eye'), this._visCount]));
       this._renderPager(role, total, paging);
+      this._applyFind();
     }
 
     _renderDatasetSummary(ds, raw) {
@@ -559,7 +582,13 @@
       const end = Math.min(ds.rawRowCount, paging.start + this.state.view.pageSize);
       let maxCol = set.startCol;
       for (let r = paging.start; r < end; r++) maxCol = Math.max(maxCol, ds.grid[r].length);
-      maxCol = Math.min(maxCol, RAW_COL_LIMIT);
+      const limit = Math.max(RAW_COL_MIN, Math.floor(RAW_CELL_BUDGET / Math.max(1, end - paging.start)));
+      const allCols = maxCol;
+      maxCol = Math.min(maxCol, limit);
+      if (allCols > maxCol) {
+        this.info.appendChild(UI.note('warn', '列が多いため、この表示では ' + Util.colLetter(maxCol - 1) + ' 列（' + Util.formatInt(maxCol) + ' 列目）までを表示しています（全 ' +
+          Util.formatInt(allCols) + ' 列）。下の「表示件数」を減らすと右の列まで表示できます。読み込みは全列で行っており、「データ」表示ではすべての列を確かめられます。'));
+      }
       const prefix = ds.role === 'source' ? 's:' : 'c:';
       const isVisible = this._isVisible();
       const byRaw = new Map(ds.columns.map((col) => [col.src, col]));

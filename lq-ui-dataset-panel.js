@@ -182,7 +182,9 @@
 
   /* ---------------------------------------------------------------------
    * ColumnChips：読み込んだ列のタグ。クリックで表示／非表示（出力列パネルと同じ設定）を切り替える
-   *   列名での絞り込みと「すべて ON／OFF」（絞り込み中は一覧に出ている列だけ）。状態はアイコン＋見た目＋文字で示す
+   *   列名・列記号（AAB など）での絞り込みと「すべて ON／OFF」（絞り込み中は一覧に出ている列だけ）。状態はアイコン＋見た目＋文字で示す
+   *   ・絞り込みの語は右のプレビューにも伝え、当てはまる列の見出しを強調してその位置まで送る（列が多い表で列を探せる）
+   *   ・選択中の抽出条件の条件で使っている列には、その条件の記号（A・B…）を付ける（① と ② の対応を見比べられる）
    * ------------------------------------------------------------------- */
   class ColumnChips {
     /**
@@ -196,8 +198,13 @@
       this.prefix = prefix;
       this.ds = null;
       this._shown = [];
-      this.filter = h('input', { class: 'lq-input lq-input--sm', type: 'search', placeholder: '列名で絞り込み', title: '列名の一部でタグを絞り込みます' });
-      this.filter.addEventListener('input', () => this.render());
+      this.role = prefix === 's:' ? 'source' : 'condition';
+      this.filter = h('input', { class: 'lq-input lq-input--sm', type: 'search', placeholder: '列名・列記号で探す',
+        title: '列名の一部か列記号でタグを絞り込み、右の表の当てはまる列を強調してその位置まで送ります' });
+      this.filter.addEventListener('input', () => {
+        this.render();
+        this._find();
+      });
       this.count = h('span', { class: 'lq-colbulk__count lq-num' });
       this.allOn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(true) }, [Dom.icon('eye'), 'すべて ON']);
       this.allOff = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(false) }, [Dom.icon('eye-slash'), 'すべて OFF']);
@@ -216,9 +223,42 @@
         h('div', { class: 'lq-colpick__head' }, [this.filter, this.allOn, this.allOff]),
         this.count,
         this.list,
-        h('p', { class: 'lq-field__hint', text: 'タグを押すと、その列を表示する／しないを切り替えます（出力列パネルと同じ設定）。抽出条件の列の一覧では、表示する列が先に並びます。' })
+        h('p', { class: 'lq-field__hint', text: 'タグを押すと、その列を表示する／しないを切り替えます（出力列パネルと同じ設定）。A・B などの記号は、選択中の抽出条件のその条件で使っている列です。' })
       ]);
-      ctx.bus.on('output', () => this.render());
+      ['output', 'query', 'profiles'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
+    }
+
+    /** 右のプレビューに、今の絞り込みの語を伝える（空なら強調を消す） */
+    _find() {
+      this.ctx.bus.emit('column-find', { role: this.role, word: this.filter.value.trim() });
+    }
+
+    /** 列名 → その列を使う条件の記号（選択中の抽出条件。① は左の列、② は相手の列・範囲の終わりの列） */
+    _labels() {
+      const map = new Map();
+      const add = (name, label) => {
+        if (!name) return;
+        if (!map.has(name)) map.set(name, []);
+        if (map.get(name).indexOf(label) === -1) map.get(name).push(label);
+      };
+      this.state.activeProfile.query.conditions.forEach((c) => {
+        if (this.prefix === 's:') {
+          add(c.left, c.label);
+          return;
+        }
+        if (c.right.type !== 'column') return;
+        add(c.right.col, c.label);
+        const op = LQ.Operators.get(c.op);
+        if (op && op.pair) add(c.right.col2, c.label);
+      });
+      return map;
+    }
+
+    /** 列名・列記号の絞り込み（列記号は完全一致、列名は一部一致。大文字・小文字は区別しない） */
+    static matches(name, letter, word) {
+      if (!word) return true;
+      const w = word.toLowerCase();
+      return name.toLowerCase().indexOf(w) !== -1 || (!!letter && letter.toLowerCase() === w);
     }
 
     setDataset(ds) {
@@ -231,8 +271,9 @@
       const ds = this.ds;
       if (!ds) return;
       const vis = new Map(this.state.output.columns.map((c) => [c.key, c.visible]));
-      const word = this.filter.value.trim().toLowerCase();
-      const items = ds.columns.filter((c) => !word || c.name.toLowerCase().indexOf(word) !== -1).map((c) => {
+      const word = this.filter.value.trim();
+      const labels = this._labels();
+      const items = ds.columns.filter((c) => ColumnChips.matches(c.name, c.letter, word)).map((c) => {
         const key = this.prefix + c.name;
         const v = vis.get(key);
         return { col: c, key: key, visible: v === undefined ? this.prefix === 's:' : v };
@@ -245,11 +286,12 @@
           'aria-pressed': it.visible ? 'true' : 'false',
           title: it.col.letter + ' 列：' + it.col.name + (it.visible ? '（表示中・押すと隠す）' : '（非表示・押すと表示）')
         }, [Dom.icon(it.visible ? 'eye' : 'eye-slash'), h('span', { class: 'lq-colchip__letter', text: it.col.letter }),
-          h('span', { class: 'lq-colchip__name', text: it.col.name })]));
+          h('span', { class: 'lq-colchip__name', text: it.col.name })].concat((labels.get(it.col.name) || []).map((l) =>
+          h('span', { class: 'lq-badge lq-badge--label lq-colchip__label', text: l, title: '条件 ' + l + ' で使っている列' })))));
       });
       this.list.appendChild(frag);
       const on = items.filter((it) => it.visible).length;
-      this.count.textContent = (word ? '絞り込み中の ' + items.length + ' 列のうち' : '全 ' + items.length + ' 列のうち') + ' 表示 ' + on + ' 列';
+      this.count.textContent = (word ? '「' + word + '」に当てはまる ' + items.length + ' 列のうち' : '全 ' + items.length + ' 列のうち') + ' 表示 ' + on + ' 列';
       this.allOn.disabled = !items.length || on === items.length;
       this.allOff.disabled = !items.length || on === 0;
       this.allOn.title = this.allOn.disabled ? '対象の列はすべて表示中です' : (word ? '一覧に出ている ' : '') + items.length + ' 列を表示にする（元に戻せます）';
@@ -270,6 +312,8 @@
       });
     }
   }
+
+  LQ.ColumnChips = ColumnChips;
 
   class DatasetPanel {
     constructor(ctx, role) {

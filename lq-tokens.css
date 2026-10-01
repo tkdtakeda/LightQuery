@@ -187,6 +187,8 @@
   --h-dropzone: 220px;
   --w-rail: 72px;
   --w-panel-sm: 380px;
+  --w-panel-min: 360px;
+  --w-panel-grip: 6px;
   --w-panel-md: 440px;
   --w-panel-lg: 620px;
   --w-popover: 360px;

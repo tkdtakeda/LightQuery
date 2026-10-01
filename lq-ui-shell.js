@@ -199,7 +199,9 @@
 
   /* ---------------------------------------------------------------------
    * PanelHost：開いている設定パネルを 1 つだけ表示（他の画面操作は妨げない）
+   *   右端のつまみをドラッグすると幅を変えられる（パネルごとにブラウザへ記憶。ダブルクリックで初期の幅に戻す）
    * ------------------------------------------------------------------- */
+  const PANEL_MAX_RATIO = 0.6;
   class PanelHost {
     constructor(ctx, root, panels) {
       this.ctx = ctx;
@@ -212,7 +214,9 @@
       this.actions = h('div', { class: 'lq-panel__actions' });
       this.head = h('div', { class: 'lq-panel__head' }, [this.icon, this.title, this.actions]);
       this.body = h('div', { class: 'lq-panel__body' });
-      Dom.append(root, [this.head, this.body]);
+      this.grip = h('div', { class: 'lq-panel__grip', title: 'ドラッグで幅を変更（ダブルクリックで初期の幅に戻す）', 'aria-hidden': 'true' });
+      Dom.append(root, [this.head, this.body, this.grip]);
+      this._bindResize();
       LQ.FormNav.attach(this.body);
       ctx.bus.on('panel', () => this.render());
       ctx.bus.on('profiles', () => this.render());
@@ -230,6 +234,7 @@
       const changed = this._shown !== id;
       this.root.hidden = false;
       this.root.dataset.size = panel.size || 'md';
+      this._applyWidth(id);
       this.head.dataset.role = panel.role || '';
       this.icon.className = 'fa-solid fa-' + panel.icon + ' lq-panel__icon';
       this.title.textContent = panel.title;
@@ -246,6 +251,53 @@
         this._shown = id;
         if (panel.onShow) panel.onShow();
       }
+    }
+
+    _widthKey(id) {
+      return 'panelWidth:' + id;
+    }
+
+    /** 記憶した幅を当てる（画面が狭くなっていれば収まる幅にする。記憶がなければ CSS の初期の幅） */
+    _applyWidth(id) {
+      const w = LQ.Prefs.get(this._widthKey(id), null);
+      this.root.style.width = w ? this._clamp(w) + 'px' : '';
+    }
+
+    _clamp(w) {
+      const min = parseFloat(getComputedStyle(this.root).getPropertyValue('--w-panel-min')) || 0;
+      return Math.round(Util.clamp(w, min, Math.max(min, global.innerWidth * PANEL_MAX_RATIO)));
+    }
+
+    _bindResize() {
+      this.grip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const id = this.state.panel;
+        const startX = e.clientX;
+        const startW = this.root.getBoundingClientRect().width;
+        this.grip.setPointerCapture(e.pointerId);
+        this.root.classList.add('is-resizing');
+        const move = (ev) => {
+          this.root.style.width = this._clamp(startW + ev.clientX - startX) + 'px';
+        };
+        const up = () => {
+          this.grip.removeEventListener('pointermove', move);
+          this.grip.removeEventListener('pointerup', up);
+          this.grip.removeEventListener('pointercancel', up);
+          this.root.classList.remove('is-resizing');
+          if (id) LQ.Prefs.set(this._widthKey(id), Math.round(this.root.getBoundingClientRect().width));
+        };
+        this.grip.addEventListener('pointermove', move);
+        this.grip.addEventListener('pointerup', up);
+        this.grip.addEventListener('pointercancel', up);
+      });
+      this.grip.addEventListener('dblclick', () => {
+        const id = this.state.panel;
+        if (!id) return;
+        LQ.Prefs.set(this._widthKey(id), null);
+        this._applyWidth(id);
+        LQ.Flash.el(this.root);
+      });
     }
   }
 

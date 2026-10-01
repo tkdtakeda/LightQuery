@@ -252,6 +252,31 @@ ol {
   width: var(--w-panel-lg);
 }
 
+.lq-panel-host {
+  position: relative;
+}
+
+/* 右端のつまみ（ドラッグで幅を変える） */
+.lq-panel__grip {
+  position: absolute;
+  top: 0;
+  right: calc(var(--w-panel-grip) / -2);
+  width: var(--w-panel-grip);
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.lq-panel__grip:hover,
+.lq-panel-host.is-resizing .lq-panel__grip {
+  background: var(--color-primary-line);
+}
+
+.lq-panel-host.is-resizing {
+  user-select: none;
+  animation: none;
+}
+
 @keyframes lq-panel-in {
   from {
     opacity: 0;

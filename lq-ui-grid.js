@@ -312,6 +312,34 @@
       }
     }
 
+    /**
+     * 当てはまる列の見出しを強調し、最初の列が見える位置まで横に送る（test が null なら強調を消す）
+     * @param {Function|null} test 列のモデル → 当てはまるか
+     * @returns {number} 当てはまった列の数
+     */
+    highlightColumns(test) {
+      const model = this.model;
+      if (!model) return 0;
+      const ths = this.root.querySelectorAll('thead th:not(.lq-grid__rowhead)');
+      let first = null;
+      let count = 0;
+      ths.forEach((th, i) => {
+        const on = !!test && !!model.columns[i] && test(model.columns[i]);
+        th.classList.toggle('is-found', on);
+        if (!on) return;
+        count++;
+        if (!first) first = th;
+      });
+      if (first) {
+        const head = this.root.querySelector('thead .lq-grid__rowhead');
+        const offset = head ? head.offsetWidth : 0;
+        const left = first.offsetLeft - offset;
+        const right = first.offsetLeft + first.offsetWidth;
+        if (left < this.root.scrollLeft || right > this.root.scrollLeft + this.root.clientWidth) this.root.scrollLeft = Math.max(0, left - offset);
+      }
+      return count;
+    }
+
     /** 列幅を記憶する名前（結果は列のキー、① / ② は役割と列名。元のシート表示は対象外） */
     _sizeId(col, model) {
       if (model.mode === 'result') return col.key;

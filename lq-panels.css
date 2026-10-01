@@ -114,6 +114,14 @@
   white-space: nowrap;
 }
 
+/* 条件で使っている列の記号（A・B…） */
+.lq-colchip__label {
+  min-width: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
 /* 読み込み結果の列タグ（押して表示／非表示）。状態はアイコン（目／斜線の目）＋見た目＋文字で示す */
 .lq-colpick {
   display: flex;
@@ -656,6 +664,11 @@
 
 .lq-format.is-disabled .lq-format__note {
   color: var(--color-warning-strong);
+}
+
+/* 説明は選んでいる形式（と使えない理由）だけに出す */
+.lq-format:not(.is-selected):not(.is-disabled) .lq-format__note {
+  display: none;
 }
 
 .lq-export-name {

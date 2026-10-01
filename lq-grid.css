@@ -349,6 +349,13 @@
 }
 
 /* 列幅の手動調整：見出しの右端のつまみ */
+/* 読み込みパネルの列タグで探している列（見出しを強調する） */
+.lq-grid thead th.is-found {
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 calc(var(--border-width) * -3) 0 var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
 .lq-grid th.is-resizable {
   position: sticky;
 }
