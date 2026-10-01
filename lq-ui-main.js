@@ -164,7 +164,7 @@
       const res = s.result;
       const specs = [
         { id: 'result', icon: 'filter', label: '抽出結果', count: res ? Util.formatInt(res.length) + ' 行' : '未実行', stale: s.isStale() },
-        { id: 'aggregate', icon: 'calculator', label: '集計', count: this.aggregate.tabCount(), stale: !!res && s.isStale() },
+        { id: 'aggregate', icon: 'calculator', label: '集計', count: this.aggregate.tabCount(), stale: !!res && s.isStale() && this.aggregate.target() === 'result' },
         { id: 'source', role: 'source' },
         { id: 'condition', role: 'condition' }
       ];
@@ -411,10 +411,17 @@
           h('div', { class: 'lq-step__text', text: step.text })
         ]));
       });
+      /* ② を使わずに ① だけを集計する入口（主要動作ではないので控えめなリンクにする） */
+      const aggOnly = h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', title: '集計タブに切り替え、集計パネルを開きます（① の全行を集計します）',
+        onclick: () => {
+          s.setTab('aggregate');
+          s.openPanel('aggregate');
+        } }, [Dom.icon('calculator'), '② を使わずに ① だけ集計する']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: 'あと少しで抽出できます' }),
         list,
-        h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。各段階のカードを押すと、その設定を開けます。' })
+        h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。各段階のカードを押すと、その設定を開けます。' }),
+        h('div', { class: 'lq-empty__links' }, [aggOnly])
       ]));
     }
 

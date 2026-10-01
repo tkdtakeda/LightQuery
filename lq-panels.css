@@ -427,6 +427,23 @@
   font-size: var(--fs-xs);
 }
 
+/* 集計の対象（抽出していないときの表示） */
+.lq-aggtarget {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-src-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-src-faint);
+  color: var(--color-src-strong);
+}
+
+.lq-aggtarget .lq-num {
+  margin-left: auto;
+  color: var(--color-text-sub);
+}
+
 /* ---------- 照合ルール ---------- */
 .lq-rules {
   display: flex;

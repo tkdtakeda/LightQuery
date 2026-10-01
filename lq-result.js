@@ -20,6 +20,7 @@
   const Async = LQ.Async;
 
   const MAX_OUTPUT_ROWS = 1000000;
+  const ALL_ROWS_ID = '__all_rows__';
   const COMBINE_MODES = [
     { id: 'assign', label: '優先順位で振り分け', short: '振り分け', icon: 'arrow-down-1-9',
       desc: '複数の抽出条件に該当した行は、優先順位が最も高い抽出条件にだけ入れます（重複なし）。① の行の順に並びます。' },
@@ -241,6 +242,33 @@
       };
     }
   }
+
+  /**
+   * ① の全行をそのまま並べた結果（抽出なし）。② を使わずに ① だけを集計するときに、抽出結果と同じ形で扱う。
+   *   抽出条件は 1 つ（① 元データ）で、② の行はひも付かない
+   * @param {LQ.Dataset} source
+   * @param {object} rules 全体の照合ルール
+   */
+  BatchRunner.allRows = function (source, rules) {
+    const n = source.rowCount;
+    const src = new Int32Array(n);
+    for (let i = 0; i < n; i++) src[i] = i;
+    const cond = new Int32Array(n).fill(-1);
+    return {
+      id: LQ.Util.uid('all'),
+      allRows: true,
+      parts: [{ id: ALL_ROWS_ID, name: '① 元データ', priority: 1, condition: null, joinKind: 'left', matchMode: 'first', needsCondition: false,
+        ownRules: false, query: null, rules: rules, hits: n, assigned: n, rows: n, stats: null, snapshot: null }],
+      prof: new Int32Array(n),
+      src: src,
+      cond: cond,
+      count: new Int32Array(n),
+      length: n,
+      members: null,
+      stats: { sourceRows: n, mode: 'assign', includeUnmatched: false, matchedSources: n, unmatchedRows: 0, outputRows: n, elapsedMs: 0, truncated: false },
+      snapshot: { sourceName: source.name, rules: new LQ.Normalizer(rules).describe(), ownRules: 0, finishedAt: new Date() }
+    };
+  };
 
   LQ.BatchRunner = BatchRunner;
 })(window);
@@ -587,7 +615,7 @@
 
   /* ---------------------------------------------------------------------
    * AggregateSettings：集計の設定（不正な値は捨てて初期値で補う）
-   *   {groupBy:[key], count:boolean, measures:[{key, fn}], rank:{target, dir}|null}
+   *   {mode, target:'result'|'source', groupBy:[key], count:boolean, measures:[{key, fn}], rank:{target, dir}|null}
    *   rank.target は 'count' または measureId（fn + '|' + key）
    * ------------------------------------------------------------------- */
   const AggregateSettings = {
@@ -601,8 +629,14 @@
       { id: 'columns', label: '列を選んで集計', icon: 'table-columns', desc: 'グループにする列を自由に選びます（地域 × カテゴリなど）。' }
     ],
 
+    /** 集計の対象：抽出結果／① 元データの全行（抽出なし）。抽出結果がないときは、選択にかかわらず ① の全行 */
+    TARGETS: [
+      { id: 'result', label: '抽出結果', icon: 'filter', desc: '抽出結果のうち、表示中の行（抽出条件での絞り込みを反映）を集計します。' },
+      { id: 'source', label: '① 元データの全行', icon: 'table', desc: '② を使わず、① の全行（① の絞り込み・列の追加を反映）を集計します。' }
+    ],
+
     create() {
-      return { mode: 'columns', groupBy: [], count: true, measures: [], rank: null };
+      return { mode: 'columns', target: 'result', groupBy: [], count: true, measures: [], rank: null };
     },
 
     clean(raw) {
@@ -611,6 +645,7 @@
       const isKey = (k) => typeof k === 'string' && /^[scm]:/.test(k);
       if (Array.isArray(raw.groupBy)) out.groupBy = raw.groupBy.filter(isKey).filter((k, i, a) => a.indexOf(k) === i).slice(0, MAX_GROUPS);
       if (raw.mode === 'condRows') out.mode = 'condRows';
+      if (raw.target === 'source') out.target = 'source';
       if (typeof raw.count === 'boolean') out.count = raw.count;
       if (Array.isArray(raw.measures)) {
         out.measures = raw.measures.filter((m) => m && isKey(m.key) && FUNC_IDS.indexOf(m.fn) !== -1)
@@ -623,6 +658,15 @@
       }
       if (out.rank && !AggregateSettings.targets(out).some((t) => t.id === out.rank.target)) out.rank = null;
       return out;
+    },
+
+    /**
+     * 実際の集計の対象（'result'／'source'。① がなければ null）。抽出結果がなければ、選択にかかわらず ① の全行
+     * @param {object} settings @param {boolean} hasSource @param {boolean} hasResult
+     */
+    effectiveTarget(settings, hasSource, hasResult) {
+      if (!hasSource) return null;
+      return !hasResult || settings.target === 'source' ? 'source' : 'result';
     },
 
     measureId(m) {
