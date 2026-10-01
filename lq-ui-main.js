@@ -42,7 +42,8 @@
         onSort: (key) => this._cycleSort(key),
         onMove: (key, target, after) => this.state.moveColumn(key, target, after),
         onRowHead: (head, anchor) => this._onRowHead(head, anchor),
-        onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col)
+        onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col),
+        onToggleColumn: (key, visible) => this.state.setColumnVisible(key, visible)
       });
       this.display = new LQ.GridDisplay(ctx, this.gridwrap);
       this.aggregate = new LQ.AggregateTab(this);
@@ -53,7 +54,10 @@
 
     /* 進捗の更新だけでは表を描き直さない。列の表示の切替は抽出結果タブにだけ関係する */
     _schedule(e) {
-      if (e && e.topic === 'output' && this.state.view.tab !== 'result') return;
+      if (e && e.topic === 'output' && this.state.view.tab !== 'result') {
+        this._refreshVisibility();
+        return;
+      }
       if (e && e.topic === 'busy') {
         const kind = this.state.busy ? this.state.busy.kind : null;
         if (kind === this._busyKind) return;
@@ -452,8 +456,11 @@
       this._renderDatasetSummary(ds, raw);
       const total = raw ? ds.rawRowCount : ds.rowCount;
       const paging = this._paging(role, total);
-      if (raw) this.grid.render(this._rawModel(ds, paging));
-      else this.grid.render(this._dataModel(ds, paging));
+      this.grid.render(raw ? this._rawModel(ds, paging) : this._dataModel(ds, paging));
+      this._visCount = h('span', { class: 'lq-num', title: (raw ? 'ヘッダー行の列名' : '見出し') + 'を押すと、その列を出力する／しないを切り替えます（出力列パネル・読み込みパネルの列タグと同じ設定）' });
+      this._visCount.textContent = this._visText(this._isVisible());
+      const summary = this.info.querySelector('.lq-summary');
+      if (summary && ds.colCount) summary.appendChild(h('span', { class: 'lq-summary__item' }, [Dom.icon('eye'), this._visCount]));
       this._renderPager(role, total, paging);
     }
 
@@ -473,13 +480,37 @@
       ];
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
       if (raw) {
-        this.info.appendChild(UI.note('tip', '元のシートのまま表示しています。行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。'));
+        this.info.appendChild(UI.note('tip', '元のシートのまま表示しています。行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列を出力する／しないを切り替えます（出力しない列は薄く表示）。'));
       }
       if (!ds.rowCount) this.info.appendChild(UI.note('warn', 'データ行がありません。「読み込み範囲」でヘッダー行・データ開始行を確認してください。'));
     }
 
+    /** 出力列の表示状態（キー → 表示するか。まだ一覧にない列は ① を表示・② を非表示とみなす） */
+    _isVisible() {
+      const vis = new Map(this.state.output.columns.map((c) => [c.key, c.visible]));
+      return (key) => {
+        const v = vis.get(key);
+        return v === undefined ? key.slice(0, 2) === 's:' : v;
+      };
+    }
+
+    /** プレビュー（① / ② のデータ表示）の見出しの表示／非表示と件数だけを描き直す（表全体は描き直さない） */
+    _refreshVisibility() {
+      const isVisible = this._isVisible();
+      this.grid.refreshVisibility(isVisible);
+      if (this._visCount) this._visCount.textContent = this._visText(isVisible);
+    }
+
+    _visText(isVisible) {
+      const model = this.grid.model;
+      const cols = model ? model.columns.filter((c) => c.toggleKey) : [];
+      const where = model && model.mode === 'raw' ? 'ヘッダー行の列名' : '見出し';
+      return '出力する列 ' + cols.filter((c) => isVisible(c.toggleKey)).length + ' / ' + cols.length + '（' + where + 'を押して切替）';
+    }
+
     _dataModel(ds, paging) {
       const end = Math.min(ds.rowCount, paging.start + this.state.view.pageSize);
+      const isVisible = this._isVisible();
       const rows = [];
       for (let r = paging.start; r < end; r++) {
         const cells = new Array(ds.colCount);
@@ -490,7 +521,10 @@
         mode: 'data',
         role: ds.role,
         scrollKey: 'data:' + ds.id + ':' + ds.version + ':' + paging.page,
-        columns: ds.columns.map((c) => ({ key: 'd:' + c.index, label: c.name, letter: c.letter })),
+        columns: ds.columns.map((c) => {
+          const toggleKey = (ds.role === 'source' ? 's:' : 'c:') + c.name;
+          return { key: 'd:' + c.index, label: c.name, letter: c.letter, toggleKey: toggleKey, off: !isVisible(toggleKey) };
+        }),
         rows: rows,
         numeric: this._numericColumns(rows, ds.colCount)
       };
@@ -502,10 +536,17 @@
       let maxCol = set.startCol;
       for (let r = paging.start; r < end; r++) maxCol = Math.max(maxCol, ds.grid[r].length);
       maxCol = Math.min(maxCol, RAW_COL_LIMIT);
+      const prefix = ds.role === 'source' ? 's:' : 'c:';
+      const isVisible = this._isVisible();
+      const byRaw = new Map(ds.columns.map((col) => [col.src, col]));
       const columns = [];
       for (let c = 0; c < maxCol; c++) {
-        columns.push({ key: 'r:' + c, label: Util.colLetter(c), colIndex: c, isStart: c === set.startCol - 1, out: c < set.startCol - 1 });
+        const col = byRaw.get(c);
+        const toggleKey = col ? prefix + col.name : null;
+        columns.push({ key: 'r:' + c, label: Util.colLetter(c), colIndex: c, isStart: c === set.startCol - 1, out: c < set.startCol - 1,
+          toggleKey: toggleKey, toggleName: col ? col.name : '', off: !!toggleKey && !isVisible(toggleKey) });
       }
+      let toggleRow = -1;
       const rows = [];
       for (let r = paging.start; r < end; r++) {
         const rowNo = r + 1;
@@ -534,12 +575,14 @@
         const src = ds.grid[r];
         const cells = new Array(maxCol);
         for (let c = 0; c < maxCol; c++) cells[c] = src[c] === undefined ? '' : src[c];
+        if (state === 'header') toggleRow = rows.length;
         rows.push({ head: { text: String(rowNo), tag: tag, tagKind: tagKind, action: 'raw-row', rawIndex: r }, cells: cells, rowClass: classes.join(' ') });
       }
       return {
         mode: 'raw',
         role: ds.role,
         scrollKey: 'raw:' + ds.id + ':' + paging.page,
+        toggleRow: toggleRow,
         columns: columns,
         rows: rows,
         numeric: new Set()

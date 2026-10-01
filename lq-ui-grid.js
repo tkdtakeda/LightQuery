@@ -286,9 +286,17 @@
       model.rows.forEach((row, ri) => {
         out.push(row.rowClass ? '<tr class="' + row.rowClass + '">' : '<tr>');
         out.push('<th class="lq-grid__rowhead" scope="row">' + this._rowHead(row.head, ri, model.mode) + '</th>');
+        const isToggleRow = ri === model.toggleRow;
         for (let c = 0; c < model.columns.length; c++) {
           const v = row.cells[c] === undefined || row.cells[c] === null ? '' : String(row.cells[c]);
-          const cls = sizeStyle[c] ? (cellClass[c] ? cellClass[c] + ' is-sized' : 'is-sized') : cellClass[c];
+          const col = model.columns[c];
+          let cls = sizeStyle[c] ? (cellClass[c] ? cellClass[c] + ' is-sized' : 'is-sized') : cellClass[c];
+          if (isToggleRow && col.toggleKey) {
+            cls = (cls ? cls + ' ' : '') + 'is-toggle';
+            out.push('<td class="' + cls + '"' + sizeStyle[c] + ' data-toggle="' + esc(col.toggleKey) + '" title="' + esc(this._toggleTitle(col)) + '">' +
+              this._eye(col.off) + esc(v) + '</td>');
+            continue;
+          }
           const title = v.length > TITLE_LENGTH || sizeStyle[c] ? ' title="' + esc(v) + '"' : '';
           out.push('<td' + (cls ? ' class="' + cls + '"' : '') + sizeStyle[c] + title + '>' + esc(v) + '</td>');
         }
@@ -317,6 +325,7 @@
         if (model.numeric && model.numeric.has(c)) list.push('is-num');
         if (col.kind === 'condition' && model.mode === 'result') list.push('is-cond-cell');
         if (col.kind === 'meta') list.push('is-meta-cell');
+        if (col.off) list.push('is-off');
         if (col.out) list.push('is-out-col');
         return list.join(' ');
       });
@@ -331,7 +340,12 @@
           esc(col.label) + '</th>';
       }
       if (mode === 'data') {
-        return '<th class="is-resizable' + sized + '"' + style + '><div class="lq-th"><span class="lq-th__name">' + esc(col.label) + '</span><span class="lq-th__letter">' +
+        const toggle = col.toggleKey
+          ? ' data-toggle="' + esc(col.toggleKey) + '" title="' + esc(this._toggleTitle(col)) + '"'
+          : '';
+        const cls = 'is-resizable' + sized + (col.toggleKey ? ' is-toggle' + (col.off ? ' is-off' : '') : '');
+        const eye = col.toggleKey ? this._eye(col.off) : '';
+        return '<th class="' + cls + '"' + style + toggle + '><div class="lq-th">' + eye + '<span class="lq-th__name">' + esc(col.label) + '</span><span class="lq-th__letter">' +
           esc(col.letter || '') + '</span></div>' + grip + '</th>';
       }
       const cls = ['is-sortable', 'is-resizable'];
@@ -345,6 +359,43 @@
         esc(col.label) + '：クリックで並べ替え（昇順→降順→解除）・ドラッグで列を移動' + (sortText ? '（現在 ' + sortText + '）' : '') + '">' +
         '<div class="lq-th">' + (BADGE[col.kind] || '') + '<span class="lq-th__name">' + esc(col.label) + '</span>' +
         '<i class="fa-solid fa-' + sortIcon + ' lq-th__sort" aria-hidden="true"></i></div>' + grip + '</th>';
+    }
+
+    _toggleTitle(col) {
+      return (col.toggleName || col.label) + '：' + (col.off ? '出力しない列です（押すと出力する）' : '出力する列です（押すと出力しない）');
+    }
+
+    _eye(off) {
+      return '<i class="fa-solid fa-' + (off ? 'eye-slash' : 'eye') + ' lq-th__vis" aria-hidden="true"></i>';
+    }
+
+    /**
+     * プレビューの見出しの表示／非表示だけを更新する（表を描き直さず、変わった列のクラスだけ付け替える）。
+     * @param {Function} isVisible キー → 表示するか
+     */
+    refreshVisibility(isVisible) {
+      const model = this.model;
+      if (!model || (model.mode !== 'data' && model.mode !== 'raw')) return;
+      const table = this.root.querySelector('table');
+      if (!table) return;
+      model.columns.forEach((col, c) => {
+        if (!col.toggleKey) return;
+        const off = !isVisible(col.toggleKey);
+        if (off === !!col.off) return;
+        col.off = off;
+        const index = c + 1;
+        Array.prototype.forEach.call(table.rows, (tr) => {
+          const cell = tr.cells[index];
+          if (cell) cell.classList.toggle('is-off', off);
+        });
+        const headRow = model.mode === 'raw' ? table.rows[model.toggleRow + 1] : table.rows[0];
+        const head = headRow && model.toggleRow !== -1 ? headRow.cells[index] : null;
+        if (!head) return;
+        head.title = this._toggleTitle(col);
+        const eye = head.querySelector('.lq-th__vis');
+        if (eye) eye.className = 'fa-solid fa-' + (off ? 'eye-slash' : 'eye') + ' lq-th__vis';
+        LQ.Flash.el(head);
+      });
     }
 
     _rowHead(head, ri, mode) {
@@ -369,6 +420,11 @@
       const th = e.target.closest('th[data-key]');
       if (th && this.model.mode === 'result') {
         this.handlers.onSort(th.dataset.key);
+        return;
+      }
+      const toggle = e.target.closest('[data-toggle]');
+      if (toggle) {
+        this.handlers.onToggleColumn(toggle.dataset.toggle, toggle.classList.contains('is-off'));
         return;
       }
       const colHead = e.target.closest('th[data-col]');

@@ -311,6 +311,43 @@
   text-overflow: ellipsis;
 }
 
+/* プレビュー（① / ② のデータ表示）：見出しを押して出力する／しないを切替。出力しない列は見出しとセルを薄くする */
+.lq-grid .is-toggle {
+  cursor: pointer;
+}
+
+.lq-grid .is-toggle:hover,
+.lq-grid tbody tr:hover td.is-toggle:hover {
+  background: var(--color-primary-faint);
+}
+
+.lq-grid td.is-toggle .lq-th__vis {
+  margin-right: var(--space-2);
+}
+
+.lq-grid td.is-toggle.is-off {
+  text-decoration: line-through;
+}
+
+.lq-th__vis {
+  color: var(--color-primary);
+  font-size: var(--icon-xs);
+}
+
+.lq-grid th.is-off .lq-th__vis {
+  color: var(--color-text-disabled);
+}
+
+.lq-grid th.is-off .lq-th__name {
+  color: var(--color-text-disabled);
+  text-decoration: line-through;
+}
+
+.lq-grid td.is-off {
+  color: var(--color-text-disabled);
+  background: var(--color-surface-alt);
+}
+
 /* 列幅の手動調整：見出しの右端のつまみ */
 .lq-grid th.is-resizable {
   position: sticky;
