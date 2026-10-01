@@ -19,7 +19,7 @@
   const RAW_COL_MIN = 200;
   const NUMERIC_RATIO = 0.8;
   const ROLE_TEXT = {
-    source: { title: '① 元データ', icon: 'table', badge: ['src', '①'], label: '元データ', sub: '抽出される側のデータ（Excel・CSV）' },
+    source: { title: '① 元データ', icon: 'table', badge: ['src', '①'], label: '元データ', sub: '抽出・集計する側のデータ（Excel・CSV）' },
     condition: { title: '② 条件データ', icon: 'list-check', badge: ['cond', '②'], label: '条件データ', sub: '条件の一覧（1 行＝1 セットの条件）' }
   };
 
@@ -174,6 +174,7 @@
         let label = t.label;
         let count = t.count;
         let title = null;
+        let marks = [];
         if (t.role) {
           const r = ROLE_TEXT[t.role];
           const ds = s.datasets[t.role];
@@ -186,6 +187,15 @@
             count = tables + ' 件';
             title = '条件データ ' + tables + ' 件（表示中：' + s.activeProfile.name + '）';
           }
+          /* サンプル表示中・絞り込み中は、タブにも印を出す（ファイル名と行数はタブの中の要約に出す） */
+          if (ds) {
+            title = (title ? title + '\n' : '') + ds.name + '（' + ds.source.kindLabel + '・' + Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列）';
+            marks = [
+              ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample', text: 'サンプル' }) : null,
+              ds.filterInfo ? h('span', { class: 'lq-tab__filter', title: '絞り込み中：' + Util.formatInt(ds.baseRowCount) + ' 行中 ' + Util.formatInt(ds.rowCount) + ' 行' },
+                Dom.icon('filter')) : null
+            ];
+          }
         } else {
           lead = Dom.icon(t.icon);
         }
@@ -194,8 +204,8 @@
           'aria-selected': s.view.tab === t.id ? 'true' : 'false',
           title: title,
           onclick: () => s.setTab(t.id)
-        }, [lead, h('span', { text: label }), h('span', { class: 'lq-tab__count', text: count }),
-          t.stale ? h('span', { class: 'lq-tab__stale', title: '条件が変更され、結果に未反映です' }, [Dom.icon('triangle-exclamation'), ' 未反映']) : null]));
+        }, [lead, h('span', { text: label }), h('span', { class: 'lq-tab__count', text: count })].concat(marks).concat([
+          t.stale ? h('span', { class: 'lq-tab__stale', title: '条件が変更され、結果に未反映です' }, [Dom.icon('triangle-exclamation'), ' 未反映']) : null])));
       });
     }
 
@@ -380,10 +390,13 @@
           h('div', { class: 'lq-drop__sub', text: 'クリックで抽出条件を確認・変更。あとは ① 元データを読み込めば抽出できます' })]);
       };
       const sampleBtn = h('button', { class: 'lq-btn', type: 'button', onclick: () => this.app.dialogs.openSamples(sampleBtn, 'bottom-start') }, [Dom.icon('flask'), 'サンプルで試す']);
+      const aggNote = h('p', { class: 'lq-empty__lead' }, [Dom.icon('calculator'), ' ② を使わずに ',
+        h('strong', { text: '① だけを集計' }), 'することもできます（① を読み込み、「集計」タブで設定します）。']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: '① と ② を読み込み、条件に一致する行を取り出します' }),
         h('p', { class: 'lq-empty__lead', text: '① 元データの各行を、② 条件データの各行（1 行＝1 セットの条件）と照らし合わせ、一致した行を表示・出力します。② は抽出条件ごとに持てるので、列の構成が違う表を複数使い、名前と優先順位で振り分けることもできます。Excel（.xlsx / .xls）と CSV に対応しています。' }),
         h('div', { class: 'lq-empty__cards' }, [card('source'), condCard()]),
+        aggNote,
         h('div', { class: 'lq-empty__links' }, [sampleBtn,
           h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', onclick: () => this.app.manual.open() }, [Dom.icon('book-open'), '使い方を見る'])])
       ]));
@@ -495,7 +508,8 @@
         { value: true, label: '読み込み範囲', icon: 'crop-simple', title: '元のシートのまま表示し、ヘッダー行・開始行・開始列・終了行を確認' }
       ], raw, (value) => s.setRaw(role, value));
       this.tools.appendChild(seg.el);
-      this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => s.togglePanel(role) }, [Dom.icon('sliders'), '読み込み設定']));
+      /* そのパネルを開いているときは押しても閉じるだけなので出さない（狭い画面でタブの行が折り返さないようにする） */
+      if (s.panel !== role) this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => s.togglePanel(role) }, [Dom.icon('sliders'), '読み込み設定']));
       this._renderDatasetSummary(ds, raw);
       const filterBar = LQ.FilterBar.render(this.ctx, ds, role);
       if (filterBar) {

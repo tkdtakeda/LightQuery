@@ -203,7 +203,6 @@
   --stroke-venn: 1.5;
   --dash-venn: 3 2;
   --h-modal: 82dvh;
-  --w-chip-max: 300px;
   --brand-sub-display: block;
   --w-col-max: 320px;
   --w-rownum: 64px;
@@ -212,7 +211,7 @@
   --w-select-col: 150px;
   --w-select-op: 148px;
   --w-label-badge: 24px;
-  --w-status-max: 420px;
+  --w-status-max: 720px;
   --w-manual-toc: 200px;
   --w-empty-lead: 680px;
   --w-step-text: 210px;
@@ -276,8 +275,7 @@
     --w-panel-lg: 580px;
     --w-panel-md: 400px;
     --w-col-max: 260px;
-    --w-chip-max: 230px;
-    --w-status-max: 300px;
+    --w-status-max: 520px;
     --w-toast: 360px;
     --brand-sub-display: none;
   }

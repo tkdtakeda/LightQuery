@@ -129,7 +129,7 @@
       }
       const blocked = this._blockedReason();
       if (blocked) {
-        main.grid.showEmpty(main._emptyMessage('triangle-exclamation', '① の全行では「② の行ごと」は使えません', blocked,
+        main.grid.showEmpty(main._emptyMessage('triangle-exclamation', '① の全行では「② の行ごと」は使えません', blocked, s.panel === 'aggregate' ? null :
           h('button', { class: 'lq-btn', type: 'button', onclick: () => s.openPanel('aggregate') }, [Dom.icon('calculator'), '集計の設定を開く'])));
         return;
       }
@@ -138,8 +138,8 @@
           ? ['まだ集計を設定していません', '「集計の設定」で、グループにする列（地域・カテゴリなど）か集計する値（合計・平均など）を選ぶと、ここに集計の表が出ます。' +
             (s.result ? '「② の行ごと」も選べます。' : '抽出していないので、① 元データの全行を集計します（② は不要です）。')]
           : ['集計する値がありません', '「集計の設定」で、件数か集計する値を選んでください。'];
-        main.grid.showEmpty(main._emptyMessage('calculator', empty[0], empty[1],
-          h('button', { class: 'lq-btn', type: 'button', onclick: () => s.openPanel('aggregate') }, [Dom.icon('calculator'), '集計を設定する'])));
+        main.grid.showEmpty(main._emptyMessage('calculator', empty[0], empty[1], s.panel === 'aggregate' ? null
+          : h('button', { class: 'lq-btn', type: 'button', onclick: () => s.openPanel('aggregate') }, [Dom.icon('calculator'), '集計を設定する'])));
         return;
       }
       const view = this.view();

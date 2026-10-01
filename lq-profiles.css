@@ -440,21 +440,7 @@
   border-style: dashed;
 }
 
-/* ---------- 上部バー・出力列の補足 ---------- */
-.lq-chip__owner {
-  flex-shrink: 0;
-  max-width: var(--w-chip-owner-max);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-pill);
-  background: var(--color-cond-soft);
-  color: var(--color-cond-strong);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-}
-
+/* ---------- 出力列の補足 ---------- */
 .lq-colitem__owner {
   max-width: var(--w-chip-owner-max);
   overflow: hidden;

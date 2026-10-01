@@ -166,14 +166,6 @@ ol {
   color: var(--color-text-muted);
 }
 
-.lq-topbar__chips {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
 .lq-topbar__spacer {
   flex: 1 1 auto;
   min-width: var(--space-4);
@@ -218,6 +210,21 @@ ol {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+/* 区切りの見出し（入力・抽出・出力・設定） */
+.lq-rail__heading {
+  padding: var(--space-2) 0 0;
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-wide);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.lq-rail__group + .lq-rail__group {
+  border-top: var(--border-width) solid var(--color-border);
+  margin-top: var(--space-1);
 }
 
 .lq-rail__spacer {
@@ -335,55 +342,6 @@ ol {
   min-width: 0;
   min-height: 0;
   background: var(--color-bg);
-}
-
-/* ---------- 上部バーの読み込み状況チップ ---------- */
-.lq-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  max-width: var(--w-chip-max);
-  height: var(--h-control);
-  padding: 0 var(--space-4) 0 var(--space-2);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
-}
-
-.lq-chip:hover {
-  border-color: var(--color-primary-line);
-  background: var(--color-surface-hover);
-}
-
-.lq-chip--src {
-  border-color: var(--color-src-soft);
-}
-
-.lq-chip--cond {
-  border-color: var(--color-cond-soft);
-}
-
-.lq-chip--empty {
-  border-style: dashed;
-  border-color: var(--color-border-strong);
-  color: var(--color-text-muted);
-}
-
-.lq-chip__name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: var(--fw-medium);
-}
-
-.lq-chip__meta {
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 左のアイコン列の項目（アイコン＋短いラベル） ---------- */

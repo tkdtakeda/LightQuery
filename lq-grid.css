@@ -81,6 +81,12 @@
   color: var(--color-warning);
 }
 
+/* 絞り込み中の ① / ② */
+.lq-tab__filter {
+  font-size: var(--icon-xs);
+  color: var(--color-primary);
+}
+
 .lq-tabbar__tools {
   display: flex;
   flex: none;

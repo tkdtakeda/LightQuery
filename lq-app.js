@@ -836,12 +836,15 @@
           status: { kind: 'ok', text: '① 元データの全行（' + fmt(c.rowCount) + ' 行）の集計を Excel・CSV・コピーで出力できます' } };
       }
       if (aggTab.pending) return { id: 'busy', label: '集計中…', icon: 'spinner', spin: true, disabled: true, status: { kind: 'info', text: '集計しています' } };
+      /* 集計パネルを開いているときは押しても何も起きないため、押せない状態にして次にすることを示す */
+      const open = s.panel === 'aggregate';
       if (s.aggregate.mode === 'condRows') {
-        return { id: 'setupAggregate', label: '集計を設定する', icon: 'calculator',
+        return { id: 'setupAggregate', label: '集計を設定する', icon: 'calculator', disabled: open,
           status: { kind: 'warn', text: '「② の行ごと」は ① の全行では使えません（「列を選んで集計」にするか、抽出してから集計します）' } };
       }
-      return { id: 'setupAggregate', label: '集計を設定する', icon: 'calculator',
-        status: { kind: 'info', text: '② を使わずに ① 元データの全行を集計できます（グループにする列・集計する値を選びます）' } };
+      return { id: 'setupAggregate', label: '集計を設定する', icon: 'calculator', disabled: open,
+        status: { kind: 'info', text: open ? '左の集計パネルで、グループにする列か集計する値を選んでください（② は不要です）'
+          : '② を使わずに ① 元データの全行を集計できます（グループにする列・集計する値を選びます）' } };
     }
 
     /** 出力の CTA：件数は出力ダイアログと同じ数え方（表示中の行）にし、内訳を状態の文に入れる */
@@ -1353,10 +1356,15 @@
       this.toasts.show({ type: 'success', title: title });
     }
 
-    /* 読み込みパネルを開いている間は、その表を「読み込み範囲」表示にする */
+    /* 読み込みパネルを開いている間は、その表を「読み込み範囲」表示にする。
+     * 集計パネルを開いたら、設定の結果が見えるよう集計タブにする（閉じても集計タブのまま） */
     _syncPanelView() {
       const s = this.state;
       const p = s.panel;
+      if (p === 'aggregate' && s.datasets.source && s.view.tab !== 'aggregate') {
+        if (this._tabBeforePanel !== null) this._tabBeforePanel = null;
+        s.setTab('aggregate');
+      }
       ['source', 'condition'].forEach((role) => {
         if (p !== role) s.setRaw(role, false);
       });
