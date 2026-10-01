@@ -332,7 +332,7 @@
       this.drop = new DropOverlay(ctx, Dom.qs('#lqOverlay'));
       document.addEventListener('keydown', (e) => this._onKey(e));
       document.addEventListener('paste', (e) => {
-        if (Dom.isEditable(e.target) || this.app.manual.isOpen()) return;
+        if (Dom.isEditable(e.target) || this.app.manual.isOpen() || (this.app.derivedEditor && this.app.derivedEditor.isOpen())) return;
         const data = e.clipboardData;
         if (!data) return;
         e.preventDefault();

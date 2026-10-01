@@ -285,6 +285,8 @@
       this.el = h('div', {}, this.tables ? [this.tables.el, this.body] : [this.body]);
       this.f = {};
       this.chips = new ColumnChips(ctx, this.isSource ? 's:' : 'c:');
+      if (!ctx.app.derivedEditor) ctx.app.derivedEditor = new LQ.DerivedEditor(ctx);
+      this.derived = new LQ.DerivedSection(ctx, role, ctx.app.derivedEditor);
       this._builtKey = undefined;
       ctx.bus.on('datasets', () => this.refresh());
       ctx.bus.on('change', (e) => {
@@ -327,6 +329,7 @@
       this.body.appendChild(this._fileSection(ds));
       this.body.appendChild(this._rangeSection());
       this.body.appendChild(this._resultSection());
+      this.body.appendChild(this.derived.el);
     }
 
     _emptySection() {
@@ -618,8 +621,429 @@
           '・元の表は ' + Util.formatInt(ds.rawRowCount) + ' 行'
       })]);
       this.chips.setDataset(ds);
+      this.derived.render(ds);
     }
   }
 
   LQ.DatasetPanel = DatasetPanel;
+})(window);
+
+/* =========================================================================
+ * ── 列の追加（読み替え・計算） ──
+ * DerivedSection：読み込みパネルの区画（定義の一覧・状態・編集・削除）
+ * DerivedEditor：定義を作る／直すモーダル
+ *   読み替え：新しい列の名前・元の列・対応表（直接入力／Excel から貼り付け／ファイル）・対応表にない値の扱い
+ *   計算：新しい列の名前・式（列名のボタンで [列名] を入れる）。入力中に式の誤りと先頭の行の計算結果を示す
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+  const Dom = LQ.Dom;
+  const UI = LQ.UI;
+  const Flash = LQ.Flash;
+  const Derive = LQ.Derive;
+  const h = Dom.h;
+  const fmt = LQ.Util.formatInt;
+
+  const PREVIEW_ROWS = 5;
+  const MISSING_LIMIT = 30;
+  const UNMATCHED_OPTIONS = [
+    { value: 'keep', label: '元の値のまま' },
+    { value: 'blank', label: '空欄' },
+    { value: 'value', label: '指定した値' }
+  ];
+
+  /* ---------------------------------------------------------------------
+   * DerivedEditor：モーダル
+   * ------------------------------------------------------------------- */
+  class DerivedEditor {
+    constructor(ctx) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.app = ctx.app;
+      this.el = null;
+    }
+
+    isOpen() {
+      return !!this.el;
+    }
+
+    /**
+     * @param {'source'|'condition'} role
+     * @param {'map'|'calc'} kind
+     * @param {object|null} def 直す定義（新しく作るときは null）
+     */
+    open(role, kind, def) {
+      if (this.el) this.close();
+      this.ctx.popovers.close();
+      const ds = this.state.datasets[role];
+      if (!ds) return;
+      this.role = role;
+      this.ds = ds;
+      this.kind = def ? def.kind : kind;
+      this.def = def ? LQ.Util.clone(def) : (this.kind === 'map'
+        ? { id: LQ.Util.uid('drv'), kind: 'map', name: '', from: '', rows: [], unmatched: 'keep', value: '', tableName: '' }
+        : { id: LQ.Util.uid('drv'), kind: 'calc', name: '', expr: '' });
+      this.isNew = !def;
+      this._returnFocus = document.activeElement;
+      const meta = Derive.KINDS[this.kind];
+      this.saveBtn = h('button', { class: 'lq-btn lq-btn--primary', type: 'button', onclick: () => this._save() }, [Dom.icon('check'), this.isNew ? '列を追加する' : '変更を保存する']);
+      this.saveReason = h('span', { class: 'lq-field__hint' });
+      this.nameInput = h('input', { class: 'lq-input', type: 'text', value: this.def.name, placeholder: this.kind === 'map' ? '例：分類' : '例：粗利', title: '追加する列の名前（Enter で次の欄へ）' });
+      this.nameInput.addEventListener('input', () => {
+        this.def.name = this.nameInput.value;
+        this._validate();
+      });
+      const body = h('div', { class: 'lq-derive' }, [
+        UI.field('新しい列の名前', this.nameInput),
+        this.kind === 'map' ? this._mapFields() : this._calcFields()
+      ]);
+      const modal = h('div', { class: 'lq-modal lq-modal--derive', role: 'dialog', 'aria-modal': 'true', 'aria-label': meta.label },
+        [h('div', { class: 'lq-modal__head' }, [Dom.icon(meta.icon, 'lq-panel__icon'),
+          h('h2', { class: 'lq-modal__title', text: (role === 'source' ? '① ' : '② ') + '列を' + meta.label + 'で追加' }),
+          UI.iconButton('xmark', '閉じる（Esc）', () => this.close())]),
+        h('div', { class: 'lq-modal__body lq-modal__body--scroll' }, body),
+        h('div', { class: 'lq-modal__foot' }, [this.saveReason, h('span', { class: 'lq-topbar__spacer' }),
+          h('button', { class: 'lq-btn', type: 'button', onclick: () => this.close() }, 'キャンセル'), this.saveBtn])]);
+      this.el = h('div', { class: 'lq-modal-backdrop', onmousedown: (e) => {
+        if (e.target === this.el) this.close();
+      } }, modal);
+      this.el.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.close();
+        }
+      });
+      LQ.FormNav.attach(body);
+      Dom.qs('#lqOverlay').appendChild(this.el);
+      this._validate();
+      this.nameInput.focus();
+      this.nameInput.select();
+    }
+
+    close() {
+      if (!this.el) return;
+      this.el.remove();
+      this.el = null;
+      if (this._returnFocus && this._returnFocus.focus) this._returnFocus.focus();
+    }
+
+    /** この定義より前に作られる列（元の列＋前の定義の列）の名前 */
+    _names() {
+      const defs = this.state.derived[this.role];
+      const idx = defs.findIndex((d) => d.id === this.def.id);
+      const before = new Set((idx < 0 ? defs : defs.slice(0, idx)).map((d) => d.name));
+      return this.ds.columns.filter((c) => !c.derived || before.has(c.name)).map((c) => c.name);
+    }
+
+    /* ---------------- 読み替え ---------------- */
+
+    _mapFields() {
+      const d = this.def;
+      this.fromSelect = h('select', { class: 'lq-select', title: '読み替える元の列' });
+      UI.fillSelect(this.fromSelect, this._names().map((n) => ({ value: n, label: n })), d.from, '元の列を選択');
+      this.fromSelect.addEventListener('change', () => {
+        d.from = this.fromSelect.value;
+        Flash.el(this.fromSelect);
+        this._renderMissing();
+        this._validate();
+      });
+      this.tableBody = h('tbody');
+      this.tableCount = h('span', { class: 'lq-field__hint lq-num' });
+      const table = h('div', { class: 'lq-maptable', tabindex: '0', title: 'Excel の 2 列（元の値・読み替え後）をコピーして、ここで Ctrl+V で貼り付けられます' }, [
+        h('table', {}, [h('thead', {}, h('tr', {}, [h('th', { text: '元の値（* も使えます）' }), h('th', { text: '読み替え後' }), h('th')])), this.tableBody])
+      ]);
+      table.addEventListener('paste', (e) => {
+        const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+        if (!text || text.indexOf('\t') === -1 && text.indexOf('\n') === -1) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this._addRows(LQ.CsvParser.parse(text, '\t'), '貼り付け');
+      });
+      const addRow = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => {
+        d.rows.push(['', '']);
+        this._renderRows(true);
+      } }, [Dom.icon('plus'), '行を追加']);
+      const fileInput = h('input', { type: 'file', accept: '.xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt', hidden: true });
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files[0]) this._loadFile(fileInput.files[0]);
+        fileInput.value = '';
+      });
+      const fileBtn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '1 列目＝元の値、2 列目＝読み替え後の表（Excel・CSV）を読み込みます（今の対応表に加えます）',
+        onclick: () => fileInput.click() }, [Dom.icon('file-import'), 'ファイルから']);
+      const clearBtn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '対応表を空にする', onclick: () => {
+        d.rows = [];
+        this._renderRows();
+      } }, [Dom.icon('eraser'), '空にする']);
+      this.missingBox = h('div', { class: 'lq-mapmissing' });
+      this.unmatchedValue = h('input', { class: 'lq-input lq-input--sm', type: 'text', value: d.value, placeholder: '例：その他' });
+      this.unmatchedValue.addEventListener('input', () => {
+        d.value = this.unmatchedValue.value;
+      });
+      const seg = new LQ.Segmented(UNMATCHED_OPTIONS, d.unmatched, (v) => {
+        d.unmatched = v;
+        this.unmatchedValue.hidden = v !== 'value';
+        if (v === 'value') this.unmatchedValue.focus();
+      });
+      this.unmatchedValue.hidden = d.unmatched !== 'value';
+      this._renderRows();
+      this._renderMissing();
+      return h('div', { class: 'lq-stack' }, [
+        UI.field('元の列', this.fromSelect),
+        UI.field('対応表（マスタ）', h('div', { class: 'lq-stack' }, [
+          h('div', { class: 'lq-maptable__tools' }, [this.tableCount, h('span', { class: 'lq-topbar__spacer' }), addRow, fileBtn, fileInput, clearBtn]),
+          table,
+          h('p', { class: 'lq-field__hint', text: 'Excel の 2 列（元の値・読み替え後）をコピーし、表をクリックしてから Ctrl+V で貼り付けられます。前後の空白・全角半角・大文字小文字はそろえて照らし合わせます。「*ぶどう*」のように * を使うと、ぶどうを含む値をまとめて読み替えます（上の行ほど優先）。' })
+        ])),
+        this.missingBox,
+        UI.field('対応表にない値', h('div', { class: 'lq-row' }, [seg.el, this.unmatchedValue]))
+      ]);
+    }
+
+    _renderRows(focusLast) {
+      const d = this.def;
+      Dom.clear(this.tableBody);
+      d.rows.forEach((row, i) => {
+        const cell = (k, placeholder) => {
+          const input = h('input', { class: 'lq-input lq-input--sm', type: 'text', value: row[k], placeholder: placeholder });
+          input.addEventListener('input', () => {
+            row[k] = input.value;
+            if (k === 0) this._renderMissingSoon();
+          });
+          return h('td', {}, input);
+        };
+        this.tableBody.appendChild(h('tr', {}, [cell(0, '例：ぶどう'), cell(1, '例：果物'),
+          h('td', {}, UI.iconButton('xmark', 'この行を消す', () => {
+            d.rows.splice(i, 1);
+            this._renderRows();
+            this._renderMissing();
+          }, 'lq-btn--sm'))]));
+      });
+      this.tableCount.textContent = '対応表 ' + fmt(d.rows.length) + ' 件';
+      if (focusLast) {
+        const inputs = this.tableBody.querySelectorAll('tr:last-child input');
+        if (inputs[0]) inputs[0].focus();
+      }
+      this._validate();
+    }
+
+    /** 貼り付け・ファイルの行を対応表に加える（1 行目が見出しらしければ飛ばす） */
+    _addRows(grid, how) {
+      const rows = grid.filter((r) => r && (String(r[0] || '').trim() || String(r[1] || '').trim()));
+      if (rows.length && /元|from|変換前|before|値/i.test(String(rows[0][0])) && /後|to|変換後|after|読/i.test(String(rows[0][1] || ''))) rows.shift();
+      const room = Derive.MAX_ROWS - this.def.rows.length;
+      rows.slice(0, room).forEach((r) => this.def.rows.push([String(r[0] || '').trim(), String(r[1] === undefined ? '' : r[1]).trim()]));
+      this._renderRows();
+      this._renderMissing();
+      Flash.el(this.tableBody);
+      this.ctx.toasts.show({ type: 'success', title: how + 'で対応表に ' + fmt(Math.min(rows.length, room)) + ' 件を加えました',
+        message: rows.length > room ? '対応表は最大 ' + fmt(Derive.MAX_ROWS) + ' 件のため、残りは加えていません。' : '' });
+    }
+
+    async _loadFile(file) {
+      try {
+        const src = await LQ.SourceFile.fromFile(file);
+        this.def.tableName = file.name;
+        this._addRows(src.grid, '「' + file.name + '」');
+      } catch (err) {
+        this.ctx.toasts.show({ type: 'error', title: '対応表を読み込めませんでした', message: err.message });
+      }
+    }
+
+    _renderMissingSoon() {
+      clearTimeout(this._missingTimer);
+      this._missingTimer = setTimeout(() => this._renderMissing(), 300);
+    }
+
+    /** 元の列にあって対応表にない値（種類）を示し、まとめて対応表に加えられるようにする */
+    _renderMissing() {
+      const box = this.missingBox;
+      Dom.clear(box);
+      const d = this.def;
+      const col = this.ds.findColumn(d.from);
+      if (col < 0) return;
+      const probe = Object.assign({}, d, { unmatched: 'blank' });
+      const out = Derive.compute(probe, this.ds.rowCount, (n) => this.ds.findColumn(n), (r, c) => this.ds.cell(r, c));
+      const missing = [];
+      const seen = new Set();
+      for (let r = 0; r < this.ds.rowCount; r++) {
+        const v = this.ds.cell(r, col);
+        if (LQ.Normalizer.isBlank(v) || out.values[r] !== '' || seen.has(v)) continue;
+        seen.add(v);
+        missing.push(String(v));
+      }
+      if (!missing.length) {
+        box.appendChild(UI.status('ok', '元の列の値はすべて対応表にあります'));
+        return;
+      }
+      const add = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '対応表にない値を、読み替え後を空欄にして対応表の最後に加えます（あとで読み替え後を入力します）',
+        onclick: () => this._addRows(missing.map((v) => [v, '']), '対応表にない値の追加') }, [Dom.icon('plus'), fmt(missing.length) + ' 種類をすべて対応表に加える']);
+      box.appendChild(UI.note('info', h('div', {}, [
+        h('div', { text: '対応表にない値 ' + fmt(missing.length) + ' 種類：' + missing.slice(0, MISSING_LIMIT).join('、') + (missing.length > MISSING_LIMIT ? ' ほか' : '') })
+      ]), add));
+    }
+
+    /* ---------------- 計算 ---------------- */
+
+    _calcFields() {
+      const d = this.def;
+      this.exprInput = h('input', { class: 'lq-input lq-expr', type: 'text', value: d.expr, spellcheck: 'false', placeholder: '例：([単価]+[送料])×[数量]÷[係数]' });
+      this.exprInput.addEventListener('input', () => {
+        d.expr = this.exprInput.value;
+        this._renderPreview();
+        this._validate();
+      });
+      const chips = h('div', { class: 'lq-colchips lq-colchips--insert' }, this._names().map((n) => h('button', {
+        class: 'lq-colchip', type: 'button', title: '[' + n + '] を式に入れる', onclick: () => this._insert('[' + n + ']')
+      }, [Dom.icon('plus'), h('span', { class: 'lq-colchip__name', text: n })])));
+      const ops = h('div', { class: 'lq-row' }, ['+', '-', '×', '÷', '(', ')', '&', 'ROUND(', 'ROUNDUP(', 'ROUNDDOWN('].map((op) =>
+        h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: op + ' を入れる', onclick: () => this._insert(op) }, op)));
+      this.exprStatus = h('div');
+      this.preview = h('div', { class: 'lq-derive__preview' });
+      this._renderPreview();
+      return h('div', { class: 'lq-stack' }, [
+        UI.field('式', h('div', { class: 'lq-stack' }, [this.exprInput, ops, this.exprStatus])),
+        UI.field('列（押すと式に入ります）', chips),
+        h('p', { class: 'lq-field__hint', text: '列名は [ ] で囲みます。+ − ×（*）÷（/）と括弧で計算し、& で文字をつなぎます（例：[姓]&" "&[名]）。ROUND（四捨五入）・ROUNDUP（切り上げ）・ROUNDDOWN（切り捨て）は ROUND([金額]×1.1, 0) のように桁数を指定します。空欄は 0 として計算し、数値として読めない値や 0 での割り算になる行は空欄にします。' }),
+        UI.field('先頭 ' + PREVIEW_ROWS + ' 行の計算結果', this.preview)
+      ]);
+    }
+
+    _insert(text) {
+      const input = this.exprInput;
+      const start = input.selectionStart === null ? input.value.length : input.selectionStart;
+      const end = input.selectionEnd === null ? start : input.selectionEnd;
+      input.value = input.value.slice(0, start) + text + input.value.slice(end);
+      input.focus();
+      input.setSelectionRange(start + text.length, start + text.length);
+      input.dispatchEvent(new Event('input'));
+    }
+
+    _renderPreview() {
+      Dom.clear(this.preview);
+      Dom.clear(this.exprStatus);
+      const d = this.def;
+      if (!d.expr.trim()) {
+        this.exprStatus.appendChild(UI.status('info', '式を入力してください'));
+        return;
+      }
+      const check = Derive.check(d.expr, this._names());
+      this.exprInput.classList.toggle('is-invalid', !check.ok);
+      if (!check.ok) {
+        this.exprStatus.appendChild(UI.status('warn', check.message + (check.pos >= 0 ? '（' + (check.pos + 1) + ' 文字目）' : '')));
+        return;
+      }
+      this.exprStatus.appendChild(UI.status('ok', '正しい式です（使う列：' + check.columns.join('・') + '）'));
+      const rows = Math.min(PREVIEW_ROWS, this.ds.rowCount);
+      const out = Derive.compute(d, rows, (n) => this.ds.findColumn(n), (r, c) => this.ds.cell(r, c));
+      const table = h('table', { class: 'lq-derive__table' }, [
+        h('thead', {}, h('tr', {}, check.columns.map((n) => h('th', { text: n })).concat([h('th', { class: 'is-result', text: d.name || '（新しい列）' })]))),
+        h('tbody', {}, Array.from({ length: rows }, (v, r) => h('tr', {}, check.columns.map((n) => h('td', { text: String(this.ds.cell(r, this.ds.findColumn(n))) }))
+          .concat([h('td', { class: 'is-result', text: out.values ? (out.values[r] === '' ? '（空欄）' : out.values[r]) : '' })]))))
+      ]);
+      this.preview.appendChild(table);
+    }
+
+    /* ---------------- 保存 ---------------- */
+
+    /** 保存できない理由（できれば null） */
+    _problem() {
+      const d = this.def;
+      const name = d.name.trim();
+      if (!name) return '新しい列の名前を入力してください';
+      const original = this.ds.columns.some((c) => !c.derived && c.name === name);
+      if (original) return '「' + name + '」は元の表にある列名です。別の名前にしてください';
+      if (this.state.derived[this.role].some((x) => x.id !== d.id && x.name === name)) return '「' + name + '」はほかの追加した列と同じ名前です';
+      if (d.kind === 'map') {
+        if (!d.from) return '元の列を選んでください';
+        if (!d.rows.some((r) => String(r[0]).trim())) return '対応表に 1 件以上入力してください';
+        return null;
+      }
+      const check = Derive.check(d.expr, this._names());
+      return check.ok ? null : '式：' + check.message;
+    }
+
+    _validate() {
+      if (!this.saveBtn) return;
+      const problem = this._problem();
+      this.saveBtn.disabled = !!problem;
+      Dom.clear(this.saveReason);
+      if (problem) this.saveReason.appendChild(UI.status('warn', problem));
+    }
+
+    _save() {
+      if (this._problem()) return;
+      const d = Object.assign({}, this.def, { name: this.def.name.trim() });
+      if (d.kind === 'map') d.rows = d.rows.filter((r) => String(r[0]).trim());
+      const snap = this.state.snapshot();
+      const list = this.state.derived[this.role].slice();
+      const idx = list.findIndex((x) => x.id === d.id);
+      if (idx >= 0) list[idx] = d;
+      else list.push(d);
+      this.state.setDerived(this.role, list);
+      this.close();
+      const info = this.ds.derivedInfo ? this.ds.derivedInfo.get(d.id) : null;
+      this.ctx.toasts.show({
+        type: info && !info.ok ? 'warn' : 'success',
+        title: '列「' + d.name + '」を' + (idx >= 0 ? '更新しました' : '追加しました'),
+        message: info ? Derive.infoText(info, this.ds.rowCount) : '',
+        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '列の追加を元に戻しました') }]
+      });
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * DerivedSection：読み込みパネルの区画
+   * ------------------------------------------------------------------- */
+  class DerivedSection {
+    constructor(ctx, role, editor) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.app = ctx.app;
+      this.role = role;
+      this.editor = editor;
+      this.list = h('div', { class: 'lq-derivedlist' });
+      const add = (kind) => h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: Derive.KINDS[kind].label + 'で列を追加する',
+        onclick: () => this.editor.open(this.role, kind, null) }, [Dom.icon(Derive.KINDS[kind].icon), Derive.KINDS[kind].label]);
+      this.el = UI.section('列を追加（読み替え・計算）', [this.list,
+        h('p', { class: 'lq-field__hint', text: '追加した列は、元の列と同じように条件・出力・集計で使えます。設定はこのブラウザに記憶し、次に同じ列のある表を読み込んだときも自動で作ります。' })],
+      [h('span', { class: 'lq-section__tools' }, [add('map'), add('calc')])]);
+    }
+
+    render(ds) {
+      Dom.clear(this.list);
+      const defs = this.state.derived[this.role];
+      if (!defs.length) {
+        this.list.appendChild(h('p', { class: 'lq-field__hint', text: '例：「ぶどう ⇒ 果物」のように値を読み替える列や、([単価]+[送料])×[数量] のように計算する列を加えられます。' }));
+        return;
+      }
+      defs.forEach((def) => {
+        const info = ds && ds.derivedInfo ? ds.derivedInfo.get(def.id) : null;
+        const status = !info ? UI.status('info', 'この表には使う列がないため、作っていません')
+          : (info.ok ? UI.status('ok', Derive.infoText(info, ds.rowCount)) : UI.status('warn', info.message));
+        this.list.appendChild(h('div', { class: 'lq-derived' + (info && info.ok ? '' : ' is-off') }, [
+          h('span', { class: 'lq-badge lq-badge--meta', text: Derive.KINDS[def.kind].badge }),
+          h('div', { class: 'lq-derived__body' }, [
+            h('div', { class: 'lq-derived__name', text: def.name }),
+            h('div', { class: 'lq-derived__summary', text: Derive.summary(def), title: Derive.summary(def) }),
+            status
+          ]),
+          UI.iconButton('pen', '「' + def.name + '」を直す', () => this.editor.open(this.role, def.kind, def), 'lq-btn--sm'),
+          UI.iconButton('trash-can', '「' + def.name + '」を削除（元に戻せます）', () => this._remove(def), 'lq-btn--sm')
+        ]));
+      });
+    }
+
+    _remove(def) {
+      const snap = this.state.snapshot();
+      this.state.setDerived(this.role, this.state.derived[this.role].filter((d) => d.id !== def.id));
+      this.ctx.toasts.show({ type: 'success', title: '列「' + def.name + '」を削除しました', message: '',
+        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '列「' + def.name + '」を元に戻しました') }] });
+    }
+  }
+
+  LQ.DerivedEditor = DerivedEditor;
+  LQ.DerivedSection = DerivedSection;
 })(window);

@@ -785,3 +785,133 @@
 .lq-manual__content .lq-note {
   margin: var(--space-4) 0;
 }
+
+/* ---------- 列の追加（読み替え・計算） ---------- */
+.lq-derivedlist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lq-derived {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) var(--h-control) var(--h-control);
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--indicator-width) solid var(--color-primary-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.lq-derived.is-off {
+  border-left-color: var(--color-border);
+  background: var(--color-surface-alt);
+}
+
+.lq-derived__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.lq-derived__name {
+  font-weight: var(--fw-medium);
+}
+
+.lq-derived__summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-sub);
+}
+
+.lq-modal--derive {
+  width: var(--w-modal-form);
+  height: auto;
+  max-height: var(--h-modal);
+}
+
+.lq-modal__body--scroll {
+  display: block;
+  overflow: auto;
+  padding: var(--space-6) var(--space-8);
+}
+
+.lq-derive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.lq-maptable {
+  max-height: var(--h-colpick);
+  overflow: auto;
+  border: var(--border-width) dashed var(--color-primary-line);
+  border-radius: var(--radius-md);
+}
+
+.lq-maptable:focus,
+.lq-maptable:focus-within {
+  border-style: solid;
+  border-color: var(--color-primary);
+}
+
+.lq-maptable table,
+.lq-derive__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.lq-maptable th,
+.lq-derive__table th {
+  position: sticky;
+  top: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-alt);
+  font-weight: var(--fw-medium);
+  text-align: left;
+}
+
+.lq-maptable td {
+  padding: var(--space-1) var(--space-2);
+}
+
+.lq-maptable td .lq-input {
+  width: 100%;
+}
+
+.lq-maptable__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lq-derive__table td {
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-width) solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.lq-derive__table .is-result {
+  background: var(--color-primary-faint);
+  font-weight: var(--fw-medium);
+}
+
+.lq-colchips--insert .lq-colchip {
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.lq-colchips--insert .lq-colchip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}

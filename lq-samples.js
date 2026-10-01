@@ -388,6 +388,29 @@
       }
     },
     {
+      id: 'derive',
+      icon: 'right-left',
+      title: '列の追加：読み替え（マスタ）と計算',
+      desc: '① に「大分類」（カテゴリを対応表で読み替え：文具 ⇒ 事務用品 など、対応表にない値は「その他」）と「税込金額」（ROUND([金額]×1.1, 0)）、「1 個あたり税込」（[税込金額]÷[数量]）の列を加え、大分類ごとに集計します。① の読み込みパネルの「列を追加」で中身を確かめられます。',
+      tags: ['読み替え', '計算', 'マスタ', '集計'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1414) },
+          profiles: [{ name: '税込 1 万円以上', condition: null, query: Q([C('税込金額', 'gte', fixed('10000'))]) }],
+          derived: {
+            source: [
+              { id: 'smp-map', kind: 'map', name: '大分類', from: 'カテゴリ', rows: [['文具', '事務用品'], ['家電', '電化製品'], ['食品', '飲食']], unmatched: 'value', value: 'その他' },
+              { id: 'smp-tax', kind: 'calc', name: '税込金額', expr: 'ROUND([金額]×1.1, 0)' },
+              { id: 'smp-unit', kind: 'calc', name: '1 個あたり税込', expr: 'ROUND([税込金額]÷[数量], 1)' }
+            ],
+            condition: []
+          },
+          output: ['s:受注番号', 's:受注日', 's:カテゴリ', 's:大分類', 's:数量', 's:金額', 's:税込金額', 's:1 個あたり税込'],
+          aggregate: { mode: 'columns', groupBy: ['s:大分類'], count: true, measures: [{ key: 's:税込金額', fn: 'sum' }, { key: 's:税込金額', fn: 'avg' }], rank: { target: 'sum|s:税込金額', dir: 'desc' } }
+        };
+      }
+    },
+    {
       id: 'perf',
       icon: 'gauge-high',
       title: '10 万行で速度を確認',

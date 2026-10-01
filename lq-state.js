@@ -257,6 +257,10 @@
       this.rules = Object.assign({}, Normalizer.DEFAULT_RULES, Normalizer.cleanRules(Prefs.get('rules', null)) || {});
       this.output = new LQ.OutputColumns();
       this.aggregate = LQ.AggregateSettings.clean(Prefs.get('aggregate', null));
+      const derived = Prefs.get('derived', null) || {};
+      this.derived = { source: LQ.Derive.cleanList(derived.source), condition: LQ.Derive.cleanList(derived.condition) };
+      LQ.Derive.setDefs('source', this.derived.source);
+      LQ.Derive.setDefs('condition', this.derived.condition);
       this.view = {
         tab: 'result',
         pageSize: clampPageSize(Prefs.get('pageSize', DEFAULT_PAGE_SIZE)),
@@ -313,6 +317,35 @@
     datasetChanged(role) {
       this.view.pages[role] = 0;
       this._afterDatasetChange(role);
+    }
+
+    /**
+     * 列の追加（読み替え・計算）の定義を置き換え、該当する表（① または すべての抽出条件の ②）を作り直す。
+     * 定義はブラウザに記憶し、次に読み込んだ表にも（使う列があれば）当てはめる。
+     */
+    setDerived(role, defs) {
+      this._replaceDerived(role, defs);
+      this._afterDatasetChange(role);
+    }
+
+    /** 定義を置き換えて表を作り直す（サンプル表示中は記憶しない） */
+    _replaceDerived(role, defs) {
+      this.derived[role] = LQ.Derive.cleanList(defs);
+      LQ.Derive.setDefs(role, this.derived[role]);
+      if (!this.sampleStash) Prefs.set('derived', this.derived);
+      this._datasetsOf(role).forEach((ds) => ds.refreshDerived());
+    }
+
+    /** 役割ごとの読み込み済みの表（② は退避中のものも含むすべての抽出条件） */
+    _datasetsOf(role) {
+      if (role === 'source') {
+        const list = [this.datasets.source];
+        if (this.sampleStash) list.push(this.sampleStash.source);
+        return list.filter(Boolean);
+      }
+      const profiles = this.profiles.items.concat(this.sampleStash ? this.sampleStash.profiles : []);
+      const seen = new Set();
+      return profiles.map((p) => p.condition).filter((ds) => ds && !seen.has(ds) && seen.add(ds));
     }
 
     _afterDatasetChange(role) {
@@ -477,7 +510,8 @@
           source: src && !src.isSample ? src : null,
           combine: Util.clone(this.combine),
           outputMemory: Util.clone(this.output.memory),
-          aggregate: Util.clone(this.aggregate)
+          aggregate: Util.clone(this.aggregate),
+          derived: Util.clone(this.derived)
         };
       } else {
         own = this.profiles.items.filter((p) => !p.isSample);
@@ -505,6 +539,7 @@
         this.output.setMemory(stash.outputMemory);
         this.aggregate = LQ.AggregateSettings.clean(stash.aggregate);
         this._emit('aggregate', {});
+        if (stash.derived) ['source', 'condition'].forEach((role) => this._replaceDerived(role, stash.derived[role]));
       }
       const active = stash && stash.profiles.some((p) => p.id === stash.activeId) ? stash.activeId : null;
       this.replaceProfiles((stash ? stash.profiles : []).concat(own), active);
@@ -833,13 +868,15 @@
         combine: Util.clone(this.combine),
         rules: Util.clone(this.rules),
         aggregate: Util.clone(this.aggregate),
+        derived: Util.clone(this.derived),
         sampleStash: stash ? {
           profiles: stash.profiles.map((p) => p.snapshot()),
           activeId: stash.activeId,
           source: stash.source,
           combine: Util.clone(stash.combine),
           outputMemory: Util.clone(stash.outputMemory),
-          aggregate: Util.clone(stash.aggregate)
+          aggregate: Util.clone(stash.aggregate),
+          derived: Util.clone(stash.derived)
         } : null,
         output: this.output.snapshot(),
         view: Util.clone(this.view),
@@ -865,8 +902,18 @@
         source: st.source,
         combine: cleanCombine(st.combine),
         outputMemory: Util.clone(st.outputMemory || []),
-        aggregate: LQ.AggregateSettings.clean(st.aggregate)
+        aggregate: LQ.AggregateSettings.clean(st.aggregate),
+        derived: st.derived ? Util.clone(st.derived) : null
       } : null;
+      if (snap.derived && JSON.stringify(snap.derived) !== JSON.stringify(this.derived)) {
+        ['source', 'condition'].forEach((role) => {
+          this.derived[role] = LQ.Derive.cleanList(snap.derived[role]);
+          LQ.Derive.setDefs(role, this.derived[role]);
+        });
+        Prefs.set('derived', this.derived);
+        ['source', 'condition'].forEach((role) => this._datasetsOf(role).forEach((ds) => ds.refreshDerived()));
+        this._syncOutputColumns();
+      }
       if (snap.aggregate) {
         this.aggregate = LQ.AggregateSettings.clean(snap.aggregate);
         if (!this.sampleStash) Prefs.set('aggregate', this.aggregate);

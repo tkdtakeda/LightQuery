@@ -534,6 +534,8 @@
         if (bundle.rules) s.setRules(bundle.rules);
         if (bundle.combine) s.setCombine(bundle.combine);
         if (bundle.output) s.importOutputColumns(bundle.output.columns);
+        if (bundle.derived) ['source', 'condition'].forEach((role) => s.setDerived(role, bundle.derived[role]));
+        if (bundle.aggregate) s.setAggregate(bundle.aggregate);
         if (bundle.view) s.setPageSize(bundle.view.pageSize);
       }
       const adopted = whole ? 0 : this._adoptRules(added, bundle.rules);
@@ -607,6 +609,8 @@
           return p;
         });
         s.enterSample(make('source', built.source), profiles, built.combine || null);
+        const derived = built.derived || (s.sampleStash && s.sampleStash.derived) || s.derived;
+        ['source', 'condition'].forEach((role) => s.setDerived(role, derived[role] || []));
         s.applyOutputPreset(built.output);
         s.setAggregate(built.aggregate || (s.sampleStash ? s.sampleStash.aggregate : s.aggregate));
         s.setTab(built.tab || 'result');
