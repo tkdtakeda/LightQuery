@@ -33,8 +33,9 @@
     return clean ? Object.assign({}, LQ.Normalizer.DEFAULT_RULES, clean) : null;
   }
 
+  /** 比べる相手。col2 / value2 は「範囲」の終わり（開始は col / value） */
   function emptyRight() {
-    return { type: 'column', col: '', value: '' };
+    return { type: 'column', col: '', value: '', col2: '', value2: '' };
   }
 
   /** 保存データの表を「文字列の二次元配列」にそろえる */
@@ -157,7 +158,7 @@
           label: c.label,
           left: c.left,
           op: c.op,
-          right: { type: c.right.type, col: c.right.col || '', value: c.right.value || '' }
+          right: { type: c.right.type, col: c.right.col || '', value: c.right.value || '', col2: c.right.col2 || '', value2: c.right.value2 || '' }
         })),
         logic: { mode: query.logic.mode, expr: query.logic.expr },
         joinKind: query.joinKind,
@@ -182,7 +183,7 @@
           label: typeof c.label === 'string' && /^[A-Z]$/.test(c.label) ? c.label : '',
           left: typeof c.left === 'string' ? c.left : '',
           op: typeof c.op === 'string' ? c.op : 'eq',
-          right: { type: right.type === 'value' ? 'value' : 'column', col: text(right.col), value: text(right.value) }
+          right: { type: right.type === 'value' ? 'value' : 'column', col: text(right.col), value: text(right.value), col2: text(right.col2), value2: text(right.value2) }
         };
         if (!cond.label || QueryOps.labels(q).indexOf(cond.label) !== -1) cond.label = QueryOps.nextLabel(q);
         q.conditions.push(cond);
@@ -193,7 +194,7 @@
     /** 結果に影響する内容の署名（結果が最新かの判定・検証結果の再利用に使う） */
     signature(query) {
       return JSON.stringify([
-        query.conditions.map((k) => [k.label, k.left, k.op, k.right.type, k.right.col || '', k.right.value || '']),
+        query.conditions.map((k) => [k.label, k.left, k.op, k.right.type, k.right.col || '', k.right.value || '', k.right.col2 || '', k.right.value2 || '']),
         query.logic,
         query.joinKind,
         query.matchMode

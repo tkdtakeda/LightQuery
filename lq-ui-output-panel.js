@@ -34,6 +34,11 @@
       this.filter = h('input', { class: 'lq-input', type: 'search', placeholder: '列名で絞り込み', title: '列名の一部で一覧を絞り込みます' });
       this.filter.addEventListener('input', () => this.render());
       this.list = h('ul', { class: 'lq-collist' });
+      this._shownKeys = [];
+      this.bulkCount = h('span', { class: 'lq-colbulk__count lq-num' });
+      this.allOn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(true) }, [Dom.icon('square-check'), 'すべて ON']);
+      this.allOff = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(false) }, [Dom.icon('square'), 'すべて OFF']);
+      this.bulk = h('div', { class: 'lq-colbulk' }, [this.bulkCount, h('span', { class: 'lq-colbulk__actions' }, [this.allOn, this.allOff])]);
       this.empty = h('p', { class: 'lq-field__hint', text: '① または ② を読み込むと、ここに列が表示されます。' });
       this.memo = h('p', { class: 'lq-field__hint lq-colmemo' });
       const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '覚えている並びを消し、① の列を表示・② の列を非表示の初期状態に戻す（元に戻せます）',
@@ -43,10 +48,12 @@
         UI.section('列の一覧（上から順に表示・出力）', [
           this.filter,
           this.empty,
+          this.bulk,
           this.list,
           this.memo,
+          UI.note('tip', '列が多いときは「すべて OFF」にしてから、必要な列だけチェックを入れると早く選べます。絞り込み中は、一覧に出ている列だけが対象です。'),
           UI.note('tip', '左端のつまみをドラッグして並べ替えます。表の見出しをドラッグしても同じ順序が変わります。チェックボックスを選んで Alt+↑／Alt+↓ でも移動できます。'),
-          UI.note('info', '並びと表示は列の名前でこのブラウザに記憶し、次に同じ名前の列を読み込んだときも使います（サンプル表示中の変更は記憶しません）。')
+          UI.note('info', '並びと表示は列の名前でこのブラウザに記憶し、次に同じ名前の列を読み込んだときも使います（① にサンプルを表示している間の変更は記憶しません）。')
         ], [reset])
       ]);
       this._bindDrag();
@@ -69,6 +76,35 @@
     _group(prefix, visible) {
       this.state.setGroupVisible(prefix, visible);
       Flash.el(this.list);
+    }
+
+    /** 一覧に出ている列（絞り込み中はその列だけ）をまとめて表示／非表示にする（元に戻せる） */
+    _bulk(visible) {
+      const keys = this._shownKeys.slice();
+      if (!keys.length) return;
+      const snap = this.state.snapshot();
+      this.state.setColumnsVisible(keys, visible);
+      Flash.el(this.list);
+      const scope = this.filter.value.trim() ? '絞り込み中の ' : '';
+      this.ctx.toasts.show({
+        type: 'success',
+        title: scope + keys.length + ' 列を' + (visible ? '表示' : '非表示') + 'にしました',
+        message: visible ? '不要な列はチェックを外してください。' : '出力したい列にチェックを入れてください。',
+        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '出力列の表示を元に戻しました') }]
+      });
+    }
+
+    /** 「すべて ON／OFF」の件数と、押しても変わらないときの無効化・理由 */
+    _renderBulk(shown) {
+      const on = shown.filter((c) => c.visible).length;
+      const filtered = !!this.filter.value.trim();
+      this.bulk.hidden = !shown.length;
+      this.bulkCount.textContent = (filtered ? '絞り込み中の ' + shown.length + ' 列のうち' : '全 ' + shown.length + ' 列のうち') + ' 表示 ' + on + ' 列';
+      this.allOn.disabled = on === shown.length;
+      this.allOff.disabled = on === 0;
+      const scope = filtered ? '一覧に出ている ' + shown.length + ' 列' : 'すべての列（' + shown.length + ' 列）';
+      this.allOn.title = this.allOn.disabled ? '対象の列はすべて表示中です' : scope + 'を表示にする（元に戻せます）';
+      this.allOff.title = this.allOff.disabled ? '対象の列はすべて非表示です' : scope + 'を非表示にする（元に戻せます）';
     }
 
     _reset() {
@@ -137,9 +173,11 @@
       const dormant = s.output.memory.length - s.output.columns.length;
       this.memo.hidden = dormant <= 0;
       this.memo.textContent = dormant > 0 ? 'ほかに、今は読み込んでいない列 ' + dormant + ' 列の並びと表示を覚えています。' : '';
-      s.output.columns.forEach((col) => {
+      const shown = s.output.columns.filter((col) => !word || LQ.ResultView.nameOf(col.key).toLowerCase().indexOf(word) !== -1);
+      this._shownKeys = shown.map((col) => col.key);
+      this._renderBulk(shown);
+      shown.forEach((col) => {
         const name = LQ.ResultView.nameOf(col.key);
-        if (word && name.toLowerCase().indexOf(word) === -1) return;
         const reason = this._unavailableReason(col.key);
         const owners = this._owners(col.key);
         const check = h('input', { type: 'checkbox', checked: col.visible, title: col.visible ? '表示中（外すと隠します）' : '非表示（入れると表示します）' });

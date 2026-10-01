@@ -114,6 +114,61 @@
   white-space: nowrap;
 }
 
+/* 読み込み結果の列タグ（押して表示／非表示）。状態はアイコン（目／斜線の目）＋見た目＋文字で示す */
+.lq-colpick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lq-colpick__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lq-colpick__head .lq-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lq-colchips--toggle {
+  max-height: var(--h-colpick);
+  overflow: auto;
+  padding: var(--space-1);
+}
+
+.lq-colchips--toggle .lq-colchip {
+  border: var(--border-width) solid var(--color-border);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-colchips--toggle .lq-colchip.is-on {
+  border-color: var(--color-primary-line);
+  background: var(--color-primary-faint);
+}
+
+.lq-colchips--toggle .lq-colchip.is-on .fa-solid {
+  color: var(--color-primary);
+}
+
+.lq-colchips--toggle .lq-colchip.is-off {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.lq-colchips--toggle .lq-colchip.is-off .lq-colchip__name {
+  text-decoration: line-through;
+}
+
+.lq-colchips--toggle .lq-colchip:hover {
+  border-color: var(--color-primary);
+}
+
 /* ---------- 条件パネル ---------- */
 .lq-expr {
   width: 100%;
@@ -163,6 +218,16 @@
   border-radius: var(--radius-md);
   background: var(--color-surface);
   transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-cond.is-pair {
+  grid-template-columns: var(--w-label-badge) minmax(0, 2fr) auto minmax(0, 3fr) var(--w-select-op) var(--h-control);
+}
+
+.lq-cond.is-pair .lq-cond__right .lq-input,
+.lq-cond.is-pair .lq-cond__right .lq-select {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .lq-cond.is-invalid {
@@ -258,6 +323,63 @@
   color: var(--color-text-sub);
 }
 
+/* 出力する行のベン図（塗った部分＝出力される ① の行） */
+.lq-choice--figure {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.lq-choice__figure {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  display: flex;
+}
+
+.lq-venn {
+  width: var(--w-venn);
+  height: auto;
+}
+
+/* 輪郭だけに当てる（型抜き用の mask の円には当てない） */
+.lq-venn__src circle,
+.lq-venn__cond circle {
+  fill: none;
+  stroke-width: var(--stroke-venn);
+}
+
+.lq-venn .lq-venn__fill {
+  fill: var(--color-src-soft);
+  stroke: none;
+}
+
+.lq-choice.is-selected .lq-venn .lq-venn__fill {
+  fill: var(--color-src);
+  fill-opacity: var(--opacity-venn);
+}
+
+.lq-venn__src circle {
+  stroke: var(--color-src);
+}
+
+.lq-venn__cond circle {
+  stroke: var(--color-cond);
+  stroke-dasharray: var(--dash-venn);
+}
+
+.lq-venn__label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  text-anchor: middle;
+}
+
+.lq-venn__label--src {
+  fill: var(--color-src-strong);
+}
+
+.lq-venn__label--cond {
+  fill: var(--color-cond-strong);
+}
+
 /* ---------- 照合ルール ---------- */
 .lq-rules {
   display: flex;
@@ -319,6 +441,25 @@
 }
 
 .lq-colgroup__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.lq-colbulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.lq-colbulk__count {
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
+}
+
+.lq-colbulk__actions {
   display: flex;
   gap: var(--space-2);
 }
@@ -700,4 +841,134 @@
 
 .lq-manual__content .lq-note {
   margin: var(--space-4) 0;
+}
+
+/* ---------- 列の追加（読み替え・計算） ---------- */
+.lq-derivedlist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lq-derived {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) var(--h-control) var(--h-control);
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--indicator-width) solid var(--color-primary-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.lq-derived.is-off {
+  border-left-color: var(--color-border);
+  background: var(--color-surface-alt);
+}
+
+.lq-derived__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.lq-derived__name {
+  font-weight: var(--fw-medium);
+}
+
+.lq-derived__summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-sub);
+}
+
+.lq-modal--derive {
+  width: var(--w-modal-form);
+  height: auto;
+  max-height: var(--h-modal);
+}
+
+.lq-modal__body--scroll {
+  display: block;
+  overflow: auto;
+  padding: var(--space-6) var(--space-8);
+}
+
+.lq-derive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.lq-maptable {
+  max-height: var(--h-colpick);
+  overflow: auto;
+  border: var(--border-width) dashed var(--color-primary-line);
+  border-radius: var(--radius-md);
+}
+
+.lq-maptable:focus,
+.lq-maptable:focus-within {
+  border-style: solid;
+  border-color: var(--color-primary);
+}
+
+.lq-maptable table,
+.lq-derive__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.lq-maptable th,
+.lq-derive__table th {
+  position: sticky;
+  top: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-alt);
+  font-weight: var(--fw-medium);
+  text-align: left;
+}
+
+.lq-maptable td {
+  padding: var(--space-1) var(--space-2);
+}
+
+.lq-maptable td .lq-input {
+  width: 100%;
+}
+
+.lq-maptable__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lq-derive__table td {
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-width) solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.lq-derive__table .is-result {
+  background: var(--color-primary-faint);
+  font-weight: var(--fw-medium);
+}
+
+.lq-colchips--insert .lq-colchip {
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.lq-colchips--insert .lq-colchip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }

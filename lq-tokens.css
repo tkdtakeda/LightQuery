@@ -171,6 +171,18 @@
   --h-control: 32px;
   --h-control-lg: 40px;
   --h-row: 30px;
+  /* 表の見た目（3 段階）：列の間隔・行の高さ・文字サイズ */
+  --grid-pad-s: var(--space-3);
+  --grid-pad-m: var(--space-5);
+  --grid-pad-l: var(--space-7);
+  --grid-row-s: 24px;
+  --grid-row-m: var(--h-row);
+  --grid-row-l: 38px;
+  --grid-font-s: var(--fs-xs);
+  --grid-font-m: var(--fs-sm);
+  --grid-font-l: var(--fs-lg);
+  --w-col-grip: 7px;
+  --h-colpick: 260px;
   --h-rail-item: 58px;
   --h-dropzone: 220px;
   --w-rail: 72px;
@@ -182,6 +194,11 @@
   --w-popover-xl: 840px;
   --w-toast: 400px;
   --w-modal: 960px;
+  --w-modal-form: 760px;
+  --w-venn: 96px;
+  --opacity-venn: 0.45;
+  --stroke-venn: 1.5;
+  --dash-venn: 3 2;
   --h-modal: 82dvh;
   --w-chip-max: 300px;
   --brand-sub-display: block;
@@ -190,7 +207,7 @@
   --w-input-num: 72px;
   --w-input-page: 56px;
   --w-select-col: 150px;
-  --w-select-op: 124px;
+  --w-select-op: 148px;
   --w-label-badge: 24px;
   --w-status-max: 420px;
   --w-manual-toc: 200px;

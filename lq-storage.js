@@ -1,5 +1,196 @@
 /* =========================================================================
  * LightQuery - lq-storage.js
+ * 保存：抽出条件の JSON・ブラウザへの自動保存
+ * （下の区切りごとに独立した部品。読み込み順どおりに並べている）
+ * ========================================================================= */
+
+/* =========================================================================
+ * ── 抽出条件の JSON ──
+ * 抽出条件の JSON：書き出し（1 件／一括）と読み込み（1 件／一括／旧形式）
+ *   format 2 … kind:'profile'（1 件）/ kind:'library'（一括：全件＋振り分け・照合ルール・出力列・① の読み込み範囲）
+ *   format 1 … 旧形式（条件 1 セット）。1 件の抽出条件として読み込む
+ *   ② の中身（grid）は含めても含めなくてもよい。含めないときはファイル名と読み込み範囲だけを記録する。
+ *   照合ルール：個別の設定がある抽出条件は profile.rules に、全体の設定は rules（1 件のときは globalRules）に書く。
+ *   出力列は覚えている並び（今は使えない列を含む）を書く。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+  const Util = LQ.Util;
+  const QueryOps = LQ.QueryOps;
+  const Profile = LQ.Profile;
+  const Normalizer = LQ.Normalizer;
+
+  const APP = 'LightQuery';
+  const FORMAT = 2;
+  const RE_LEGACY_NAME = /^LightQuery_条件_\d{8}_\d{4}$/;
+
+  /** 抽出条件 1 件 → 素のオブジェクト（個別の照合ルールがあるときだけ rules を書く） */
+  function profileToPlain(profile, priority, withData) {
+    const ref = profile.currentRef();
+    if (ref && withData && profile.condition) ref.grid = profile.condition.grid;
+    const plain = {
+      name: profile.name,
+      priority: priority,
+      enabled: profile.enabled,
+      query: QueryOps.toPlain(profile.query)
+    };
+    if (profile.rules) plain.rules = Util.clone(profile.rules);
+    plain.condition = ref;
+    return plain;
+  }
+
+  function cleanCombine(combine) {
+    if (!combine || typeof combine !== 'object') return null;
+    return { mode: combine.mode === 'independent' ? 'independent' : 'assign', includeUnmatched: !!combine.includeUnmatched };
+  }
+
+  function cleanOutput(output) {
+    return output && typeof output === 'object' && Array.isArray(output.columns) ? { columns: output.columns } : null;
+  }
+
+  function cleanRead(read) {
+    const src = read && typeof read === 'object' ? read.source : null;
+    if (!src || typeof src !== 'object') return null;
+    return { source: { settings: src.settings || null, choices: src.choices || null, fileName: String(src.fileName || '') } };
+  }
+
+  function cleanView(view) {
+    return view && typeof view === 'object' && view.pageSize ? { pageSize: view.pageSize } : null;
+  }
+
+  function priorityOf(plain, index) {
+    const n = Number(plain && plain.priority);
+    return isFinite(n) && n > 0 ? n : index + 1;
+  }
+
+  /** 旧形式（format 1：条件 1 セット）→ 抽出条件 1 件 */
+  function parseLegacy(obj, fileName) {
+    if (!obj.query || !Array.isArray(obj.query.conditions)) throw new Error('LightQuery の条件設定ファイルではありません');
+    const read = obj.read && typeof obj.read === 'object' ? obj.read : {};
+    const cond = read.condition && typeof read.condition === 'object' ? read.condition : null;
+    const base = Util.baseName(fileName || '');
+    const plain = {
+      name: base && !RE_LEGACY_NAME.test(base) ? base : '読み込んだ抽出条件',
+      query: obj.query,
+      condition: cond ? { fileName: cond.fileName, settings: cond.settings, choices: cond.choices } : null
+    };
+    return {
+      kind: 'legacy',
+      profiles: [Profile.fromPlain(plain)],
+      skipped: 0,
+      combine: null,
+      rules: Normalizer.cleanRules(obj.rules),
+      output: cleanOutput(obj.output),
+      read: cleanRead(obj.read),
+      view: cleanView(obj.view)
+    };
+  }
+
+  const Bundle = {
+    /**
+     * 1 件の書き出し用オブジェクト。全体の照合ルールを使っている抽出条件は、その内容を globalRules に書く
+     * （読み込む側の全体の設定と違うとき、同じ結果になるよう個別の設定として付けるため）。
+     */
+    exportProfile(profile, priority, withData, globalRules) {
+      const obj = { app: APP, format: FORMAT, kind: 'profile', savedAt: new Date().toISOString(), profile: profileToPlain(profile, priority, withData) };
+      if (!profile.rules && globalRules) obj.globalRules = Util.clone(globalRules);
+      return obj;
+    },
+
+    /** 一括の書き出し用オブジェクト（今の一覧の全件と、振り分け・照合ルール・出力列・① の読み込み範囲・列の追加・集計の設定） */
+    exportLibrary(state, withData) {
+      const src = state.datasets.source;
+      return {
+        app: APP,
+        format: FORMAT,
+        kind: 'library',
+        savedAt: new Date().toISOString(),
+        profiles: state.profiles.items.map((p, i) => profileToPlain(p, i + 1, withData)),
+        combine: Util.clone(state.combine),
+        rules: Util.clone(state.rules),
+        output: { columns: Util.clone(state.output.memory) },
+        derived: Util.clone(state.derived),
+        aggregate: Util.clone(state.aggregate),
+        read: src ? { source: { settings: Util.clone(src.settings), choices: src.source.exportChoices(), fileName: src.name } } : {},
+        view: { pageSize: state.view.pageSize }
+      };
+    },
+
+    /** 読みやすい JSON（構造は字下げし、② の表は 1 行＝1 行で詰めて書く） */
+    stringify(obj) {
+      const grids = [];
+      const token = '@@LQGRID' + Date.now().toString(36) + '_';
+      const json = JSON.stringify(obj, (key, value) => {
+        if (key === 'grid' && Array.isArray(value)) {
+          grids.push(value);
+          return token + (grids.length - 1);
+        }
+        return value;
+      }, 2);
+      if (!grids.length) return json;
+      const re = new RegExp('"' + token + '(\\d+)"', 'g');
+      return json.replace(re, (match, idx, offset) => {
+        const rows = grids[Number(idx)];
+        if (!rows.length) return '[]';
+        const lineStart = json.lastIndexOf('\n', offset) + 1;
+        const indent = /^\s*/.exec(json.slice(lineStart, offset))[0];
+        return '[\n' + rows.map((r) => indent + '  ' + JSON.stringify(r)).join(',\n') + '\n' + indent + ']';
+      });
+    },
+
+    /**
+     * 読み込んだ JSON を解釈する。rules は書き出し元の全体の照合ルール（1 件のときは globalRules）。
+     * @returns {{kind:'profile'|'library'|'legacy', profiles:LQ.Profile[], skipped:number, combine:object|null,
+     *            rules:object|null, output:object|null, read:object|null, view:object|null}}
+     */
+    parse(obj, fileName) {
+      if (!obj || typeof obj !== 'object' || obj.app !== APP) throw new Error('LightQuery の抽出条件ファイルではありません');
+      if (obj.format === 1) return parseLegacy(obj, fileName);
+      if (obj.format !== FORMAT) throw new Error('このバージョンでは読み込めない形式です（format ' + obj.format + '）');
+      if (obj.kind === 'profile') {
+        if (!obj.profile || typeof obj.profile !== 'object') throw new Error('抽出条件が入っていません');
+        return {
+          kind: 'profile',
+          profiles: [Profile.fromPlain(obj.profile)],
+          skipped: 0,
+          combine: null,
+          rules: Normalizer.cleanRules(obj.globalRules),
+          output: null,
+          read: null,
+          view: null
+        };
+      }
+      if (obj.kind === 'library') {
+        const list = (Array.isArray(obj.profiles) ? obj.profiles : []).filter((p) => p && typeof p === 'object');
+        if (!list.length) throw new Error('抽出条件が 1 件も入っていません');
+        const ordered = list.map((p, i) => ({ p: p, rank: priorityOf(p, i), i: i }))
+          .sort((a, b) => a.rank - b.rank || a.i - b.i)
+          .map((x) => x.p);
+        return {
+          kind: 'library',
+          profiles: ordered.slice(0, Profile.MAX).map((p) => Profile.fromPlain(p)),
+          skipped: Math.max(0, ordered.length - Profile.MAX),
+          combine: cleanCombine(obj.combine),
+          rules: Normalizer.cleanRules(obj.rules),
+          output: cleanOutput(obj.output),
+          derived: obj.derived && typeof obj.derived === 'object'
+            ? { source: LQ.Derive.cleanList(obj.derived.source), condition: LQ.Derive.cleanList(obj.derived.condition) } : null,
+          aggregate: obj.aggregate && typeof obj.aggregate === 'object' ? LQ.AggregateSettings.clean(obj.aggregate) : null,
+          read: cleanRead(obj.read),
+          view: cleanView(obj.view)
+        };
+      }
+      throw new Error('抽出条件ファイルの種類を判別できません');
+    }
+  };
+
+  LQ.Bundle = Bundle;
+})(window);
+
+/* =========================================================================
+ * ── ブラウザへの自動保存 ──
  * 抽出条件の一覧と出力列の並びをブラウザ（localStorage）に自動保存し、次に開いたときに復元する。
  *   ・保存するのは自分の抽出条件（サンプルは保存しない）と、並び順・選択中・振り分けの設定・個別の照合ルール
  *   ・出力列の並びと表示は列の名前で覚える（サンプル表示中は、サンプル前の並びを保存し続ける）
@@ -239,4 +430,138 @@
   }
 
   LQ.ProfileStore = ProfileStore;
+})(window);
+
+/* =========================================================================
+ * ── 読み込みの記憶（毎月差し替える表のために） ──
+ * ① と、② の抽出条件ごとに、読み込み範囲（シート・ヘッダー行・データ開始行・開始列）と絞り込みを記憶し、
+ * 次に表を読み込んだときに当てはめる。
+ *   ・読み込み範囲：当てはめた結果の列名が、記憶した列名の 8 割以上と一致したときだけ使う（違う構成の表なら自動判定のまま）。
+ *                   終了行は月ごとに行数が変わるため引き継がない
+ *   ・絞り込み：列名で当てはめる。「値を選ぶ」は前回選んだ値だけを残し、前回の一覧になかった値（新しい値）は外して知らせる
+ *   キーは ① が 'source'、② が 'cond:' + 抽出条件の id。サンプルの表は記憶しない。
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+  const Prefs = LQ.Prefs;
+  const READ_KEY = 'loadMemory.read';
+  const FILTER_KEY = 'loadMemory.filters';
+  const MATCH_RATIO = 0.8;
+  const MAX_ENTRIES = 60;
+  const NEW_VALUE_LIMIT = 5;
+
+  function load(key) {
+    const v = Prefs.get(key, null);
+    return v && typeof v === 'object' ? v : {};
+  }
+
+  function save(key, map) {
+    const keys = Object.keys(map);
+    if (keys.length > MAX_ENTRIES) keys.slice(0, keys.length - MAX_ENTRIES).forEach((k) => delete map[k]);
+    Prefs.set(key, map);
+  }
+
+  function baseNames(ds) {
+    return ds.columns.filter((c) => !c.derived).map((c) => c.name);
+  }
+
+  function matchRatio(remembered, names) {
+    if (!remembered.length) return 0;
+    const set = new Set(names);
+    return remembered.filter((n) => set.has(n)).length / remembered.length;
+  }
+
+  const LoadMemory = {
+    keyOf(role, profileId) {
+      return role === 'source' ? 'source' : 'cond:' + profileId;
+    },
+
+    /** 今の読み込み範囲を記憶する */
+    rememberRead(key, ds) {
+      if (!ds || ds.isSample) return;
+      const map = load(READ_KEY);
+      const s = ds.settings;
+      delete map[key];
+      map[key] = {
+        sheet: ds.source.hasSheets ? ds.source.sheetName : '',
+        settings: { hasHeader: s.hasHeader, headerRow: s.headerRow, startRow: s.startRow, startCol: s.startCol },
+        columns: baseNames(ds)
+      };
+      save(READ_KEY, map);
+    },
+
+    /**
+     * 記憶した読み込み範囲を当てはめる（列名が合わなければ元に戻す）。
+     * @returns {string|null} 当てはめたときの説明
+     */
+    applyRead(key, ds) {
+      const m = load(READ_KEY)[key];
+      if (!m || !m.settings || !Array.isArray(m.columns)) return null;
+      const before = { choices: ds.source.exportChoices(), settings: Object.assign({}, ds.settings) };
+      const autoRatio = matchRatio(m.columns, baseNames(ds));
+      try {
+        const sheetChanged = m.sheet && ds.source.hasSheets && ds.source.sheetNames.indexOf(m.sheet) !== -1 && m.sheet !== ds.source.sheetName
+          ? ds.source.applyChoices({ sheet: m.sheet }) : false;
+        if (sheetChanged) ds.reload(null);
+        ds.applySettings(Object.assign({}, m.settings, { endRow: null }));
+      } catch (err) {
+        return null;
+      }
+      const ratio = matchRatio(m.columns, baseNames(ds));
+      if (ratio < MATCH_RATIO || ratio < autoRatio) {
+        if (ds.source.applyChoices(before.choices)) ds.reload(before.settings);
+        else ds.applySettings(before.settings);
+        return null;
+      }
+      const s = ds.settings;
+      return '前回と同じ読み込み範囲（' + (m.sheet && ds.source.hasSheets ? 'シート「' + m.sheet + '」・' : '') +
+        (s.hasHeader ? 'ヘッダー ' + s.headerRow + ' 行目・' : 'ヘッダーなし・') + 'データ ' + s.startRow + ' 行目から・開始列 ' +
+        LQ.Util.colLetter(s.startCol - 1) + '）を使いました。終了行は月ごとに行数が変わるため引き継いでいません';
+    },
+
+    /** 絞り込みを記憶する（[] なら「絞り込みなし」を記憶） */
+    rememberFilters(key, ds) {
+      if (!ds || ds.isSample) return;
+      const map = load(FILTER_KEY);
+      delete map[key];
+      map[key] = LQ.Util.clone(ds.filters || []);
+      save(FILTER_KEY, map);
+    },
+
+    /**
+     * 記憶した絞り込みを当てはめる。
+     * @returns {{count:number, notes:string[]}|null} 当てはめた件数と、知らせること（新しく出てきた値・列がない）
+     */
+    applyFilters(key, ds) {
+      const list = load(FILTER_KEY)[key];
+      if (!Array.isArray(list) || !list.length) return null;
+      const norm = new LQ.Normalizer(LQ.Normalizer.DEFAULT_RULES);
+      const notes = [];
+      list.forEach((f) => {
+        const c = ds.findColumn(f.col);
+        if (c < 0) {
+          notes.push('列「' + f.col + '」がないため、その絞り込みは使っていません');
+          return;
+        }
+        if (f.mode !== 'values') return;
+        const known = new Set((f.known || f.values || []).map((v) => norm.text(v)));
+        const fresh = new Set();
+        for (let r = 0; r < ds.baseRowCount; r++) {
+          const raw = ds.baseCell(r, c);
+          const v = LQ.Normalizer.isBlank(raw) ? '' : String(raw);
+          if (!known.has(norm.text(v))) fresh.add(v === '' ? '（空欄）' : v);
+        }
+        if (fresh.size) {
+          const shown = Array.from(fresh).slice(0, NEW_VALUE_LIMIT);
+          notes.push('「' + f.col + '」の前回の一覧になかった値 ' + fresh.size + ' 種類（' + shown.join('・') + (fresh.size > NEW_VALUE_LIMIT ? ' ほか' : '') + '）は外しています');
+        }
+      });
+      ds.setFilters(LQ.Util.clone(list));
+      return { count: list.length, notes: notes };
+    }
+  };
+
+  LQ.LoadMemory = LoadMemory;
 })(window);

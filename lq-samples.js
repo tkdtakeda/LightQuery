@@ -91,6 +91,8 @@
   const C = (left, op, right) => ({ left: left, op: op, right: right });
   const col = (name) => ({ type: 'column', col: name, value: '' });
   const fixed = (value) => ({ type: 'value', col: '', value: value });
+  const cols = (from, to) => ({ type: 'column', col: from, value: '', col2: to, value2: '' });
+  const fixedRange = (from, to) => ({ type: 'value', col: '', value: from, col2: '', value2: to });
   const Q = (conditions, extra) => Object.assign({ conditions: conditions, logic: { mode: 'and', expr: '' } }, extra || {});
   const orders = (seed) => {
     const rand = createRandom(seed);
@@ -297,6 +299,131 @@
           ],
           combine: { mode: 'independent', includeUnmatched: false },
           output: ['m:profile', 's:会員番号', 's:氏名', 's:区分', 'c:対象会員番号', 'c:メモ']
+        };
+      }
+    },
+    {
+      id: 'wildcard',
+      icon: 'asterisk',
+      title: '「*」のワイルドカードで取引先を抽出',
+      desc: '② の顧客名に「青木*」（前方一致）・「*電機」（後方一致）・「*物*」（含む）・「石*所」（途中）・「＊食品」（全角）のような「*」があると、完全一致でもワイルドカードとして当てはめます。「*」のない行はふつうの完全一致です。',
+      tags: ['完全一致', 'ワイルドカード', '照合ルール'],
+      build() {
+        const cond = [['顧客名', '担当', 'メモ'],
+          ['青木*', '東日本チーム', '前方一致：青木で始まる'], ['*電機', '家電チーム', '後方一致：電機で終わる'],
+          ['*物*', '商社チーム', '含む：物を含む'], ['石*所', '製造チーム', '途中：石で始まり所で終わる'],
+          ['＊食品', '食品チーム', '全角の＊も使える'], ['山口商事', '西日本チーム', '* なし：ふつうの完全一致']];
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1010) },
+          profiles: [{ name: '担当チームの取引先', condition: { name: 'サンプル_取引先パターン.csv', grid: cond }, query: Q([C('顧客名', 'eq', col('顧客名'))]) }],
+          output: ['s:受注番号', 's:受注日', 's:顧客名', 'c:顧客名', 'c:担当', 'c:メモ', 's:商品名', 's:金額']
+        };
+      }
+    },
+    {
+      id: 'dates',
+      icon: 'calendar-days',
+      title: '日付の範囲・期間で抽出',
+      desc: '受注日で「上期（2025/04/01〜2025/09/30）」を範囲で、「2025年12月」を期間で抽出します。「キャンペーン期間」は ② の地域ごとの開始日〜終了日で判定し、空欄の側は制限なし（大阪は 11/1 以降、福岡は 6/30 まで）です。',
+      tags: ['範囲（から〜まで）', '期間（年月）', '② の開始日・終了日', 'それぞれに出力'],
+      build() {
+        const campaign = [['地域', '開始日', '終了日', 'キャンペーン'],
+          ['東京', '2025/05/01', '2025/05/31', '初夏セール'], ['大阪', '2025/11/01', '', '秋冬フェア（終了日なし）'], ['福岡', '', '2025/06/30', '開業記念（開始日なし）']];
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1111) },
+          profiles: [
+            { name: '上期（4〜9月）', condition: null, query: Q([C('受注日', 'between', fixedRange('2025/04/01', '2025/09/30'))]) },
+            { name: '2025年12月', condition: null, query: Q([C('受注日', 'period', fixed('2025/12'))]) },
+            { name: 'キャンペーン期間', condition: { name: 'サンプル_キャンペーン期間.csv', grid: campaign },
+              query: Q([C('地域', 'eq', col('地域')), C('受注日', 'between', cols('開始日', '終了日'))]) }
+          ],
+          combine: { mode: 'independent', includeUnmatched: false },
+          output: ['m:profile', 's:受注番号', 's:受注日', 's:地域', 's:商品名', 's:金額', 'c:キャンペーン', 'c:開始日', 'c:終了日']
+        };
+      }
+    },
+    {
+      id: 'aggregate',
+      icon: 'calculator',
+      title: '抽出結果を地域ごとに集計（件数・合計・平均・標準偏差・順位）',
+      desc: '上期（2025/04/01〜2025/09/30）の受注を抽出し、集計タブで地域ごとの件数・金額の合計・平均・標準偏差、最初と最後の受注日を求め、合計金額の大きい順に順位を付けます。左の「集計」で列や集計のしかたを変えられます。',
+      tags: ['集計', 'グループごと', '順位', '範囲'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1212) },
+          profiles: [{ name: '上期の受注', condition: null, query: Q([C('受注日', 'between', fixedRange('2025/04/01', '2025/09/30'))]) }],
+          output: ORDER_HEADER.map((h) => 's:' + h),
+          aggregate: {
+            groupBy: ['s:地域'],
+            count: true,
+            measures: [{ key: 's:金額', fn: 'sum' }, { key: 's:金額', fn: 'avg' }, { key: 's:金額', fn: 'stdev' }, { key: 's:受注日', fn: 'min' }, { key: 's:受注日', fn: 'max' }],
+            rank: { target: 'sum|s:金額', dir: 'desc' }
+          },
+          tab: 'aggregate'
+        };
+      }
+    },
+    {
+      id: 'condagg',
+      icon: 'list-check',
+      title: '② の顧客ごとに件数・金額・順位を出す（② の行ごとの集計）',
+      desc: '② の重点顧客リストの 1 行ごとに、受注の件数・金額の合計・平均と、合計金額の順位を集計タブに出します。受注が 0 件の顧客（C9999）も 0 件として表に出ます。グループにする列を選ぶ必要はありません。',
+      tags: ['集計', '② の行ごと', '0 件の行も出す', '順位'],
+      build() {
+        const cond = [['顧客ID', '担当', '重点理由'],
+          ['C0012', '佐藤', '大口'], ['C0045', '鈴木', '新規'], ['C0078', '佐藤', '休眠復活'], ['C0101', '高橋', '大口'],
+          ['C0150', '鈴木', '重点'], ['C0202', '高橋', '新規'], ['C9999', '佐藤', '取引予定（受注なし）']];
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1313) },
+          profiles: [{ name: '重点顧客', condition: { name: 'サンプル_重点顧客.csv', grid: cond }, query: Q([C('顧客ID', 'eq', col('顧客ID'))]) }],
+          output: ['s:受注番号', 's:受注日', 's:顧客ID', 's:顧客名', 's:金額', 'c:担当'],
+          aggregate: {
+            mode: 'condRows',
+            count: true,
+            measures: [{ key: 's:金額', fn: 'sum' }, { key: 's:金額', fn: 'avg' }],
+            rank: { target: 'sum|s:金額', dir: 'desc' }
+          },
+          tab: 'aggregate'
+        };
+      }
+    },
+    {
+      id: 'derive',
+      icon: 'right-left',
+      title: '列の追加：読み替え（マスタ）と計算',
+      desc: '① に「大分類」（カテゴリを対応表で読み替え：文具 ⇒ 事務用品 など、対応表にない値は「その他」）と「税込金額」（ROUND([金額]×1.1, 0)）、「1 個あたり税込」（[税込金額]÷[数量]）の列を加え、大分類ごとに集計します。① の読み込みパネルの「列を追加」で中身を確かめられます。',
+      tags: ['読み替え', '計算', 'マスタ', '集計'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1414) },
+          profiles: [{ name: '税込 1 万円以上', condition: null, query: Q([C('税込金額', 'gte', fixed('10000'))]) }],
+          derived: {
+            source: [
+              { id: 'smp-map', kind: 'map', name: '大分類', from: 'カテゴリ', rows: [['文具', '事務用品'], ['家電', '電化製品'], ['食品', '飲食']], unmatched: 'value', value: 'その他' },
+              { id: 'smp-tax', kind: 'calc', name: '税込金額', expr: 'ROUND([金額]×1.1, 0)' },
+              { id: 'smp-unit', kind: 'calc', name: '1 個あたり税込', expr: 'ROUND([税込金額]÷[数量], 1)' }
+            ],
+            condition: []
+          },
+          output: ['s:受注番号', 's:受注日', 's:カテゴリ', 's:大分類', 's:数量', 's:金額', 's:税込金額', 's:1 個あたり税込'],
+          aggregate: { mode: 'columns', groupBy: ['s:大分類'], count: true, measures: [{ key: 's:税込金額', fn: 'sum' }, { key: 's:税込金額', fn: 'avg' }], rank: { target: 'sum|s:税込金額', dir: 'desc' } }
+        };
+      }
+    },
+    {
+      id: 'criteria',
+      icon: 'greater-than-equal',
+      title: '② の値に >= や <> を書いて比べる（Excel の COUNTIF と同じ書き方）',
+      desc: '比較方法は「完全一致」のまま、② の値に「>=30000」「<>食品」「<2025/07/01」のように比較演算子を書いて判定します。1 行目は家電で金額 30,000 以上、2 行目は食品以外で 2025/07/01 より前、3 行目は数量 = 20（ちょうど 20 個）の受注です。',
+      tags: ['完全一致', '比較演算子', '>=', '<>'],
+      build() {
+        const cond = [['カテゴリ', '金額', '受注日', '数量', 'メモ'],
+          ['家電', '>=30000', '', '', '家電の大口'], ['<>食品', '', '<2025/07/01', '', '食品以外の上期前半'], ['', '', '', '=20', 'ちょうど 20 個']];
+        const eq = (name) => C(name, 'eq', col(name));
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1515) },
+          profiles: [{ name: '比較演算子で判定', condition: { name: 'サンプル_比較演算子.csv', grid: cond }, query: Q([eq('カテゴリ'), eq('金額'), eq('受注日'), eq('数量')], { matchMode: 'first' }) }],
+          output: ['s:受注番号', 's:受注日', 's:カテゴリ', 's:数量', 's:金額', 'c:メモ']
         };
       }
     },
