@@ -489,7 +489,12 @@
    *   key()   … 完全一致・一致しない用（数値・日付・文字列で同値を判定）
    *   typed() … 以上・未満などの大小比較や並べ替え用
    * ------------------------------------------------------------------- */
-  const DEFAULT_RULES = Object.freeze({ space: 'trim', width: true, caseless: true, numeric: true, date: true, wildcard: true });
+  const DEFAULT_RULES = Object.freeze({ space: 'trim', width: true, caseless: true, numeric: true, date: true, wildcard: true, compare: true });
+  /* 比較演算子の書き方（Excel の COUNTIF と同じ）。全角・≧≦≠ も読む */
+  const CMP_CHARS = { '>': '>', '<': '<', '=': '=', '＞': '>', '＜': '<', '＝': '=', '≧': '>=', '≦': '<=', '≠': '<>' };
+  const CMP_OPS = ['>=', '<=', '<>', '>', '<', '='];
+  const CMP_OPERATOR = { '>=': 'gte', '>': 'gt', '<=': 'lte', '<': 'lt' };
+  const CMP_PHRASE = { '>=': '以上', '>': 'を超える', '<=': '以下', '<': '未満', '=': 'と等しい', '<>': '以外' };
   const SPACE_VALUES = ['trim', 'all', 'keep'];
   const TYPE = Object.freeze({ EMPTY: 0, NUMBER: 1, DATE: 2, TEXT: 3 });
   const EMPTY_TYPED = Object.freeze({ t: TYPE.EMPTY, n: 0, s: '' });
@@ -539,7 +544,7 @@
     /** ルールの組み合わせを表す文字列（計算結果の再利用・結果が最新かの判定に使う。欠けている項目は初期値） */
     static signatureOf(rules) {
       const r = Object.assign({}, DEFAULT_RULES, rules || {});
-      return [r.space, r.width ? 1 : 0, r.caseless ? 1 : 0, r.numeric ? 1 : 0, r.date ? 1 : 0, r.wildcard ? 1 : 0].join('|');
+      return [r.space, r.width ? 1 : 0, r.caseless ? 1 : 0, r.numeric ? 1 : 0, r.date ? 1 : 0, r.wildcard ? 1 : 0, r.compare ? 1 : 0].join('|');
     }
 
     get signature() {
@@ -596,10 +601,50 @@
       return s.indexOf('*') === -1 ? null : Wildcard.compile(s);
     }
 
-    /** prep 種別（key / text / typed / glob）に応じた変換関数を返す */
+    /**
+     * 完全一致で使う「判定の書き方」：先頭の比較演算子（>=0.1・<>アヒル・<2011/01/01・= だけ・<> だけ）と「*」のワイルドカード。
+     * どちらでもない値・ルールが OFF なら null。
+     * @returns {{kind:string, label:string, test:function(string, string, object):boolean}|null}
+     *          test(key, text, typed) は ① の値をそろえた 3 つの形（Normalizer.key / text / typed）を受け取る
+     */
+    criteria(value) {
+      if (Normalizer.isBlank(value)) return null;
+      if (this.rules.compare) {
+        const raw = String(value).trim();
+        let i = 0;
+        let op = '';
+        while (i < raw.length && CMP_CHARS[raw[i]] !== undefined) op += CMP_CHARS[raw[i++]];
+        if (op && CMP_OPS.indexOf(op) !== -1) return this._compareCriteria(op, raw.slice(i).trim());
+      }
+      const glob = this.glob(value);
+      if (!glob) return null;
+      return { kind: 'glob', label: 'ワイルドカード：' + Wildcard.kindLabel(glob.kind), test: (key, text) => glob.test(text) };
+    }
+
+    _compareCriteria(op, rest) {
+      const label = op + rest + ' ＝ ' + (rest === '' ? (op === '=' ? '空欄' : '空欄以外') : rest + ' ' + CMP_PHRASE[op]);
+      if (rest === '') {
+        if (op === '=') return { kind: 'blank', label: label, test: (key, text, typed) => typed.t === TYPE.EMPTY };
+        if (op === '<>') return { kind: 'filled', label: label, test: (key, text, typed) => typed.t !== TYPE.EMPTY };
+        return null;
+      }
+      if (op === '=' || op === '<>') {
+        const neg = op === '<>';
+        const glob = this.glob(rest);
+        if (glob) return { kind: 'compare', label: label, test: (key, text) => glob.test(text) !== neg };
+        const right = this.key(rest);
+        return { kind: 'compare', label: label, test: (key) => (key === right) !== neg };
+      }
+      const right = this.typed(rest);
+      const id = CMP_OPERATOR[op];
+      return { kind: 'compare', label: label, test: (key, text, typed) => LQ.Operators.get(id).test(typed, right) === true };
+    }
+
+    /** prep 種別（key / text / typed / glob / criteria）に応じた変換関数を返す */
     converter(prep) {
       if (prep === 'key') return (v) => this.key(v);
       if (prep === 'glob') return (v) => this.glob(v);
+      if (prep === 'criteria') return (v) => this.criteria(v);
       if (prep === 'period') {
         const now = new Date();
         return (v) => LQ.Period.parse(v, now);
@@ -618,7 +663,8 @@
         r.caseless ? '大文字・小文字を区別しない' : '大文字・小文字を区別',
         r.numeric ? '数値は数値で比較' : '数値も文字で比較',
         r.date ? '日付は日付で比較' : '日付も文字で比較',
-        r.wildcard ? '完全一致で * はワイルドカード' : '* も文字として比較'
+        r.wildcard ? '完全一致で * はワイルドカード' : '* も文字として比較',
+        r.compare ? '完全一致で >= などは比較演算子' : '>= なども文字として比較'
       ].join('・');
     }
   }

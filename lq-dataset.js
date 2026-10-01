@@ -818,8 +818,13 @@
         return { test: (r) => op.test(conv(at(r, col)), lo, hi) === true };
       }
       if (blank(f.value)) return { test: null, message: '値を入力してください' };
-      const pattern = op.wildcard ? norm.glob(f.value) : null;
-      if (pattern) return { test: (r) => pattern.test(norm.text(at(r, col))) !== op.negative };
+      const pattern = op.wildcard ? norm.criteria(f.value) : null;
+      if (pattern) {
+        return { test: (r) => {
+          const v = at(r, col);
+          return pattern.test(norm.key(v), norm.text(v), norm.typed(v)) !== op.negative;
+        } };
+      }
       const right = norm.converter(op.rightPrep || op.prep)(f.value);
       if (op.rightPrep === 'period' && !right) return { test: null, message: '「' + f.value + '」は期間として読めません（例：2024/05・今月・直近30日）' };
       const left = norm.converter(op.prep);

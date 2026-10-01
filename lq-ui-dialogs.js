@@ -458,8 +458,8 @@
       const notes = [];
       st.perCondition.forEach((p) => {
         if (p.blankRows) notes.push('条件 ' + p.label + '：② の空欄 ' + fmt(p.blankRows) + ' 行は、この条件を判定していません。');
-        if (p.wildcardRows) notes.push('条件 ' + p.label + '：② の ' + fmt(p.wildcardRows) + ' 行は「*」を含むため、ワイルドカード（例：山田* ＝ 山田で始まる）として判定しました。');
-        if (p.wildcardValue) notes.push('条件 ' + p.label + '：固定値に「*」を含むため、ワイルドカードとして判定しました。');
+        if (p.wildcardRows) notes.push('条件 ' + p.label + '：② の ' + fmt(p.wildcardRows) + ' 行は「*」や「>=」などの書き方を含むため、その書き方（例：山田* ＝ 山田で始まる、>=0.1 ＝ 0.1 以上）で判定しました。');
+        if (p.wildcardValue) notes.push('条件 ' + p.label + '：固定値に「*」や「>=」などの書き方を含むため、その書き方で判定しました。');
         if (p.incomparable) notes.push('条件 ' + p.label + '：数値と文字など比較できない組み合わせが ' + fmt(p.incomparable) + ' 件あり、不一致として扱いました。');
       });
       return h('div', { class: 'lq-resultpart' }, [

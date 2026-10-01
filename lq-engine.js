@@ -134,7 +134,8 @@
  * 比較方法（演算子）の登録簿。新しい比較方法は register() で追加するだけでよい。
  *   prep：値の下ごしらえ方法（key＝同値判定用 / text＝文字列比較用 / typed＝大小比較用）
  *   test(left, right)：true / false / null（比較できない）を返す
- *   wildcard：② の値・固定値の「*」をワイルドカードとして扱う（照合ルールが ON のとき。negative なら当てはまらない行が真）
+ *   wildcard：② の値・固定値の「*」（ワイルドカード）と先頭の比較演算子（>=0.1・<>アヒル など。Excel の COUNTIF と同じ書き方）を
+ *             判定の書き方として扱う（Normalizer.criteria。照合ルールが ON のとき。negative なら当てはまらない行が真）
  *   rightPrep：② の値・固定値の下ごしらえが ① と違うとき（期間 = period）
  *   pair：② の値を 2 つ使う（範囲：開始〜終了。test(left, right, right2)）
  *   date：① が日付の列のときの呼び方 {name, phrase}（以降・以前など）
@@ -913,7 +914,7 @@
         const p = { cond: c, label: c.label, op: op, test: op.test, isColumn: c.right.type === 'column', incomparable: 0, blankCount: 0,
           pattern: null, valuePattern: null, patternCount: 0 };
         const lc = source.findColumn(c.left);
-        const glob = op.wildcard && norm.rules.wildcard;
+        const glob = op.wildcard && (norm.rules.wildcard || norm.rules.compare);
         const rprep = op.rightPrep || op.prep;
         p.left = await this._column(source, lc, op.prep, norm, tick);
         if (op.pair) {
@@ -924,16 +925,19 @@
           p.blank = await this._column(condition, rc, 'blank', norm, tick);
           for (let r = 0; r < p.blank.length; r++) p.blankCount += p.blank[r];
           if (glob) {
-            const pattern = await this._column(condition, rc, 'glob', norm, tick);
+            const pattern = await this._column(condition, rc, 'criteria', norm, tick);
             for (let r = 0; r < pattern.length; r++) if (pattern[r]) p.patternCount++;
             if (p.patternCount) p.pattern = pattern;
           }
         } else {
           p.value = norm.converter(rprep)(c.right.value);
-          if (glob) p.valuePattern = norm.glob(c.right.value);
+          if (glob) p.valuePattern = norm.criteria(c.right.value);
           if (p.valuePattern) p.patternCount = 1;
         }
-        if (p.patternCount) p.leftText = await this._column(source, lc, 'text', norm, tick);
+        if (p.patternCount) {
+          p.leftText = await this._column(source, lc, 'text', norm, tick);
+          p.leftTyped = await this._column(source, lc, 'typed', norm, tick);
+        }
         prepared.push(p);
       }
       const byLabel = new Map(prepared.map((p) => [p.label, p]));
@@ -1120,6 +1124,7 @@
         const test = p.test;
         const L = p.left;
         const LT = p.leftText;
+        const LY = p.leftTyped;
         const neg = p.op.negative;
         if (p.op.pair) {
           const R = p.right;
@@ -1143,7 +1148,7 @@
           const P = p.pattern;
           return (x, r) => {
             if (B[r] === 1) return -1;
-            if (P && P[r]) return P[r].test(LT[x]) !== neg ? 1 : 0;
+            if (P && P[r]) return P[r].test(L[x], LT[x], LY[x]) !== neg ? 1 : 0;
             const res = test(L[x], R[r]);
             if (res === null) {
               p.incomparable++;
@@ -1154,7 +1159,7 @@
         }
         const value = p.value;
         const VP = p.valuePattern;
-        if (VP) return (x) => (VP.test(LT[x]) !== neg ? 1 : 0);
+        if (VP) return (x) => (VP.test(L[x], LT[x], LY[x]) !== neg ? 1 : 0);
         return (x) => {
           const res = test(L[x], value);
           if (res === null) {
@@ -1211,10 +1216,10 @@
           base.rightName = '固定値';
           base.rightValue = c.right.value;
         }
-        const pattern = op.wildcard ? norm.glob(base.rightValue) : null;
+        const pattern = op.wildcard ? norm.criteria(base.rightValue) : null;
         if (pattern) {
-          base.state = pattern.test(norm.text(leftValue)) !== op.negative ? 'true' : 'false';
-          base.phrase = (op.negative ? 'に当てはまらない' : 'に当てはまる') + '（* はワイルドカード：' + LQ.Wildcard.kindLabel(pattern.kind) + '）';
+          base.state = pattern.test(norm.key(leftValue), norm.text(leftValue), norm.typed(leftValue)) !== op.negative ? 'true' : 'false';
+          base.phrase = (op.negative ? 'に当てはまらない' : 'に当てはまる') + '（' + pattern.label + '）';
           return base;
         }
         const rightValue = norm.converter(op.rightPrep || op.prep)(base.rightValue);
