@@ -208,7 +208,7 @@
 
 /* =========================================================================
  * ── 表の描画 ──
- * 表の描画：見出しの固定、出どころのバッジ、並べ替え（見出しクリック）、列の移動（見出しドラッグ）、
+ * 表の描画：見出しの固定、出どころのバッジ、見出しを押すと列の一覧（並べ替え・絞り込み・出力する）、列の移動（見出しドラッグ）、
  *   行番号からの操作（判定根拠・読み込み範囲の指定）、列幅の手動調整（ColumnSizer）。値はすべてエスケープして描く。
  *   列幅は中身の文字数に合わせ（表を画面幅に引き伸ばさない）、手で変えた列だけ幅を固定する。
  * ========================================================================= */
@@ -293,8 +293,8 @@
           let cls = sizeStyle[c] ? (cellClass[c] ? cellClass[c] + ' is-sized' : 'is-sized') : cellClass[c];
           if (isToggleRow && col.toggleKey) {
             cls = (cls ? cls + ' ' : '') + 'is-toggle';
-            out.push('<td class="' + cls + '"' + sizeStyle[c] + ' data-toggle="' + esc(col.toggleKey) + '" title="' + esc(this._toggleTitle(col)) + '">' +
-              this._eye(col.off) + esc(v) + '</td>');
+            out.push('<td class="' + cls + '"' + sizeStyle[c] + ' data-menu="' + esc(col.toggleName) + '" title="' + esc(this._toggleTitle(col)) + '">' +
+              this._eye(col.off) + esc(v) + this._stateIcons(col) + '</td>');
             continue;
           }
           const title = v.length > TITLE_LENGTH || sizeStyle[c] ? ' title="' + esc(v) + '"' : '';
@@ -340,33 +340,33 @@
           esc(col.label) + '</th>';
       }
       if (mode === 'data') {
-        const toggle = col.toggleKey
-          ? ' data-toggle="' + esc(col.toggleKey) + '" title="' + esc(this._toggleTitle(col)) + '"'
-          : '';
+        const menu = col.toggleKey ? ' data-menu="' + esc(col.label) + '" title="' + esc(this._toggleTitle(col)) + '"' : '';
         const cls = 'is-resizable' + sized + (col.toggleKey ? ' is-toggle' + (col.off ? ' is-off' : '') : '');
         const eye = col.toggleKey ? this._eye(col.off) : '';
-        const funnel = col.filterName !== undefined
-          ? '<span class="lq-th__filter' + (col.filtered ? ' is-active' : '') + '" data-filter="' + esc(col.filterName) + '" title="' +
-            esc(col.filterName + (col.filtered ? '：絞り込み中（押すと直す・外す）' : '：この列で絞り込む')) + '"><i class="fa-solid fa-filter" aria-hidden="true"></i></span>'
-          : '';
-        return '<th class="' + cls + '"' + style + toggle + '><div class="lq-th">' + eye + '<span class="lq-th__name">' + esc(col.label) + '</span><span class="lq-th__letter">' +
-          esc(col.letter || '') + '</span>' + funnel + '</div>' + grip + '</th>';
+        return '<th class="' + cls + '"' + style + menu + '><div class="lq-th">' + eye + '<span class="lq-th__name">' + esc(col.label) + '</span><span class="lq-th__letter">' +
+          esc(col.letter || '') + '</span>' + (col.toggleKey ? this._stateIcons(col) : '') + '</div>' + grip + '</th>';
       }
       const cls = ['is-sortable', 'is-resizable'];
       if (style) cls.push('is-sized');
       if (col.sortDir) cls.push('is-sorted');
       if (col.kind === 'condition') cls.push('is-cond');
       if (col.kind === 'meta') cls.push('is-meta');
-      const sortIcon = SORT_ICON[col.sortDir] || 'sort';
       const sortText = col.sortDir === 'asc' ? '昇順' : (col.sortDir === 'desc' ? '降順' : '');
+      const sortIcon = col.sortDir ? '<i class="fa-solid fa-' + SORT_ICON[col.sortDir] + ' lq-th__sort" aria-hidden="true"></i>' : '';
       return '<th class="' + cls.join(' ') + '"' + style + ' data-key="' + esc(col.key) + '" draggable="true" title="' +
-        esc(col.label) + '：クリックで並べ替え（昇順→降順→解除）・ドラッグで列を移動' + (sortText ? '（現在 ' + sortText + '）' : '') + '">' +
-        '<div class="lq-th">' + (BADGE[col.kind] || '') + '<span class="lq-th__name">' + esc(col.label) + '</span>' +
-        '<i class="fa-solid fa-' + sortIcon + ' lq-th__sort" aria-hidden="true"></i></div>' + grip + '</th>';
+        esc(col.label) + '：押すと一覧（並べ替え・出力する）・ドラッグで列を移動' + (sortText ? '（今は ' + sortText + '）' : '') + '">' +
+        '<div class="lq-th">' + (BADGE[col.kind] || '') + '<span class="lq-th__name">' + esc(col.label) + '</span>' + sortIcon +
+        '<i class="fa-solid fa-caret-down lq-th__caret" aria-hidden="true"></i></div>' + grip + '</th>';
     }
 
     _toggleTitle(col) {
-      return (col.toggleName || col.label) + '：' + (col.off ? '出力しない列です（押すと出力する）' : '出力する列です（押すと出力しない）');
+      return (col.toggleName || col.label) + '：押すと一覧（絞り込み・出力する）' + (col.filtered ? '・絞り込み中' : '') + (col.off ? '・出力しない列' : '');
+    }
+
+    /** 見出しの状態のアイコン（絞り込み中は漏斗）と、一覧が開くことを示す ▼ */
+    _stateIcons(col) {
+      return (col.filtered ? '<i class="fa-solid fa-filter lq-th__filtered" aria-hidden="true"></i>' : '') +
+        '<i class="fa-solid fa-caret-down lq-th__caret" aria-hidden="true"></i>';
     }
 
     _eye(off) {
@@ -423,17 +423,12 @@
       }
       const th = e.target.closest('th[data-key]');
       if (th && this.model.mode === 'result') {
-        this.handlers.onSort(th.dataset.key);
+        this.handlers.onResultMenu(th.dataset.key, th);
         return;
       }
-      const funnel = e.target.closest('[data-filter]');
-      if (funnel && this.handlers.onFilterColumn) {
-        this.handlers.onFilterColumn(funnel.dataset.filter, funnel);
-        return;
-      }
-      const toggle = e.target.closest('[data-toggle]');
-      if (toggle) {
-        this.handlers.onToggleColumn(toggle.dataset.toggle, toggle.classList.contains('is-off'));
+      const menu = e.target.closest('[data-menu]');
+      if (menu) {
+        this.handlers.onColumnMenu(menu.dataset.menu, menu);
         return;
       }
       const colHead = e.target.closest('th[data-col]');

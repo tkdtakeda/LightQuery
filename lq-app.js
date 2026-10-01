@@ -699,7 +699,8 @@
       this.resultDialogs = new LQ.ResultDialogs(ctx);
       this.profileDialogs = new LQ.ProfileDialogs(ctx);
       this.manual = new LQ.ManualModal(ctx);
-      this.filterEditor = new LQ.FilterEditor(ctx);
+      this.columnMenu = new LQ.ColumnMenu(ctx);
+      this.resultColumnMenu = new LQ.ResultColumnMenu(ctx);
       this.panels = {
         source: new LQ.DatasetPanel(ctx, 'source'),
         condition: new LQ.DatasetPanel(ctx, 'condition'),

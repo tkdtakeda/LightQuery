@@ -39,12 +39,11 @@
       this.condBar = new LQ.CondTableBar(ctx);
       Dom.append(this.root, [h('div', { class: 'lq-tabbar' }, [this.tabs, this.tools]), this.info, this.gridwrap, this.pager]);
       this.grid = new LQ.GridView(ctx, this.gridwrap, {
-        onSort: (key) => this._cycleSort(key),
+        onResultMenu: (key, anchor) => this.app.resultColumnMenu.open(anchor, key),
         onMove: (key, target, after) => this.state.moveColumn(key, target, after),
         onRowHead: (head, anchor) => this._onRowHead(head, anchor),
         onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col),
-        onToggleColumn: (key, visible) => this.state.setColumnVisible(key, visible),
-        onFilterColumn: (name, anchor) => this.app.filterEditor.open(anchor, this.state.view.tab, name)
+        onColumnMenu: (name, anchor) => this.app.columnMenu.open(anchor, this.state.view.tab, name)
       });
       this.display = new LQ.GridDisplay(ctx, this.gridwrap);
       this.aggregate = new LQ.AggregateTab(this);
@@ -463,7 +462,7 @@
       const total = raw ? ds.rawRowCount : ds.rowCount;
       const paging = this._paging(role, total);
       this.grid.render(raw ? this._rawModel(ds, paging) : this._dataModel(ds, paging));
-      this._visCount = h('span', { class: 'lq-num', title: (raw ? 'ヘッダー行の列名' : '見出し') + 'を押すと、その列を出力する／しないを切り替えます（出力列パネル・読み込みパネルの列タグと同じ設定）' });
+      this._visCount = h('span', { class: 'lq-num', title: (raw ? 'ヘッダー行の列名' : '見出し') + 'を押すと一覧が開き、出力する／しないの切り替えと絞り込みができます（出力列パネル・読み込みパネルの列タグと同じ設定）' });
       this._visCount.textContent = this._visText(this._isVisible());
       const summary = this.info.querySelector('.lq-summary');
       if (summary && ds.colCount) summary.appendChild(h('span', { class: 'lq-summary__item' }, [Dom.icon('eye'), this._visCount]));
@@ -486,7 +485,7 @@
       ];
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
       if (raw) {
-        this.info.appendChild(UI.note('tip', '元のシートのまま表示しています。行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列を出力する／しないを切り替えます（出力しない列は薄く表示）。'));
+        this.info.appendChild(UI.note('tip', '元のシートのまま表示しています。行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列の一覧（値で絞り込む・出力する）が開きます（出力しない列は薄く表示）。'));
       }
       if (!ds.rowCount) this.info.appendChild(UI.note('warn', 'データ行がありません。「読み込み範囲」でヘッダー行・データ開始行を確認してください。'));
     }
@@ -511,7 +510,7 @@
       const model = this.grid.model;
       const cols = model ? model.columns.filter((c) => c.toggleKey) : [];
       const where = model && model.mode === 'raw' ? 'ヘッダー行の列名' : '見出し';
-      return '出力する列 ' + cols.filter((c) => isVisible(c.toggleKey)).length + ' / ' + cols.length + '（' + where + 'を押して切替）';
+      return '出力する列 ' + cols.filter((c) => isVisible(c.toggleKey)).length + ' / ' + cols.length + '（' + where + 'を押すと一覧で切替・絞り込み）';
     }
 
     _dataModel(ds, paging) {
@@ -530,7 +529,7 @@
         columns: ds.columns.map((c) => {
           const toggleKey = (ds.role === 'source' ? 's:' : 'c:') + c.name;
           return { key: 'd:' + c.index, label: c.name, letter: c.letter, toggleKey: toggleKey, off: !isVisible(toggleKey),
-            filterName: c.name, filtered: (ds.filters || []).some((f) => f.col === c.name) };
+            filtered: (ds.filters || []).some((f) => f.col === c.name) };
         }),
         rows: rows,
         numeric: this._numericColumns(rows, ds.colCount)
@@ -551,7 +550,8 @@
         const col = byRaw.get(c);
         const toggleKey = col ? prefix + col.name : null;
         columns.push({ key: 'r:' + c, label: Util.colLetter(c), colIndex: c, isStart: c === set.startCol - 1, out: c < set.startCol - 1,
-          toggleKey: toggleKey, toggleName: col ? col.name : '', off: !!toggleKey && !isVisible(toggleKey) });
+          toggleKey: toggleKey, toggleName: col ? col.name : '', off: !!toggleKey && !isVisible(toggleKey),
+          filtered: !!col && (ds.filters || []).some((f) => f.col === col.name) });
       }
       let toggleRow = -1;
       const rows = [];
@@ -676,13 +676,6 @@
       if (applied !== n) {
         this.ctx.toasts.show({ type: 'warn', title: '1 ページの上限は ' + Util.formatInt(LQ.AppState.PAGE_SIZE_MAX) + ' 行です', message: Util.formatInt(applied) + ' 行にしました。全件は「出力」で確認できます。' });
       }
-    }
-
-    _cycleSort(key) {
-      const cur = this.state.view.sort;
-      let next = { key: key, dir: 'asc' };
-      if (cur && cur.key === key) next = cur.dir === 'asc' ? { key: key, dir: 'desc' } : null;
-      this.state.setSort(next);
     }
 
     _onRowHead(head, anchor) {
