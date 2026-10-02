@@ -522,9 +522,11 @@
         this.toasts.show({ type: 'error', title: '抽出条件を読み込めませんでした', message: file.name + '：' + err.message });
         return;
       }
+      const ws = this.app.worksets;
+      const canNewSet = bundle.kind === 'library' && !!ws && ws.available;
       if (bundle.kind === 'library' && !this._ownListIsBlank()) {
-        this.app.profileDialogs.openImportChoice({ fileName: file.name, count: bundle.profiles.length },
-          (mode) => this.applyBundle(bundle, mode, file.name));
+        this.app.profileDialogs.openImportChoice({ fileName: file.name, count: bundle.profiles.length, canNewSet: canNewSet },
+          (mode) => (mode === 'newSet' ? ws.importAsNew(bundle, file.name, obj.worksetName) : this.applyBundle(bundle, mode, file.name)));
         return;
       }
       this.applyBundle(bundle, bundle.kind === 'library' ? 'replace' : 'add', file.name);
@@ -739,6 +741,9 @@
       this.main = new LQ.MainView(ctx);
       this.progressCard = new LQ.ProgressCard(ctx, Dom.qs('#lqMain'));
       this.shell = new LQ.Shell(ctx, this.panels);
+      this.worksets = new LQ.Worksets(this);
+      this.worksetButton = new LQ.WorksetButton(ctx, Dom.qs('#lqTopbar'), this.worksets);
+      this.worksets.init(restored);
       this.store.attach((notice) => this.toasts.show(notice));
       this.bus.on('panel', () => this._syncPanelView());
       LQ.ExcelLibrary.subscribe(() => this.bus.emit('change', { topic: 'library' }));
@@ -803,8 +808,9 @@
       }
       const src = s.datasets.source;
       if (!src) {
+        const last = this.worksets ? this.worksets.lastSourceName() : '';
         return { id: 'loadSource', label: '① 元データを読み込む', icon: 'file-import',
-          status: { kind: 'info', text: 'ドラッグ＆ドロップや Ctrl+V の貼り付けでも読み込めます' } };
+          status: { kind: 'info', text: last ? 'このセットは前回「' + last + '」を使いました' : 'ドラッグ＆ドロップや Ctrl+V の貼り付けでも読み込めます' } };
       }
       const aggCta = this._sourceAggregateCta();
       if (aggCta) return aggCta;

@@ -830,3 +830,150 @@
   color: var(--color-text-muted);
   font-size: var(--fs-xs);
 }
+
+/* ---------- 作業セット（上部バーのボタンと一覧の小窓） ---------- */
+.lq-wsbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: var(--w-wsbtn-max);
+  height: var(--h-control);
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--color-primary-line);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-faint);
+  color: var(--color-primary-strong);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-wsbtn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.lq-wsbtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-width) var(--color-focus-ring);
+}
+
+.lq-wsbtn:disabled {
+  border-color: var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.lq-wsbtn__name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lq-wsbtn__caret {
+  font-size: var(--icon-xs);
+  color: var(--color-text-muted);
+}
+
+.lq-wslist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: var(--h-wslist-max);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.lq-wsrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--indicator-width) solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.lq-wsrow:hover {
+  background: var(--color-surface-hover);
+}
+
+.lq-wsrow.is-active {
+  border-left-color: var(--color-primary);
+  background: var(--color-primary-faint);
+}
+
+.lq-wsrow__main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lq-wsrow.is-active .lq-wsrow__main {
+  cursor: default;
+}
+
+.lq-wsrow__icon {
+  color: var(--color-primary);
+  font-size: var(--icon-md);
+}
+
+.lq-wsrow__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.lq-wsrow__name {
+  overflow: hidden;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lq-wsrow__meta {
+  color: var(--color-text-sub);
+  font-size: var(--fs-xs);
+}
+
+.lq-wsrow__check {
+  color: var(--color-primary);
+}
+
+.lq-wsrow__tools {
+  display: flex;
+  flex: 0 0 auto;
+  opacity: var(--opacity-sub);
+}
+
+.lq-wsrow:hover .lq-wsrow__tools,
+.lq-wsrow:focus-within .lq-wsrow__tools {
+  opacity: 1;
+}
+
+.lq-wsrow__input {
+  width: 100%;
+}
+
+.lq-wslist__empty {
+  padding: var(--space-4);
+  color: var(--color-text-sub);
+  font-size: var(--fs-sm);
+}

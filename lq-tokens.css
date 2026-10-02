@@ -242,6 +242,8 @@
   --h-combo-list: 320px;
   --w-combo-list-min: 240px;
   --w-combo-letter: 28px;
+  --w-wsbtn-max: 260px;
+  --h-wslist-max: 52dvh;
 
   /* ---------- 影 ---------- */
   --shadow-sm: 0 1px 2px rgba(19, 48, 79, 0.08);

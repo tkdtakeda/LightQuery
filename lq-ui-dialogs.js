@@ -621,18 +621,28 @@
       const btn = (mode, icon, title, sub, key, primary) => h('button', {
         class: 'lq-btn lq-btn--block lq-btn--tall' + (primary ? ' lq-btn--primary' : ''), type: 'button', onclick: () => choose(mode)
       }, [Dom.icon(icon), h('span', { class: 'lq-btn__text' }, [h('span', { text: title }), h('span', { class: 'lq-btn__sub', text: sub })]), h('span', { class: 'lq-kbd', text: key })]);
-      const first = btn('replace', 'arrows-rotate', '今の一覧と置き換える', '照合ルール・出力列・振り分けの設定もファイルの内容にします', '1', true);
+      /* 作業セットが使えるときは「新しいセットとして追加」を先頭にする（今の作業を上書きしないため） */
+      const modes = (info.canNewSet ? ['newSet'] : []).concat(['replace', 'add']);
+      const DEF = {
+        newSet: ['folder-plus', '新しい作業セットとして追加する', '今のセットはそのまま。ファイルの内容で新しいセットを作って開きます'],
+        replace: ['arrows-rotate', '今の一覧と置き換える', '照合ルール・出力列・振り分けの設定もファイルの内容にします'],
+        add: ['plus', '今の一覧の後ろに追加する', '今の設定はそのまま。優先順位は下になり、照合ルールが違う分は個別の設定として付けます']
+      };
+      const buttons = modes.map((m, i) => btn(m, DEF[m][0], DEF[m][1], DEF[m][2], String(i + 1), i === 0));
       this.pop.open(null, [
         this._head('file-import', '抽出条件の一括ファイルを読み込みます'),
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
-          h('p', { text: info.fileName + '（抽出条件 ' + info.count + ' 件）を、どのように読み込みますか？' }),
-          first,
-          btn('add', 'plus', '今の一覧の後ろに追加する', '今の設定はそのまま。優先順位は下になり、照合ルールが違う分は個別の設定として付けます', '2', false),
-          h('p', { class: 'lq-field__hint', text: 'どちらも、通知の「元に戻す」で読み込む前に戻せます。' })
-        ])])
+          h('p', { text: info.fileName + '（抽出条件 ' + info.count + ' 件）を、どのように読み込みますか？' })
+        ].concat(buttons, [
+          h('p', { class: 'lq-field__hint', text: 'どれも、通知の「元に戻す」で読み込む前に戻せます。' })
+        ]))])
       ], { key: 'importchoice', size: 'lg', onClose: () => release && release() });
-      release = this._keys({ 1: () => choose('replace'), 2: () => choose('add') });
-      first.focus();
+      const keys = {};
+      modes.forEach((m, i) => {
+        keys[i + 1] = () => choose(m);
+      });
+      release = this._keys(keys);
+      buttons[0].focus();
     }
 
     /* ---------------- 表（複数ファイル・複数シート）の選択 ---------------- */
