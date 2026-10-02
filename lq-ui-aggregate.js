@@ -271,6 +271,14 @@
         .filter((k) => (onSource ? k.slice(0, 2) === 's:' : k.slice(0, 2) !== 'm:' || meta.indexOf(k) !== -1));
     }
 
+    /** 列の選択欄を入力で探せる欄にする（候補の左に列記号を出す） */
+    _combo(select) {
+      return LQ.ColumnCombo.enhance(select, { letterOf: (key) => {
+        const role = { 's:': 'source', 'c:': 'condition' }[key.slice(0, 2)];
+        return role ? LQ.ColumnCombo.letterIn(this.state.datasets[role], LQ.ResultView.nameOf(key)) : '';
+      } });
+    }
+
     _options(keys) {
       const groups = ['s:', 'c:', 'm:'].map((prefix) => ({
         group: KIND_LABEL[prefix],
@@ -386,13 +394,13 @@
       const full = st.groupBy.length >= Settings.MAX_GROUPS;
       const add = h('select', { class: 'lq-select', disabled: full || !rest.length,
         title: full ? 'グループにする列は最大 ' + Settings.MAX_GROUPS + ' 列です' : 'グループにする列を追加します' });
-      UI.fillSelect(add, this._options(rest), '', full ? '最大 ' + Settings.MAX_GROUPS + ' 列まで選べます' : '＋ グループにする列を追加…');
+      UI.fillSelect(add, this._options(rest), '', full ? '最大 ' + Settings.MAX_GROUPS + ' 列まで選べます' : '＋ グループにする列を追加…（入力して探せます）');
       add.addEventListener('change', () => {
         if (add.value) this._change((s) => s.groupBy.push(add.value), list);
       });
       return UI.section('グループにする列（上から順に分けます）', [
         st.groupBy.length ? list : h('p', { class: 'lq-field__hint', text: '選ばないと、全体を 1 行に集計します。' }),
-        add
+        this._combo(add).el
       ]);
     }
 
@@ -414,7 +422,7 @@
         const fn = h('select', { class: 'lq-select lq-select--sm', title: '集計のしかた' });
         UI.fillSelect(fn, Settings.FUNCS.map((f) => ({ value: f.id, label: f.label })), m.fn);
         fn.addEventListener('change', () => this._setMeasure(i, { fn: fn.value }, box));
-        box.appendChild(h('div', { class: 'lq-aggmeasure' }, [col, h('span', { class: 'lq-cond__ga', text: 'の' }), fn,
+        box.appendChild(h('div', { class: 'lq-aggmeasure' }, [this._combo(col).el, h('span', { class: 'lq-cond__ga', text: 'の' }), fn,
           UI.iconButton('xmark', 'この値の集計をやめる', () => this._change((s) => s.measures.splice(i, 1), box), 'lq-btn--sm')]));
       });
       const full = st.measures.length >= Settings.MAX_MEASURES;

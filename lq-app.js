@@ -93,7 +93,9 @@
         return;
       }
       const format = LQ.Exporters.get(formatId);
-      s.setBusy({ kind: 'export', label: '出力中…', detail: format.label + 'を作成しています' });
+      const progress = this.app.startProgress({ kind: 'export', label: '出力中…', title: '出力しています', detail: format.label + 'を作成しています',
+        steps: [{ id: 'build', label: format.label + 'の作成' }] });
+      progress.begin('build', false);
       await Async.paint();
       try {
         const out = await LQ.Exporters.build(formatId, prepared.table, { metaLines: this.metaLines(prepared), protect: !!opts.protect, sheets: prepared.sheets });
@@ -108,7 +110,7 @@
       } catch (err) {
         this.toasts.show({ type: 'error', title: '出力できませんでした', message: err.message });
       } finally {
-        s.setBusy(null);
+        progress.close();
       }
     }
 
@@ -619,7 +621,9 @@
       if (this.app._blockedByBusy()) return;
       const snap = s.snapshot();
       const hadStash = !!s.sampleStash;
-      s.setBusy({ kind: 'read', label: '準備中…', detail: 'サンプルデータを作成しています' });
+      const progress = this.app.startProgress({ kind: 'read', label: '準備中…', title: 'サンプルを準備しています', detail: 'サンプルデータを作成しています',
+        steps: [{ id: 'build', label: 'サンプルデータの作成' }] });
+      progress.begin('build', false);
       await Async.paint();
       let built = null;
       try {
@@ -640,7 +644,7 @@
         built = null;
         this.toasts.show({ type: 'error', title: 'サンプルを読み込めませんでした', message: err.message });
       } finally {
-        s.setBusy(null);
+        progress.close();
       }
       if (!built) return;
       const stashed = !hadStash && s.sampleStash ? s.sampleStash.profiles.filter((p) => !p.isBlank()).length : 0;
@@ -690,6 +694,8 @@
   const fmt = Util.formatInt;
 
   const ROLE_LABEL = { source: '① 元データ', condition: '② 条件データ' };
+  /* 読み込みの最後の段階（読み込んだ表を画面の表にする。割合は測れない） */
+  const TABLE_STEP = { id: 'table', label: '表の準備', weight: 1 };
   const FILE_ACCEPT = '.xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt';
   const RE_GENERIC_SHEET = /^(sheet|シート)\s*\d+$/i;
 
@@ -732,6 +738,7 @@
         aggregate: new LQ.AggregatePanel(ctx)
       };
       this.main = new LQ.MainView(ctx);
+      this.progressCard = new LQ.ProgressCard(ctx, Dom.qs('#lqMain'));
       this.shell = new LQ.Shell(ctx, this.panels);
       this.store.attach((notice) => this.toasts.show(notice));
       this.bus.on('panel', () => this._syncPanelView());
@@ -790,11 +797,11 @@
     cta() {
       const s = this.state;
       const busy = s.busy;
-      if (busy && busy.kind === 'run') {
-        return { id: 'cancel', label: '中止する', icon: 'stop', variant: 'stop', progress: busy.ratio || 0,
-          status: { kind: 'info', text: busy.label + '… ' + Util.formatPercent(busy.ratio || 0, 0) } };
+      if (busy) {
+        const status = { kind: 'info', text: busy.title + '… ' + Util.formatPercent(busy.ratio || 0, 0) + (busy.step && busy.steps.length > 1 ? '（' + busy.step.label + '）' : '') };
+        if (busy.cancellable) return { id: 'cancel', label: '中止する', icon: 'stop', variant: 'stop', progress: busy.ratio || 0, status: status };
+        return { id: 'busy', label: busy.label, icon: 'spinner', spin: true, disabled: true, progress: busy.ratio || 0, status: status };
       }
-      if (busy) return { id: 'busy', label: busy.label, icon: 'spinner', spin: true, disabled: true, status: { kind: 'info', text: busy.detail || '処理中です' } };
       const src = s.datasets.source;
       if (!src) {
         return { id: 'loadSource', label: '① 元データを読み込む', icon: 'file-import',
@@ -929,6 +936,15 @@
       }
     }
 
+    /**
+     * 進み具合を作り、変わるたびに状態（busy）へ反映する。終わったら呼び出し側で progress.close() にする。
+     * @param {object} spec LQ.Progress の spec
+     * @returns {LQ.Progress}
+     */
+    startProgress(spec) {
+      return new LQ.Progress(spec, (snap) => this.state.setBusy(snap));
+    }
+
     /** 処理中は、結果とデータの対応が崩れる操作を止めて理由を知らせる */
     _blockedByBusy() {
       if (!this.state.busy) return false;
@@ -984,15 +1000,18 @@
         this.profiles.importJsonFile(file);
         return;
       }
-      this.state.setBusy({ kind: 'read', label: '読み込み中…', detail: file.name + '（' + Util.formatBytes(file.size) + '）を読み込んでいます' });
+      const progress = this.startProgress({ kind: 'read', label: '読み込み中…', title: ROLE_LABEL[role] + 'を読み込んでいます',
+        detail: file.name + '（' + Util.formatBytes(file.size) + '）', steps: LQ.SourceFile.loadSteps(file.name).concat([TABLE_STEP]) });
       await Async.paint();
       try {
-        const source = await LQ.SourceFile.fromFile(file);
+        const source = await LQ.SourceFile.fromFile(file, progress);
+        progress.begin(TABLE_STEP.id, false);
+        await Async.paint();
         this._putDataset(role, new LQ.Dataset(role, source));
       } catch (err) {
         this.toasts.show({ type: 'error', title: ROLE_LABEL[role] + 'を読み込めませんでした', message: file.name + '：' + this._friendlyError(err) });
       } finally {
-        this.state.setBusy(null);
+        progress.close();
       }
     }
 
@@ -1011,21 +1030,26 @@
         return;
       }
       if (!list.length) return;
-      this.state.setBusy({ kind: 'read', label: '読み込み中…', detail: list.map((f) => f.name).join('、') + ' を読み込んでいます' });
-      await Async.paint();
+      const progress = this.startProgress({ kind: 'read', label: '読み込み中…', title: ROLE_LABEL.condition + 'を読み込んでいます' });
       const tables = [];
       const failed = [];
       try {
         for (let i = 0; i < list.length; i++) {
           try {
-            const src = await LQ.SourceFile.fromFile(list[i]);
+            if (list.length > 1) progress.item(i, list.length, list[i].name);
+            progress.plan(LQ.SourceFile.loadSteps(list[i].name).concat([TABLE_STEP]));
+            progress.setDetail(list[i].name + '（' + Util.formatBytes(list[i].size) + '）');
+            await Async.paint();
+            const src = await LQ.SourceFile.fromFile(list[i], progress);
+            progress.begin(TABLE_STEP.id, false);
+            await Async.paint();
             this._collectTables(src, list[i].name).forEach((t) => tables.push(t));
           } catch (err) {
             failed.push(list[i].name + '：' + this._friendlyError(err));
           }
         }
       } finally {
-        this.state.setBusy(null);
+        progress.close();
       }
       failed.forEach((msg) => this.toasts.show({ type: 'error', title: '② 条件データを読み込めませんでした', message: msg }));
       if (!tables.length) return;
@@ -1225,18 +1249,15 @@
           rules: Util.clone(s.rulesFor(p)), ownRules: !!p.rules });
       });
       const ctx = { source: s.datasets.source, rules: Util.clone(s.rules), combine: s.effectiveCombine(), profiles: profiles };
-      s.setBusy({ kind: 'run', label: '準備中', ratio: 0 });
+      const progress = this.startProgress({ kind: 'run', label: '抽出中…', title: '抽出しています', detail: this._runSummary(), cancellable: true,
+        steps: [{ id: 'run', label: '照合' }] });
+      progress.begin('run', true);
+      progress.update(0, '準備中');
       await Async.paint();
-      let last = 0;
       try {
         const result = await this.batch.run(ctx, {
           token: token,
-          onProgress: (p) => {
-            const now = performance.now();
-            if (now - last < 80 && p.ratio < 1) return;
-            last = now;
-            s.setBusy({ kind: 'run', label: p.label, ratio: p.ratio });
-          }
+          onProgress: (p) => progress.update(p.ratio, p.done !== undefined ? p.label + ' ' + fmt(p.done) + ' / ' + fmt(p.total) + ' 行' : p.label)
         });
         if (result.cancelled) {
           this.toasts.show({ type: 'info', title: '抽出を中止しました', message: s.result ? '表示中の結果は前回のものです。' : '' });
@@ -1257,7 +1278,7 @@
         this.toasts.show({ type: 'error', title: '抽出できませんでした', message: err.message });
       } finally {
         this._token = null;
-        s.setBusy(null);
+        progress.close();
       }
     }
 

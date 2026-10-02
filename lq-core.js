@@ -324,12 +324,178 @@
     }
   }
 
+  /* ---------------------------------------------------------------------
+   * Progress：段階のある処理の進み具合（画面には依存しない）
+   *   段階ごとに「割合を測れる／測れない」を持ち、全体の割合・段階・経過時間をまとめて onChange に渡す。
+   *   割合は weight（重み）で全体に換算する。複数のファイルを順に処理するときは item() で何件目かを伝える。
+   *   割合が変わらないまま時間が過ぎたこと（止まっている疑い）は、画面側が advancedAt で判断する。
+   *   終わったら close()（onChange に null を渡し、まとめて遅らせていた通知も取り消す）。
+   * ------------------------------------------------------------------- */
+  const PROGRESS_THROTTLE_MS = 80;
+
+  class Progress {
+    /**
+     * @param {{kind:string, label:string, title:string, detail?:string, steps?:{id:string,label:string,weight?:number}[], cancellable?:boolean}} spec
+     *        label：右上のボタンに出す短い言葉 / title：進み具合の表示の見出し
+     * @param {Function} onChange 状態（snapshot()）を受け取る
+     */
+    constructor(spec, onChange) {
+      this.kind = spec.kind;
+      this.label = spec.label;
+      this.title = spec.title;
+      this.detail = spec.detail || '';
+      this.cancellable = !!spec.cancellable;
+      this.onChange = onChange || function () {};
+      this.startedAt = performance.now();
+      this._item = null;
+      this._note = '';
+      this._last = 0;
+      this._pending = 0;
+      this.closed = false;
+      this.plan(spec.steps || [{ id: 'work', label: spec.title }]);
+    }
+
+    /** 何もしない進み具合（呼び出し側が進み具合を必要としないとき） */
+    static none() {
+      return new Progress({ kind: 'none', label: '', title: '' }, null);
+    }
+
+    /** 段階の一覧を決め直す（すべて未着手に戻す） */
+    plan(steps) {
+      this._steps = steps.map((s) => ({ id: s.id, label: s.label, weight: s.weight || 1, state: 'todo', determinate: true }));
+      this._index = -1;
+      this._ratio = 0;
+      this.advancedAt = performance.now();
+      this.stepStartedAt = this.advancedAt;
+      this._emit(true);
+    }
+
+    /** 複数のファイルを順に処理するときの何件目か（index は 0 始まり）。段階は未着手に戻す */
+    item(index, count, label) {
+      this._item = { index: index, count: count, label: label || '' };
+      this.plan(this._steps);
+    }
+
+    /**
+     * 段階を始める（それより前の段階は完了扱い）。一覧にない id は無視する。
+     * @param {string} id
+     * @param {boolean} determinate false：割合を測れない段階（動く縞で表示）
+     */
+    begin(id, determinate) {
+      const idx = this._steps.findIndex((s) => s.id === id);
+      if (idx < 0) return;
+      this._steps.forEach((s, i) => {
+        if (i < idx && s.state !== 'skip') s.state = 'done';
+      });
+      const step = this._steps[idx];
+      step.state = 'active';
+      step.determinate = determinate !== false;
+      this._index = idx;
+      this._ratio = 0;
+      this._note = '';
+      this.stepStartedAt = performance.now();
+      this.advancedAt = this.stepStartedAt;
+      this._emit(true);
+    }
+
+    /** 行わない段階を一覧から外す（例：Excel 用ライブラリが読み込み済み） */
+    skip(id) {
+      const step = this._steps.find((s) => s.id === id);
+      if (!step || step.state === 'skip') return;
+      step.state = 'skip';
+      this._emit(true);
+    }
+
+    /**
+     * 今の段階の割合（0〜1）と補足。通知は一定間隔にまとめる。
+     * @param {number} ratio
+     * @param {string} [note] 例：「照合中 1,200 / 5,000 行」
+     */
+    update(ratio, note) {
+      const r = Math.max(0, Math.min(1, ratio || 0));
+      if (r > this._ratio) this.advancedAt = performance.now();
+      this._ratio = r;
+      if (note !== undefined) this._note = note;
+      this._emit(r >= 1);
+    }
+
+    setDetail(text) {
+      this.detail = text || '';
+      this._emit(true);
+    }
+
+    /** 全体の割合（0〜1）：済んだ段階の重み＋今の段階の重み×割合（測れない段階は 0 として数える） */
+    overall() {
+      const steps = this._steps.filter((s) => s.state !== 'skip');
+      const total = steps.reduce((sum, s) => sum + s.weight, 0) || 1;
+      let done = 0;
+      steps.forEach((s) => {
+        if (s.state === 'done') done += s.weight;
+        else if (s.state === 'active' && s.determinate) done += s.weight * this._ratio;
+      });
+      const inner = done / total;
+      if (!this._item) return inner;
+      return (this._item.index + inner) / Math.max(1, this._item.count);
+    }
+
+    snapshot() {
+      const steps = this._steps.filter((s) => s.state !== 'skip').map((s) => ({ id: s.id, label: s.label, weight: s.weight, state: s.state, determinate: s.determinate }));
+      const active = steps.find((s) => s.state === 'active') || null;
+      return {
+        kind: this.kind,
+        label: this.label,
+        title: this.title,
+        detail: this.detail,
+        cancellable: this.cancellable,
+        steps: steps,
+        step: active,
+        stepRatio: active && active.determinate ? this._ratio : null,
+        ratio: this.overall(),
+        note: this._note,
+        item: this._item ? Object.assign({}, this._item) : null,
+        startedAt: this.startedAt,
+        stepStartedAt: this.stepStartedAt,
+        advancedAt: this.advancedAt
+      };
+    }
+
+    /** 処理の終わり：表示を消す */
+    close() {
+      if (this.closed) return;
+      this.closed = true;
+      global.clearTimeout(this._pending);
+      this._pending = 0;
+      this.onChange(null);
+    }
+
+    /* 間隔の内側の通知は捨てずに、間隔の終わりにまとめて 1 回送る（最後の割合を取りこぼさない） */
+    _emit(force) {
+      if (this.closed) return;
+      const now = performance.now();
+      const wait = PROGRESS_THROTTLE_MS - (now - this._last);
+      if (!force && wait > 0) {
+        if (!this._pending) {
+          this._pending = global.setTimeout(() => {
+            this._pending = 0;
+            this._emit(true);
+          }, wait);
+        }
+        return;
+      }
+      global.clearTimeout(this._pending);
+      this._pending = 0;
+      this._last = now;
+      this.onChange(this.snapshot());
+    }
+  }
+
   LQ.EventBus = EventBus;
   LQ.Util = Util;
   LQ.Dom = Dom;
   LQ.Prefs = Prefs;
   LQ.Async = Async;
   LQ.CancelToken = CancelToken;
+  LQ.Progress = Progress;
 })(window);
 
 /* =========================================================================

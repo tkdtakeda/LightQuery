@@ -75,10 +75,14 @@
       this.id = c.id;
       this._opKey = null;
       this.label = UI.badge('label', c.label);
-      this.left = h('select', { class: 'lq-select lq-select--sm', title: '① 元データの列' });
+      this.left = h('select', { class: 'lq-select lq-select--sm', title: '① 元データの列（入力して探せます）' });
       this.left.addEventListener('change', () => this._patch({ left: this.left.value }, this.left));
-      this.right = this._columnSelect('col', '比べる相手：② 条件データの列、または固定値');
-      this.right2 = this._columnSelect('col2', '範囲の終わり：② 条件データの列（「指定なし」なら制限なし）');
+      this.right = this._columnSelect('col', '比べる相手：② 条件データの列、または固定値（入力して探せます）');
+      this.right2 = this._columnSelect('col2', '範囲の終わり：② 条件データの列（「指定なし」なら制限なし。入力して探せます）');
+      const letterOf = (role) => (v) => LQ.ColumnCombo.letterIn(this.state.datasets[role], v);
+      this.leftBox = LQ.ColumnCombo.enhance(this.left, { letterOf: letterOf('source') }).el;
+      this.rightCol = LQ.ColumnCombo.enhance(this.right, { letterOf: letterOf('condition') }).el;
+      this.rightCol2 = LQ.ColumnCombo.enhance(this.right2, { letterOf: letterOf('condition') }).el;
       this.value = this._valueInput('value');
       this.value2 = this._valueInput('value2');
       this.debounce = this.value.debounce;
@@ -94,7 +98,7 @@
       this.issue = h('div', { class: 'lq-cond__issue', hidden: true });
       this.hint = h('div', { class: 'lq-cond__meta', hidden: true });
       this.el = h('div', { class: 'lq-cond', dataset: { id: this.id } },
-        [this.label, this.left, h('span', { class: 'lq-cond__ga', text: 'が' }), this.rightBox, this.op, this.del, this.issue, this.hint]);
+        [this.label, this.leftBox, h('span', { class: 'lq-cond__ga', text: 'が' }), this.rightBox, this.op, this.del, this.issue, this.hint]);
     }
 
     _find() {
@@ -154,7 +158,7 @@
     _layoutRight(c, pair) {
       const parts = c.right.type === 'value'
         ? (pair ? [this.value, this.tilde, this.value2, this.back] : [this.value, this.back])
-        : (pair ? [this.right, this.tilde, this.right2] : [this.right]);
+        : (pair ? [this.rightCol, this.tilde, this.rightCol2] : [this.rightCol]);
       const now = Array.prototype.slice.call(this.rightBox.children);
       if (now.length === parts.length && parts.every((el, i) => now[i] === el)) return;
       Dom.clear(this.rightBox);
@@ -268,18 +272,20 @@
       const warn = issues.find((i) => i.level === 'warn');
       this.el.classList.toggle('is-invalid', !!err);
       this.el.classList.toggle('is-unused', !err && !!warn && warn.code === 'unused');
-      [this.left, this.right, this.right2, this.value, this.value2, this.op].forEach((el) => el.classList.remove('is-invalid'));
+      /* 列の欄は入力で探す欄（ColumnCombo）に見せ替えているため、印はその入力欄に付ける */
+      const shown = (el) => (el._lqCombo ? el._lqCombo.input : el);
+      [this.left, this.right, this.right2, this.value, this.value2, this.op].forEach((el) => shown(el).classList.remove('is-invalid'));
       if (err) {
         let target = this.right;
         if (err.field === 'left') target = this.left;
         else if (err.field === 'op') target = this.op;
         else if (c.right.type === 'value') target = this.value;
-        target.classList.add('is-invalid');
+        shown(target).classList.add('is-invalid');
       }
-      const shown = err || warn;
-      this.issue.hidden = !shown;
+      const notice = err || warn;
+      this.issue.hidden = !notice;
       Dom.clear(this.issue);
-      if (shown) this.issue.appendChild(UI.status(err ? 'warn' : 'info', shown.message.replace(/^条件 [A-Z]：/, '')));
+      if (notice) this.issue.appendChild(UI.status(err ? 'warn' : 'info', notice.message.replace(/^条件 [A-Z]：/, '')));
     }
 
     /** 期間の固定値は、読み取った期間（日付の範囲）を行の下に示す */

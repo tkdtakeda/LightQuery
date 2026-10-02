@@ -182,7 +182,7 @@
         const prefix = n > 1 ? '抽出条件 ' + (i + 1) + '/' + n + '「' + p.name + '」：' : '';
         const res = await this.engine.run({ source: ctx.source, condition: p.condition, query: p.query, rules: p.rules || ctx.rules }, {
           token: token,
-          onProgress: (e) => onProgress({ phase: e.phase, ratio: 0.97 * (i + e.ratio) / n, label: prefix + e.label })
+          onProgress: (e) => onProgress({ phase: e.phase, ratio: 0.97 * (i + e.ratio) / n, label: prefix + e.label, done: e.done, total: e.total })
         });
         if (res.cancelled) return res;
         results.push(res);

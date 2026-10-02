@@ -863,7 +863,8 @@
   background: var(--color-surface);
 }
 
-.lq-aggmeasure .lq-select {
+.lq-aggmeasure .lq-select,
+.lq-aggmeasure .lq-combo {
   width: 100%;
 }
 
