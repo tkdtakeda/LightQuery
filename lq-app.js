@@ -84,7 +84,6 @@
      * @param {{fileName:string, protect:boolean, split:boolean}} options
      */
     async exportResult(formatId, options) {
-      const s = this.state;
       const opts = options || {};
       const xlsx = formatId === 'xlsx';
       const prepared = this.prepare({ split: xlsx && !!opts.split, aggregate: xlsx && !!opts.aggregate });
