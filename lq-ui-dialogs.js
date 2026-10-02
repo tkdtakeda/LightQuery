@@ -309,7 +309,8 @@
       formats.forEach((fmtDef) => {
         const avail = LQ.Exporters.availability(fmtDef.id);
         const radio = h('input', { type: 'radio', name: 'lq-export-format', disabled: !avail.ok });
-        const el = h('label', { class: 'lq-format' + (avail.ok ? '' : ' is-disabled') }, [
+        /* 説明は選んでいる形式だけに出す（ほかはポインタを合わせると表示）。縦に長くならず、狭い画面でもファイル名まで見える */
+        const el = h('label', { class: 'lq-format' + (avail.ok ? '' : ' is-disabled'), title: fmtDef.label + '：' + (avail.ok ? fmtDef.note : avail.reason) }, [
           radio,
           Dom.icon(fmtDef.icon, 'lq-format__icon'),
           h('span', { class: 'lq-format__title' }, [fmtDef.label, fmtDef.recommended ? h('span', { class: 'lq-tag lq-tag--rec', text: 'おすすめ' }) : null]),

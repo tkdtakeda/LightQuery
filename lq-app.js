@@ -37,27 +37,29 @@
      */
     prepare(opts) {
       const o = opts || {};
-      const view = this.app.main.resultView();
-      if (!view) return null;
-      const agg = this.app.main.aggregate.computed();
+      const aggTab = this.app.main.aggregate;
+      const agg = aggTab.computed();
       if (this.state.view.tab === 'aggregate' && agg) {
         const table = LQ.Aggregator.toTable(agg);
-        return { kind: 'aggregate', view: view, defs: table.defs, table: table, sheets: [{ name: '集計', table: table }], aggregate: agg };
+        return { kind: 'aggregate', view: aggTab.view(), defs: table.defs, table: table, sheets: [{ name: '集計', table: table }], aggregate: agg };
       }
+      const view = this.app.main.resultView();
+      if (!view) return null;
       const defs = this._defsOf(view);
       if (!defs.length) return null;
       const out = { kind: 'result', view: view, defs: defs, table: view.toTable(defs), sheets: null, aggregate: null };
       if (o.split && view.multi) out.sheets = this._sheets(view);
-      if (o.aggregate && agg) {
+      if (o.aggregate && agg && aggTab.target() === 'result') {
         out.aggregate = agg;
         out.sheets = (out.sheets || [{ name: '抽出結果', table: out.table }]).concat([{ name: '集計', table: LQ.Aggregator.toTable(agg) }]);
       }
       return out;
     }
 
-    /** 集計を出力できるか（抽出結果があり、集計する値が設定されている） */
+    /** 抽出結果に「集計」シートを付けられるか（集計の対象が抽出結果で、集計が設定されている） */
     hasAggregate() {
-      return !!this.app.main.aggregate.computed();
+      const aggTab = this.app.main.aggregate;
+      return aggTab.target() === 'result' && !!aggTab.computed();
     }
 
     /** まとめ＋抽出条件ごと（優先順位の順）＋該当なし のシート。並び順は画面と同じ */
@@ -128,7 +130,10 @@
       const view = this.app.main.resultView();
       let scope = '抽出結果';
       if (!split && view && view.filter !== null) scope = view.filter < 0 ? '該当なし' : view.partName(view.filter);
-      if (this.state.view.tab === 'aggregate' && this.hasAggregate()) scope = (view && view.filter !== null ? scope + '_' : '') + '集計';
+      const aggTab = this.app.main.aggregate;
+      if (this.state.view.tab === 'aggregate' && aggTab.computed()) {
+        scope = aggTab.target() === 'result' ? (view && view.filter !== null ? scope + '_' : '') + '集計' : '集計';
+      }
       return Util.sanitizeFileName((src ? Util.baseName(src.name) : 'LightQuery') + '_' + scope + '_' + Util.timestamp());
     }
 
@@ -168,6 +173,7 @@
       const s = this.state;
       const view = prepared.view;
       const res = view.result;
+      if (res.allRows) return this._allRowsMetaLines(prepared);
       const st = res.stats;
       const multi = view.parts.length > 1;
       const lines = [['項目', '内容'], ['出力日時', Util.dateTimeText(new Date())], ['① 元データ', this._describeDataset(s.datasets.source)]];
@@ -192,6 +198,22 @@
       if (s.view.sort) lines.push(['並び順', LQ.ResultView.nameOf(s.view.sort.key) + '（' + (s.view.sort.dir === 'desc' ? '降順' : '昇順') + '）']);
       lines.push(['出力した列', prepared.defs.map((d) => d.name).join('、')]);
       if (s.isStale()) lines.push(['注意', '出力時点の画面の条件は、この結果を作った条件から変更されています']);
+      lines.push(['作成', 'LightQuery（簡易クエリ）']);
+      return lines;
+    }
+
+    /** ① の全行（抽出なし）を集計したときの根拠の行 */
+    _allRowsMetaLines(prepared) {
+      const s = this.state;
+      const src = s.datasets.source;
+      const agg = prepared.aggregate;
+      const lines = [['項目', '内容'], ['出力日時', Util.dateTimeText(new Date())], ['① 元データ', this._describeDataset(src)]];
+      if (src.filters && src.filters.length) lines.push(['① の絞り込み', fmt(src.baseRowCount) + ' 行中 ' + fmt(src.rowCount) + ' 行（列ごとの絞り込み ' + src.filters.length + ' 件）']);
+      lines.push(['集計の対象', '① 元データの全行（② は使わず、抽出なし）']);
+      lines.push(['照合ルール', prepared.view.result.snapshot.rules]);
+      lines.push(['集計', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(agg.rowCount) + ' 行・' + fmt(agg.groupCount) + ' グループ）']);
+      agg.notes.forEach((n) => lines.push(['', n]));
+      lines.push(['出力した列', prepared.defs.map((d) => d.name).join('、')]);
       lines.push(['作成', 'LightQuery（簡易クエリ）']);
       return lines;
     }
@@ -778,6 +800,8 @@
         return { id: 'loadSource', label: '① 元データを読み込む', icon: 'file-import',
           status: { kind: 'info', text: 'ドラッグ＆ドロップや Ctrl+V の貼り付けでも読み込めます' } };
       }
+      const aggCta = this._sourceAggregateCta();
+      if (aggCta) return aggCta;
       const all = this.validationAll();
       if (!all.enabledCount) {
         return { id: 'review', label: '抽出条件を有効にする', icon: 'toggle-on', status: { kind: 'warn', text: 'すべての抽出条件が無効です。一覧のスイッチで有効にしてください' } };
@@ -798,8 +822,50 @@
       if (!this._hasOutputColumn()) {
         return { id: 'chooseColumns', label: '出力する列を選ぶ', icon: 'table-columns', status: { kind: 'warn', text: '出力できる列が 0 列のため出力できません（左の「出力列」で選びます）' } };
       }
-      return { id: 'export', label: fmt(s.result.length) + ' 行を出力する', icon: 'file-export',
-        status: { kind: 'ok', text: 'Excel・CSV・コピーで出力できます' } };
+      return this._exportCta();
+    }
+
+    /** 集計タブで ① の全行を集計しているときの CTA（② を使わない流れ。集計の設定 → 集計の出力） */
+    _sourceAggregateCta() {
+      const s = this.state;
+      const aggTab = this.main ? this.main.aggregate : null;
+      if (s.view.tab !== 'aggregate' || !aggTab || aggTab.target() !== 'source') return null;
+      const c = aggTab.computed();
+      if (c) {
+        return { id: 'export', label: fmt(c.groupCount) + ' グループの集計を出力する', icon: 'file-export',
+          status: { kind: 'ok', text: '① 元データの全行（' + fmt(c.rowCount) + ' 行）の集計を Excel・CSV・コピーで出力できます' } };
+      }
+      if (aggTab.pending) return { id: 'busy', label: '集計中…', icon: 'spinner', spin: true, disabled: true, status: { kind: 'info', text: '集計しています' } };
+      /* 集計パネルを開いているときは押しても何も起きないため、押せない状態にして次にすることを示す */
+      const open = s.panel === 'aggregate';
+      if (s.aggregate.mode === 'condRows') {
+        return { id: 'setupAggregate', label: '集計を設定する', icon: 'calculator', disabled: open,
+          status: { kind: 'warn', text: '「② の行ごと」は ① の全行では使えません（「列を選んで集計」にするか、抽出してから集計します）' } };
+      }
+      return { id: 'setupAggregate', label: '集計を設定する', icon: 'calculator', disabled: open,
+        status: { kind: 'info', text: open ? '左の集計パネルで、グループにする列か集計する値を選んでください（② は不要です）'
+          : '② を使わずに ① 元データの全行を集計できます（グループにする列・集計する値を選びます）' } };
+    }
+
+    /** 出力の CTA：件数は出力ダイアログと同じ数え方（表示中の行）にし、内訳を状態の文に入れる */
+    _exportCta() {
+      const s = this.state;
+      const view = this.main ? this.main.resultView() : null;
+      if (!view) {
+        return { id: 'export', label: fmt(s.result.length) + ' 行を出力する', icon: 'file-export', status: { kind: 'ok', text: 'Excel・CSV・コピーで出力できます' } };
+      }
+      if (view.filter !== null && !view.length) {
+        return { id: 'showAll', label: 'すべての行を表示する', icon: 'list',
+          status: { kind: 'warn', text: '「' + view.partName(view.filter) + '」の行は 0 行のため出力できません' } };
+      }
+      let text = 'Excel・CSV・コピーで出力できます';
+      if (view.filter !== null) {
+        text = '表示中の「' + view.partName(view.filter) + '」の行だけを出力します（全 ' + fmt(view.counts().total) + ' 行は「すべて」を選びます）';
+      } else if (view.multi && view.counts().unmatched) {
+        const c = view.counts();
+        text = '抽出条件の行 ' + fmt(c.total - c.unmatched) + ' 行＋該当なし ' + fmt(c.unmatched) + ' 行を出力します';
+      }
+      return { id: 'export', label: fmt(view.length) + ' 行を出力する', icon: 'file-export', status: { kind: 'ok', text: text } };
     }
 
     /** 表示・出力できる列が 1 列以上あるか */
@@ -856,6 +922,8 @@
         case 'run': this.run(); break;
         case 'review': this.state.openPanel('query'); break;
         case 'chooseColumns': this.state.openPanel('output'); break;
+        case 'showAll': this.state.setFilter(null); break;
+        case 'setupAggregate': this.state.openPanel('aggregate'); break;
         case 'export': this.resultDialogs.openExport(anchor); break;
         default: break;
       }
@@ -1288,10 +1356,15 @@
       this.toasts.show({ type: 'success', title: title });
     }
 
-    /* 読み込みパネルを開いている間は、その表を「読み込み範囲」表示にする */
+    /* 読み込みパネルを開いている間は、その表を「読み込み範囲」表示にする。
+     * 集計パネルを開いたら、設定の結果が見えるよう集計タブにする（閉じても集計タブのまま） */
     _syncPanelView() {
       const s = this.state;
       const p = s.panel;
+      if (p === 'aggregate' && s.datasets.source && s.view.tab !== 'aggregate') {
+        if (this._tabBeforePanel !== null) this._tabBeforePanel = null;
+        s.setTab('aggregate');
+      }
       ['source', 'condition'].forEach((role) => {
         if (p !== role) s.setRaw(role, false);
       });

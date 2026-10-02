@@ -14,10 +14,12 @@
   const UI = LQ.UI;
   const h = Dom.h;
 
-  const RAW_COL_LIMIT = 200;
+  /* 「読み込み範囲」表示で一度に描くセルの上限（列数 × 表示行数）。超える列は描かず、その旨を表示する */
+  const RAW_CELL_BUDGET = 300000;
+  const RAW_COL_MIN = 200;
   const NUMERIC_RATIO = 0.8;
   const ROLE_TEXT = {
-    source: { title: '① 元データ', icon: 'table', badge: ['src', '①'], label: '元データ', sub: '抽出される側のデータ（Excel・CSV）' },
+    source: { title: '① 元データ', icon: 'table', badge: ['src', '①'], label: '元データ', sub: '抽出・集計する側のデータ（Excel・CSV）' },
     condition: { title: '② 条件データ', icon: 'list-check', badge: ['cond', '②'], label: '条件データ', sub: '条件の一覧（1 行＝1 セットの条件）' }
   };
 
@@ -49,7 +51,27 @@
       this.aggregate = new LQ.AggregateTab(this);
       LQ.FormNav.attach(this.pager);
       ctx.bus.on('change', (e) => this._schedule(e));
+      this._find = null;
+      ctx.bus.on('column-find', (d) => {
+        this._find = d && d.word ? d : null;
+        this._applyFind();
+      });
+      ctx.bus.on('panel', () => this._applyFind());
       this.render();
+    }
+
+    /** 読み込みパネルの列タグで探している列を、そのパネルを開いている間だけプレビューで強調する */
+    _applyFind() {
+      const s = this.state;
+      const f = this._find;
+      const role = s.view.tab;
+      const active = !!f && f.role === role && s.panel === role && !!s.datasets[role];
+      const model = this.grid.model;
+      if (!model || (model.mode !== 'raw' && model.mode !== 'data')) return;
+      const match = LQ.ColumnChips.matches;
+      this.grid.highlightColumns(active ? (col) => (model.mode === 'raw'
+        ? !!col.toggleName && match(col.toggleName, col.label, f.word)
+        : match(col.label, col.letter, f.word)) : null);
     }
 
     /* 進捗の更新だけでは表を描き直さない。列の表示の切替は抽出結果タブにだけ関係する */
@@ -142,7 +164,7 @@
       const res = s.result;
       const specs = [
         { id: 'result', icon: 'filter', label: '抽出結果', count: res ? Util.formatInt(res.length) + ' 行' : '未実行', stale: s.isStale() },
-        { id: 'aggregate', icon: 'calculator', label: '集計', count: this.aggregate.tabCount(), stale: !!res && s.isStale() },
+        { id: 'aggregate', icon: 'calculator', label: '集計', count: this.aggregate.tabCount(), stale: !!res && s.isStale() && this.aggregate.target() === 'result' },
         { id: 'source', role: 'source' },
         { id: 'condition', role: 'condition' }
       ];
@@ -152,6 +174,7 @@
         let label = t.label;
         let count = t.count;
         let title = null;
+        let marks = [];
         if (t.role) {
           const r = ROLE_TEXT[t.role];
           const ds = s.datasets[t.role];
@@ -164,6 +187,16 @@
             count = tables + ' 件';
             title = '条件データ ' + tables + ' 件（表示中：' + s.activeProfile.name + '）';
           }
+          /* サンプル表示中・絞り込み中は、タブにも印を出す（ファイル名と行数はタブの中の要約に出す） */
+          if (ds) {
+            title = (title ? title + '\n' : '') + ds.name + '（' + ds.source.kindLabel + '・' + Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列）';
+            marks = [
+              ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample lq-tab__sample', title: 'サンプルデータを表示中' },
+                [Dom.icon('flask'), h('span', { class: 'lq-tab__sample-text', text: 'サンプル' })]) : null,
+              ds.filterInfo ? h('span', { class: 'lq-tab__filter', title: '絞り込み中：' + Util.formatInt(ds.baseRowCount) + ' 行中 ' + Util.formatInt(ds.rowCount) + ' 行' },
+                Dom.icon('filter')) : null
+            ];
+          }
         } else {
           lead = Dom.icon(t.icon);
         }
@@ -172,8 +205,8 @@
           'aria-selected': s.view.tab === t.id ? 'true' : 'false',
           title: title,
           onclick: () => s.setTab(t.id)
-        }, [lead, h('span', { text: label }), h('span', { class: 'lq-tab__count', text: count }),
-          t.stale ? h('span', { class: 'lq-tab__stale', title: '条件が変更され、結果に未反映です' }, [Dom.icon('triangle-exclamation'), ' 未反映']) : null]));
+        }, [lead, h('span', { text: label }), h('span', { class: 'lq-tab__count', text: count })].concat(marks).concat([
+          t.stale ? h('span', { class: 'lq-tab__stale', title: '条件が変更され、結果に未反映です' }, [Dom.icon('triangle-exclamation'), ' 未反映']) : null])));
       });
     }
 
@@ -280,9 +313,13 @@
       } else {
         const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
         const none = st.matchedSources === 0;
+        const unmatched = view.counts().unmatched;
         items = [
           h('span', { class: 'lq-summary__main' + (none ? ' is-none' : '') }, [Dom.icon(none ? 'triangle-exclamation' : 'circle-check'), fmt(st.matchedSources) + ' 行が該当']),
           h('span', { class: 'lq-summary__item lq-num', text: '① ' + fmt(st.sourceRows) + ' 行中 ' + Util.formatPercent(st.matchedSources / Math.max(1, st.sourceRows)) }),
+          /* 「該当なし」も出力するときは、表示・出力の行数（該当＋該当なし）との差をここで示す */
+          unmatched ? h('span', { class: 'lq-summary__item lq-num', title: 'どの抽出条件にも該当しなかった行も、「該当なし」として表示・出力します' },
+            [Dom.icon('circle-plus'), '該当なし ' + fmt(unmatched) + ' 行も出力']) : null,
           h('span', { class: 'lq-summary__item', title: mode.desc }, [Dom.icon(mode.icon), '抽出条件 ' + res.parts.length + ' 件・' + mode.short]),
           shown, time, detailsBtn
         ];
@@ -354,10 +391,13 @@
           h('div', { class: 'lq-drop__sub', text: 'クリックで抽出条件を確認・変更。あとは ① 元データを読み込めば抽出できます' })]);
       };
       const sampleBtn = h('button', { class: 'lq-btn', type: 'button', onclick: () => this.app.dialogs.openSamples(sampleBtn, 'bottom-start') }, [Dom.icon('flask'), 'サンプルで試す']);
+      const aggNote = h('p', { class: 'lq-empty__lead' }, [Dom.icon('calculator'), ' ② を使わずに ',
+        h('strong', { text: '① だけを集計' }), 'することもできます（① を読み込み、「集計」タブで設定します）。']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: '① と ② を読み込み、条件に一致する行を取り出します' }),
         h('p', { class: 'lq-empty__lead', text: '① 元データの各行を、② 条件データの各行（1 行＝1 セットの条件）と照らし合わせ、一致した行を表示・出力します。② は抽出条件ごとに持てるので、列の構成が違う表を複数使い、名前と優先順位で振り分けることもできます。Excel（.xlsx / .xls）と CSV に対応しています。' }),
         h('div', { class: 'lq-empty__cards' }, [card('source'), condCard()]),
+        aggNote,
         h('div', { class: 'lq-empty__links' }, [sampleBtn,
           h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', onclick: () => this.app.manual.open() }, [Dom.icon('book-open'), '使い方を見る'])])
       ]));
@@ -369,16 +409,33 @@
       const list = h('ol', { class: 'lq-steps' });
       steps.forEach((step, i) => {
         if (i > 0) list.appendChild(h('li', { class: 'lq-step__arrow', 'aria-hidden': 'true' }, Dom.icon('chevron-right')));
-        list.appendChild(h('li', { class: 'lq-step is-' + step.state }, [
+        const act = () => (step.panel ? s.openPanel(step.panel) : this.app.runCta(this.app.shell ? this.app.shell.topbar.cta : null));
+        list.appendChild(h('li', {
+          class: 'lq-step is-' + step.state, role: 'button', tabindex: '0', title: step.panel ? '押すと設定パネルを開きます' : '押すと抽出します',
+          onclick: act,
+          onkeydown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              act();
+            }
+          }
+        }, [
           h('div', { class: 'lq-step__head' }, [Dom.icon(step.state === 'done' ? 'circle-check' : step.icon), step.title,
             step.state === 'done' ? h('span', { class: 'lq-status lq-status--ok', text: '済' }) : null]),
           h('div', { class: 'lq-step__text', text: step.text })
         ]));
       });
+      /* ② を使わずに ① だけを集計する入口（主要動作ではないので控えめなリンクにする） */
+      const aggOnly = h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', title: '集計タブに切り替え、集計パネルを開きます（① の全行を集計します）',
+        onclick: () => {
+          s.setTab('aggregate');
+          s.openPanel('aggregate');
+        } }, [Dom.icon('calculator'), '② を使わずに ① だけ集計する']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: 'あと少しで抽出できます' }),
         list,
-        h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。抽出条件は左の「抽出条件」から確認・変更できます。' })
+        h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。各段階のカードを押すと、その設定を開けます。' }),
+        h('div', { class: 'lq-empty__links' }, [aggOnly])
       ]));
     }
 
@@ -397,10 +454,10 @@
       const hasConds = s.query.conditions.length > 0;
       const condNeeded = !hasConds || v.needsCondition || !v.ok;
       return [
-        { icon: 'table', title: '① 元データ', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
-        { icon: 'list-check', title: '② 条件データ', state: cond ? 'done' : (condNeeded ? 'current' : 'done'),
+        { icon: 'table', title: '① 元データ', panel: 'source', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
+        { icon: 'list-check', title: '② 条件データ', panel: 'condition', state: cond ? 'done' : (condNeeded ? 'current' : 'done'),
           text: cond ? cond.name + '（' + Util.formatInt(cond.rowCount) + ' 行）' : (condNeeded ? '読み込んでください（固定値だけの条件なら不要）' : '固定値だけの条件のため不要') },
-        { icon: 'filter', title: '条件', state: hasConds && v.ok ? 'done' : ((cond || !condNeeded) ? 'current' : 'todo'),
+        { icon: 'filter', title: '条件', panel: 'query', state: hasConds && v.ok ? 'done' : ((cond || !condNeeded) ? 'current' : 'todo'),
           text: hasConds ? (v.ok ? LQ.Logic.toJapanese(v.ast) : v.errors[0].message) : '① と ② の列の対応を決めます' },
         this._runStep(hasConds && v.ok)
       ];
@@ -417,10 +474,10 @@
       const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === s.combine.mode);
       const first = all.first;
       return [
-        { icon: 'table', title: '① 元データ', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
-        { icon: 'list-check', title: '② 条件データ', state: loaded === need.length ? 'done' : 'current',
+        { icon: 'table', title: '① 元データ', panel: 'source', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
+        { icon: 'list-check', title: '② 条件データ', panel: 'condition', state: loaded === need.length ? 'done' : 'current',
           text: need.length ? '読み込み済み ' + loaded + ' / ' + need.length + ' 件（抽出条件ごと）' : '固定値だけの抽出条件のため不要' },
-        { icon: 'filter', title: '抽出条件', state: all.ok ? 'done' : 'current',
+        { icon: 'filter', title: '抽出条件', panel: 'query', state: all.ok ? 'done' : 'current',
           text: all.ok ? '有効 ' + enabled.length + ' 件・' + mode.short : (first ? '「' + first.profile.name + '」：' + first.issue.message : 'すべて無効です') },
         this._runStep(all.ok)
       ];
@@ -452,7 +509,8 @@
         { value: true, label: '読み込み範囲', icon: 'crop-simple', title: '元のシートのまま表示し、ヘッダー行・開始行・開始列・終了行を確認' }
       ], raw, (value) => s.setRaw(role, value));
       this.tools.appendChild(seg.el);
-      this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => s.togglePanel(role) }, [Dom.icon('sliders'), '読み込み設定']));
+      /* そのパネルを開いているときは押しても閉じるだけなので出さない（狭い画面でタブの行が折り返さないようにする） */
+      if (s.panel !== role) this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => s.togglePanel(role) }, [Dom.icon('sliders'), '読み込み設定']));
       this._renderDatasetSummary(ds, raw);
       const filterBar = LQ.FilterBar.render(this.ctx, ds, role);
       if (filterBar) {
@@ -462,11 +520,13 @@
       const total = raw ? ds.rawRowCount : ds.rowCount;
       const paging = this._paging(role, total);
       this.grid.render(raw ? this._rawModel(ds, paging) : this._dataModel(ds, paging));
+      this._visDs = ds;
       this._visCount = h('span', { class: 'lq-num', title: (raw ? 'ヘッダー行の列名' : '見出し') + 'を押すと一覧が開き、出力する／しないの切り替えと絞り込みができます（出力列パネル・読み込みパネルの列タグと同じ設定）' });
       this._visCount.textContent = this._visText(this._isVisible());
       const summary = this.info.querySelector('.lq-summary');
       if (summary && ds.colCount) summary.appendChild(h('span', { class: 'lq-summary__item' }, [Dom.icon('eye'), this._visCount]));
       this._renderPager(role, total, paging);
+      this._applyFind();
     }
 
     _renderDatasetSummary(ds, raw) {
@@ -485,7 +545,8 @@
       ];
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
       if (raw) {
-        this.info.appendChild(UI.note('tip', '元のシートのまま表示しています。行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列の一覧（値で絞り込む・出力する）が開きます（出力しない列は薄く表示）。'));
+        this.info.appendChild(UI.note('tip', h('span', { title: '行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列の一覧（値で絞り込む・出力する）が開きます（出力しない列は薄く表示）。' },
+          '元のシートのまま表示中。行番号・列記号で範囲を、列名で絞り込み・出力を指定できます。')));
       }
       if (!ds.rowCount) this.info.appendChild(UI.note('warn', 'データ行がありません。「読み込み範囲」でヘッダー行・データ開始行を確認してください。'));
     }
@@ -506,11 +567,14 @@
       if (this._visCount) this._visCount.textContent = this._visText(isVisible);
     }
 
+    /** 出力する列の数（読み込みパネルの列タグと同じく、追加した列を含む全列で数える） */
     _visText(isVisible) {
       const model = this.grid.model;
-      const cols = model ? model.columns.filter((c) => c.toggleKey) : [];
+      const ds = this._visDs;
+      const prefix = ds && ds.role === 'source' ? 's:' : 'c:';
+      const keys = ds ? ds.columns.map((c) => prefix + c.name) : [];
       const where = model && model.mode === 'raw' ? 'ヘッダー行の列名' : '見出し';
-      return '出力する列 ' + cols.filter((c) => isVisible(c.toggleKey)).length + ' / ' + cols.length + '（' + where + 'を押すと一覧で切替・絞り込み）';
+      return '出力する列 ' + keys.filter((k) => isVisible(k)).length + ' / ' + keys.length + '（' + where + 'を押すと一覧で切替・絞り込み）';
     }
 
     _dataModel(ds, paging) {
@@ -541,7 +605,13 @@
       const end = Math.min(ds.rawRowCount, paging.start + this.state.view.pageSize);
       let maxCol = set.startCol;
       for (let r = paging.start; r < end; r++) maxCol = Math.max(maxCol, ds.grid[r].length);
-      maxCol = Math.min(maxCol, RAW_COL_LIMIT);
+      const limit = Math.max(RAW_COL_MIN, Math.floor(RAW_CELL_BUDGET / Math.max(1, end - paging.start)));
+      const allCols = maxCol;
+      maxCol = Math.min(maxCol, limit);
+      if (allCols > maxCol) {
+        this.info.appendChild(UI.note('warn', '列が多いため、この表示では ' + Util.colLetter(maxCol - 1) + ' 列（' + Util.formatInt(maxCol) + ' 列目）までを表示しています（全 ' +
+          Util.formatInt(allCols) + ' 列）。下の「表示件数」を減らすと右の列まで表示できます。読み込みは全列で行っており、「データ」表示ではすべての列を確かめられます。'));
+      }
       const prefix = ds.role === 'source' ? 's:' : 'c:';
       const isVisible = this._isVisible();
       const byRaw = new Map(ds.columns.map((col) => [col.src, col]));

@@ -6,8 +6,9 @@
 
 /* =========================================================================
  * ── 集計タブ ──
- * 集計タブ：抽出結果（表示中の絞り込みを反映）を集計した表を、メイン領域の表・注意帯・ページ送りに描く。
- *   計算結果は「結果・絞り込み・照合ルール・集計の設定・抽出条件の名前」が同じあいだ使い回す。
+ * 集計タブ：抽出結果（表示中の絞り込みを反映）、または ① 元データの全行（抽出なし。① の絞り込み・列の追加を反映）を
+ *   集計した表を、メイン領域の表・注意帯・ページ送りに描く。抽出結果がないときは ① の全行を集計する。
+ *   計算結果は「対象・結果・絞り込み・照合ルール・集計の設定・抽出条件の名前」が同じあいだ使い回す。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -29,13 +30,41 @@
       this._pending = false;
       this._error = null;
       this._token = null;
+      this._allRows = null;
+    }
+
+    /** 集計の対象（'result'：抽出結果／'source'：① の全行。抽出結果がなければ ① の全行）。① がなければ null */
+    target() {
+      const s = this.state;
+      return LQ.AggregateSettings.effectiveTarget(s.aggregate, !!s.datasets.source, !!s.result);
+    }
+
+    /** 集計に使う見せ方（抽出結果なら表示中の絞り込みを反映したもの、① の全行なら抽出なしの結果） */
+    view() {
+      const target = this.target();
+      if (target === 'result') return this.main.resultView();
+      if (!target) return null;
+      const s = this.state;
+      const src = s.datasets.source;
+      const key = src.id + ':' + src.version;
+      if (!this._allRows || this._allRows.key !== key) {
+        this._allRows = { key: key, view: new LQ.ResultView(LQ.BatchRunner.allRows(src, s.rules), src, s.rules) };
+      }
+      this._allRows.view.setRules(s.rules);
+      return this._allRows.view;
+    }
+
+    /** ① の全行では「② の行ごと」は使えない（② の行がひも付かない） */
+    _blockedReason() {
+      return this.target() === 'source' && this.state.aggregate.mode === 'condRows'
+        ? '「② の行ごと」は ② の行がひも付く抽出結果でだけ使えます。集計パネルで「列を選んで集計」にするか、抽出してから対象を「抽出結果」にしてください。' : null;
     }
 
     /** 今の集計結果（集計できない状態なら null）。出力にも使う */
     computed() {
       const s = this.state;
-      const view = this.main.resultView();
-      if (!view || !LQ.AggregateSettings.isActive(s.aggregate)) return null;
+      const view = this.view();
+      if (!view || !LQ.AggregateSettings.isConfigured(s.aggregate) || this._blockedReason()) return null;
       const names = view.parts.map((p, i) => view.partName(i));
       const key = JSON.stringify([view.result.id, view.filter, s.rules, s.aggregate, names]);
       if (key !== this._key) {
@@ -81,8 +110,9 @@
     /** タブの件数表示 */
     tabCount() {
       const s = this.state;
-      if (!s.result) return '未実行';
-      if (!LQ.AggregateSettings.isActive(s.aggregate)) return '未設定';
+      if (!s.datasets.source) return '未読み込み';
+      if (!LQ.AggregateSettings.isConfigured(s.aggregate)) return '未設定';
+      if (this._blockedReason()) return '使えません';
       const c = this.computed();
       if (this._pending) return '集計中…';
       return c ? fmt(c.groupCount) + ' グループ' : '';
@@ -93,16 +123,26 @@
       const main = this.main;
       main.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: 'グループにする列・集計する値・順位を設定する',
         onclick: () => s.togglePanel('aggregate') }, [Dom.icon('calculator'), '集計の設定']));
-      if (!s.result) {
-        main.grid.showEmpty(main._emptyMessage('calculator', 'まだ抽出していません', '抽出すると、その結果をグループごとに集計できます（件数・合計・平均・標準偏差・最小・最大・順位）。右上のボタンから進めてください。'));
+      if (!s.datasets.source) {
+        main.grid.showEmpty(main._emptyMessage('calculator', '① 元データを読み込むと集計できます', '② を使わずに ① だけでも集計できます（件数・合計・平均・標準偏差・最小・最大・順位）。抽出したあとは、その抽出結果も集計できます。'));
         return;
       }
-      if (!LQ.AggregateSettings.isActive(s.aggregate)) {
-        main.grid.showEmpty(main._emptyMessage('calculator', '集計する値がありません', '「集計の設定」で、件数か集計する値を選んでください。',
-          h('button', { class: 'lq-btn', type: 'button', onclick: () => s.openPanel('aggregate') }, [Dom.icon('calculator'), '集計を設定する'])));
+      const blocked = this._blockedReason();
+      if (blocked) {
+        main.grid.showEmpty(main._emptyMessage('triangle-exclamation', '① の全行では「② の行ごと」は使えません', blocked, s.panel === 'aggregate' ? null :
+          h('button', { class: 'lq-btn', type: 'button', onclick: () => s.openPanel('aggregate') }, [Dom.icon('calculator'), '集計の設定を開く'])));
         return;
       }
-      const view = main.resultView();
+      if (!LQ.AggregateSettings.isConfigured(s.aggregate)) {
+        const empty = LQ.AggregateSettings.isActive(s.aggregate)
+          ? ['まだ集計を設定していません', '「集計の設定」で、グループにする列（地域・カテゴリなど）か集計する値（合計・平均など）を選ぶと、ここに集計の表が出ます。' +
+            (s.result ? '「② の行ごと」も選べます。' : '抽出していないので、① 元データの全行を集計します（② は不要です）。')]
+          : ['集計する値がありません', '「集計の設定」で、件数か集計する値を選んでください。'];
+        main.grid.showEmpty(main._emptyMessage('calculator', empty[0], empty[1], s.panel === 'aggregate' ? null
+          : h('button', { class: 'lq-btn', type: 'button', onclick: () => s.openPanel('aggregate') }, [Dom.icon('calculator'), '集計を設定する'])));
+        return;
+      }
+      const view = this.view();
       const c = this.computed();
       if (this._pending || !c) {
         main.grid.showEmpty(main._emptyMessage(this._pending ? 'spinner' : 'triangle-exclamation', this._pending ? '② の行ごとに集計しています…' : '集計できませんでした',
@@ -110,15 +150,18 @@
         return;
       }
       this._renderSummary(view, c);
-      main._renderFilterBar(view);
-      if (s.isStale()) {
+      const onResult = this.target() === 'result';
+      if (onResult) main._renderFilterBar(view);
+      if (onResult && s.isStale()) {
         main.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
           '集計は変更前の抽出結果から計算しています。右上のボタンで再抽出すると反映されます。'])));
       }
       if (c.missing.length) main.info.appendChild(UI.note('warn', '次の列は今の抽出結果にないため、集計から外しました：' + c.missing.join('、') + '。'));
       if (c.notes.length) main.info.appendChild(UI.note('info', h('div', {}, c.notes.map((n) => h('div', { text: n })))));
       if (!c.rows.length) {
-        main.grid.showEmpty(main._emptyMessage('calculator', '集計する行がありません', '表示中の抽出結果が 0 行です。絞り込みを「すべて」にするか、条件を見直してください。'));
+        main.grid.showEmpty(main._emptyMessage('calculator', '集計する行がありません', view.result.allRows
+          ? '① 元データが 0 行です。① パネルの絞り込みを見直してください。'
+          : '表示中の抽出結果が 0 行です。絞り込みを「すべて」にするか、条件を見直してください。'));
         return;
       }
       const paging = main._paging('aggregate', c.rows.length);
@@ -137,7 +180,9 @@
 
     _renderSummary(view, c) {
       const s = this.state;
-      const scope = view.filter === null ? '抽出結果すべて' : (view.filter < 0 ? '該当なしの行' : '「' + view.partName(view.filter) + '」の行');
+      const src = s.datasets.source;
+      const scope = view.result.allRows ? '① 元データの全行' + (src.filters && src.filters.length ? '（絞り込み後）' : '')
+        : (view.filter === null ? '抽出結果すべて' : (view.filter < 0 ? '該当なしの行' : '「' + view.partName(view.filter) + '」の行'));
       this.main.info.appendChild(h('div', { class: 'lq-summary' }, [
         h('span', { class: 'lq-summary__main' }, [Dom.icon('calculator'), fmt(c.groupCount) + ' グループ']),
         h('span', { class: 'lq-summary__item lq-num', text: '対象：' + scope + ' ' + fmt(c.rowCount) + ' 行' }),
@@ -151,7 +196,8 @@
 
 /* =========================================================================
  * ── 集計パネル ──
- * 集計パネル：グループにする列（順序つき）・集計する値（件数＋列ごとの合計・平均・標準偏差・最小・最大）・順位の基準。
+ * 集計パネル：集計の対象（抽出結果があるときだけ「抽出結果／① の全行」を選べる）・集計のしかた・
+ *   グループにする列（順序つき）・集計する値（件数＋列ごとの合計・平均・標準偏差・最小・最大）・順位の基準。
  *   変更はすぐ設定に反映し、集計タブの表を描き直す（抽出はやり直さない）。設定はブラウザに記憶する。
  * ========================================================================= */
 (function (global) {
@@ -186,7 +232,7 @@
       this.size = 'md';
       this.body = h('div');
       this.el = h('div', {}, [this.body]);
-      ['aggregate', 'output', 'datasets', 'profiles'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
+      ['aggregate', 'output', 'datasets', 'profiles', 'result'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
       this.render();
     }
 
@@ -207,9 +253,22 @@
       if (flashEl) Flash.el(flashEl);
     }
 
-    /** 列の候補：出力列の一覧にあるキー（表示していない列も含む） */
+    /** 集計の対象が ① の全行か（② の列・抽出条件の列は使えない） */
+    get _onSource() {
+      return this._target() === 'source';
+    }
+
+    /** 集計の対象（集計タブと同じ決め方。パネルはメイン領域より先に作られるため、状態から直接決める） */
+    _target() {
+      const s = this.state;
+      return Settings.effectiveTarget(s.aggregate, !!s.datasets.source, !!s.result);
+    }
+
+    /** 列の候補：出力列の一覧にあるキー（表示していない列も含む）。① の全行が対象なら ① の列だけ */
     _keys(meta) {
-      return this.state.output.columns.map((c) => c.key).filter((k) => k.slice(0, 2) !== 'm:' || meta.indexOf(k) !== -1);
+      const onSource = this._onSource;
+      return this.state.output.columns.map((c) => c.key)
+        .filter((k) => (onSource ? k.slice(0, 2) === 's:' : k.slice(0, 2) !== 'm:' || meta.indexOf(k) !== -1));
     }
 
     _options(keys) {
@@ -240,12 +299,41 @@
     render() {
       Dom.clear(this.body);
       const keys = this._keys(GROUPABLE_META);
-      if (!keys.length) {
-        this.body.appendChild(UI.note('info', '① を読み込むと、集計に使う列を選べます。'));
+      if (!this.state.datasets.source || !keys.length) {
+        this.body.appendChild(UI.note('info', '① 元データを読み込むと、集計に使う列を選べます（② を使わずに ① だけでも集計できます）。'));
         return;
       }
       const byCond = this.settings.mode === 'condRows';
-      Dom.append(this.body, [this._modeSection(), byCond ? this._condRowsNote() : this._groupSection(keys), this._measureSection(), this._rankSection(), this._footNotes()]);
+      Dom.append(this.body, [this._targetSection(), this._modeSection(), byCond ? this._condRowsNote() : this._groupSection(keys), this._measureSection(), this._rankSection()]);
+    }
+
+    /* ---------------- 集計の対象（抽出結果／① の全行） ---------------- */
+
+    /** 抽出結果があるときだけ切り替えを出す。ないときは ① の全行に決まるので、その旨だけを示す */
+    _targetSection() {
+      const s = this.state;
+      const src = s.datasets.source;
+      const filtered = src.filters && src.filters.length ? '（絞り込み後）' : '';
+      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '集計の設定を初期状態（件数のみ）に戻す（元に戻せます）', onclick: () => {
+        const snap = s.snapshot();
+        s.setAggregate(Object.assign(Settings.create(), { target: s.aggregate.target }));
+        this.ctx.toasts.show({ type: 'success', title: '集計の設定を初期状態に戻しました', message: '件数だけを集計する状態です。',
+          actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '集計の設定を元に戻しました') }] });
+      } }, [Dom.icon('rotate-left'), '初期状態に戻す']);
+      if (!s.result) {
+        return UI.section('集計の対象', [
+          h('div', { class: 'lq-aggtarget' }, [Dom.icon('table'), h('strong', { text: '① 元データの全行' + filtered }),
+            h('span', { class: 'lq-num', text: LQ.Util.formatInt(src.rowCount) + ' 行' })]),
+          h('p', { class: 'lq-field__hint', text: '抽出していないので、② を使わずに ① の全行を集計します。① パネルの絞り込み・列の追加も反映します。抽出すると、抽出結果も選べるようになります。' })
+        ], [reset]);
+      }
+      const target = this._target();
+      const seg = new LQ.Segmented(Settings.TARGETS.map((t) => ({ value: t.id, label: t.label, icon: t.icon, title: t.desc })), target,
+        (v) => this._change((x) => {
+          x.target = v;
+        }, seg.el), 'lq-seg--block');
+      const def = Settings.TARGETS.find((t) => t.id === target);
+      return UI.section('集計の対象', [seg.el, h('p', { class: 'lq-field__hint', text: def.desc + ' 設定を変えるとすぐ集計タブに反映します（抽出のやり直しは不要）。' })], [reset]);
     }
 
     /* ---------------- 集計のしかた（② の行ごと／列を選ぶ） ---------------- */
@@ -264,6 +352,9 @@
     _condRowsNote() {
       const s = this.state;
       const linked = s.profiles.enabled().filter((p) => !!p.condition);
+      if (this._onSource) {
+        return UI.section('グループ', [UI.note('warn', '「② の行ごと」は ② の行がひも付く抽出結果でだけ使えます。今の対象は ① の全行のため集計できません。「列を選んで集計」にしてください。')]);
+      }
       return UI.section('グループ', [
         UI.note(linked.length ? 'info' : 'warn', linked.length
           ? '② 条件データの 1 行が 1 グループです（' + linked.map((p) => '「' + p.name + '」' + LQ.Util.formatInt(p.condition.rowCount) + ' 行').join('・') +
@@ -310,7 +401,7 @@
     _measureSection() {
       const st = this.settings;
       const all = this._keys(MEASURABLE_META);
-      const keys = st.mode === 'condRows' ? all.filter((k) => k.slice(0, 2) === 's:') : all;
+      const keys = st.mode === 'condRows' || this._onSource ? all.filter((k) => k.slice(0, 2) === 's:') : all;
       const box = h('div', { class: 'lq-aggmeasures' });
       const count = UI.switchToggle('件数（グループの行数）', st.count, (checked) => this._change((s) => {
         s.count = checked;
@@ -379,19 +470,6 @@
       dir.el.hidden = !st.rank;
       Dom.append(box, [select, dir.el]);
       return UI.section('順位', [box, h('p', { class: 'lq-field__hint', text: '同じ値は同じ順位にし、次の順位を飛ばします（Excel の RANK.EQ と同じ）。順位を付けると集計タブは順位の順に並びます。' })]);
-    }
-
-    _footNotes() {
-      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '集計の設定を初期状態（件数のみ）に戻す（元に戻せます）', onclick: () => {
-        const snap = this.state.snapshot();
-        this.state.setAggregate(Settings.create());
-        this.ctx.toasts.show({ type: 'success', title: '集計の設定を初期状態に戻しました', message: '件数だけを集計する状態です。',
-          actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '集計の設定を元に戻しました') }] });
-      } }, [Dom.icon('rotate-left'), '初期状態に戻す']);
-      return UI.section('集計の対象', [
-        UI.note('info', '抽出結果のうち、表示中の行（抽出条件での絞り込みを反映）を集計します。抽出をやり直さなくても、設定を変えるとすぐ集計タブに反映します。'),
-        UI.note('tip', 'Excel に出力するときは「集計」シートを付けられます。集計タブを表示中に CSV・コピーで出力すると、集計の表を出力します。')
-      ], [reset]);
     }
   }
 

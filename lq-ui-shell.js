@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-shell.js
- * 画面の外枠：上部バー（読み込み状況・次の一歩・主要動作）、左のアイコン列、設定パネルの入れ物、
+ * 画面の外枠：上部バー（次の一歩・主要動作）、左のアイコン列（入力・抽出・出力・設定の区切り）、設定パネルの入れ物、
  *   画面全体へのドラッグ＆ドロップ、Ctrl+V の貼り付け、キーボード操作
  * ========================================================================= */
 (function (global) {
@@ -23,7 +23,6 @@
       this.app = ctx.app;
       this.root = root;
       this._ctaId = null;
-      this.chips = h('div', { class: 'lq-topbar__chips' });
       this.statusIcon = Dom.icon('circle-info');
       this.statusText = h('span', { class: 'lq-topbar__status-text' });
       this.progressFill = h('div', { class: 'lq-progress__fill' });
@@ -41,7 +40,6 @@
           h('span', { class: 'lq-brand__mark' }, Dom.icon('magnifying-glass')),
           h('div', {}, [h('div', { class: 'lq-brand__name', text: 'LightQuery' }), h('div', { class: 'lq-brand__sub', text: '簡易クエリ' })])
         ]),
-        this.chips,
         h('div', { class: 'lq-topbar__spacer' }),
         this.status,
         this.cta,
@@ -52,7 +50,6 @@
     }
 
     render() {
-      this._renderChips();
       const c = this.app.cta();
       this.cta.disabled = !!c.disabled;
       this.cta.classList.toggle('lq-btn--primary', c.variant !== 'stop');
@@ -75,52 +72,28 @@
       this.progress.hidden = c.progress === undefined;
       if (c.progress !== undefined) this.progressFill.style.width = Math.round(c.progress * 100) + '%';
     }
-
-    _renderChips() {
-      Dom.clear(this.chips);
-      const s = this.state;
-      const multi = s.profiles.length > 1;
-      ['source', 'condition'].forEach((role) => {
-        const ds = s.datasets[role];
-        const isSrc = role === 'source';
-        const badge = LQ.UI.badge(isSrc ? 'src' : 'cond', isSrc ? '①' : '②');
-        const owner = !isSrc && multi ? h('span', { class: 'lq-chip__owner', text: s.activeProfile.name }) : null;
-        const ownerText = !isSrc && multi ? '（抽出条件「' + s.activeProfile.name + '」）' : '';
-        if (!ds) {
-          this.chips.appendChild(h('button', {
-            class: 'lq-chip lq-chip--empty', type: 'button', title: (isSrc ? '① 元データ' : '② 条件データ' + ownerText) + 'を読み込む',
-            onclick: () => s.openPanel(role)
-          }, [badge, h('span', { class: 'lq-chip__name', text: isSrc ? '元データ 未読み込み' : '条件データ 未読み込み' }), owner]));
-          return;
-        }
-        this.chips.appendChild(h('button', {
-          class: 'lq-chip ' + (isSrc ? 'lq-chip--src' : 'lq-chip--cond'), type: 'button',
-          title: ds.name + '（' + ds.source.kindLabel + '・' + Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列）' + ownerText + '— クリックで読み込み設定を開く',
-          onclick: () => s.togglePanel(role)
-        }, [
-          badge,
-          owner,
-          h('span', { class: 'lq-chip__name', text: ds.name }),
-          owner ? null : h('span', { class: 'lq-chip__meta', text: Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列' }),
-          ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample', text: 'サンプル' }) : null,
-          ds.filterInfo ? h('span', { class: 'lq-tag lq-tag--filter', title: '絞り込み中：' + Util.formatInt(ds.baseRowCount) + ' 行中 ' + Util.formatInt(ds.rowCount) + ' 行' },
-            [Dom.icon('filter'), '絞り込み中']) : null
-        ]));
-      });
-    }
   }
 
   /* ---------------------------------------------------------------------
    * Rail：機能ごとの設定パネルを開くアイコン（アイコン＋短いラベル＋状態の印）
+   *   処理の順に「入力 → 抽出 → 出力」で区切って上に並べ、使う頻度の低い「設定」（照合ルール）とサンプルは下に置く
    * ------------------------------------------------------------------- */
-  const RAIL_ITEMS = [
-    { id: 'source', icon: 'table', label: '①元データ', title: '① 元データ：読み込み・ヘッダー・範囲の設定' },
-    { id: 'condition', icon: 'list-check', label: '②条件データ', title: '② 条件データ（選択中の抽出条件）：読み込み・ヘッダー・範囲の設定', role: 'condition' },
-    { id: 'query', icon: 'filter', label: '抽出条件', title: '抽出条件：一覧（名前・優先順位）と、① と ② の対応・比較方法・組み合わせ・出力する行' },
-    { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：空白・全角半角・大文字小文字・数値・日付（全体の設定／抽出条件ごとの設定）' },
-    { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' },
-    { id: 'aggregate', icon: 'calculator', label: '集計', title: '集計：グループにする列・件数・合計・平均・標準偏差・最小・最大・順位' }
+  const RAIL_GROUPS = [
+    { label: '入力', items: [
+      { id: 'source', icon: 'table', label: '①元データ', title: '① 元データ：読み込み・ヘッダー・範囲・列の追加・絞り込み' },
+      { id: 'condition', icon: 'list-check', label: '②条件データ', title: '② 条件データ（選択中の抽出条件）：読み込み・ヘッダー・範囲・列の追加・絞り込み', role: 'condition' }
+    ] },
+    { label: '抽出', items: [
+      { id: 'query', icon: 'filter', label: '抽出条件', title: '抽出条件：一覧（名前・優先順位）と、① と ② の対応・比較方法・組み合わせ・出力する行' }
+    ] },
+    { label: '出力', items: [
+      { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' },
+      { id: 'aggregate', icon: 'calculator', label: '集計', title: '集計：抽出結果または ① の全行を、グループごとに件数・合計・平均・標準偏差・最小・最大・順位で集計' }
+    ] }
   ];
+  const RAIL_SETTINGS = { label: '設定', items: [
+    { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：表記ゆれのそろえ方（空白・全角半角・大文字小文字・数値・日付）。全体の設定／抽出条件ごとの設定' }
+  ] };
 
   class Rail {
     constructor(ctx, root) {
@@ -128,8 +101,21 @@
       this.state = ctx.state;
       this.app = ctx.app;
       this.items = new Map();
-      const group = h('div', { class: 'lq-rail__group' });
-      RAIL_ITEMS.forEach((item) => {
+      const sampleBtn = h('button', {
+        class: 'lq-rail__item', type: 'button', title: 'サンプルデータで動作を確認する',
+        onclick: () => this.app.dialogs.openSamples(sampleBtn, 'right-end')
+      }, [Dom.icon('flask'), h('span', { class: 'lq-rail__label', text: 'サンプル' })]);
+      Dom.append(root, RAIL_GROUPS.map((g) => this._group(g)).concat([
+        h('div', { class: 'lq-rail__spacer' }), this._group(RAIL_SETTINGS), h('div', { class: 'lq-rail__divider' }), sampleBtn
+      ]));
+      ctx.bus.on('change', () => this.render());
+      this.render();
+    }
+
+    /** 区切りの見出しと、その中のアイコン */
+    _group(group) {
+      const el = h('div', { class: 'lq-rail__group', role: 'group', 'aria-label': group.label }, [h('span', { class: 'lq-rail__heading', text: group.label })]);
+      group.items.forEach((item) => {
         const mark = h('span', { class: 'lq-rail__mark', hidden: true });
         const btn = h('button', {
           class: 'lq-rail__item', type: 'button', title: item.title, 'aria-label': item.title,
@@ -137,15 +123,9 @@
           onclick: () => this.state.togglePanel(item.id)
         }, [Dom.icon(item.icon), h('span', { class: 'lq-rail__label', text: item.label }), mark]);
         this.items.set(item.id, { btn: btn, mark: mark });
-        group.appendChild(btn);
+        el.appendChild(btn);
       });
-      const sampleBtn = h('button', {
-        class: 'lq-rail__item', type: 'button', title: 'サンプルデータで動作を確認する',
-        onclick: () => this.app.dialogs.openSamples(sampleBtn, 'right-end')
-      }, [Dom.icon('flask'), h('span', { class: 'lq-rail__label', text: 'サンプル' })]);
-      Dom.append(root, [group, h('div', { class: 'lq-rail__spacer' }), h('div', { class: 'lq-rail__divider' }), sampleBtn]);
-      ctx.bus.on('change', () => this.render());
-      this.render();
+      return el;
     }
 
     render() {
@@ -156,8 +136,11 @@
       this._mark('query', this._queryMark());
       const own = s.profiles.items.filter((p) => !!p.rules).length;
       this._mark('rules', own ? { kind: 'count', text: String(own), title: '個別の照合ルールがある抽出条件 ' + own + ' 件' } : null);
+      /* 抽出結果があれば、結果の「列 N / M」と同じ数え方（出力できる列だけ）にする */
       const counts = s.columnCounts();
-      const visible = counts['s:'].visible + counts['c:'].visible + counts['m:'].visible;
+      const view = this.app.main ? this.app.main.resultView() : null;
+      const visible = view ? view.resolveColumns(s.output.columns).filter((d) => d.available).length
+        : counts['s:'].visible + counts['c:'].visible + counts['m:'].visible;
       this._mark('output', s.output.columns.length ? { kind: 'count', text: String(visible), title: '表示する列 ' + visible + ' 列' } : null);
       const agg = s.aggregate;
       const values = (agg.count ? 1 : 0) + agg.measures.length;
@@ -196,7 +179,9 @@
 
   /* ---------------------------------------------------------------------
    * PanelHost：開いている設定パネルを 1 つだけ表示（他の画面操作は妨げない）
+   *   右端のつまみをドラッグすると幅を変えられる（パネルごとにブラウザへ記憶。ダブルクリックで初期の幅に戻す）
    * ------------------------------------------------------------------- */
+  const PANEL_MAX_RATIO = 0.6;
   class PanelHost {
     constructor(ctx, root, panels) {
       this.ctx = ctx;
@@ -209,7 +194,9 @@
       this.actions = h('div', { class: 'lq-panel__actions' });
       this.head = h('div', { class: 'lq-panel__head' }, [this.icon, this.title, this.actions]);
       this.body = h('div', { class: 'lq-panel__body' });
-      Dom.append(root, [this.head, this.body]);
+      this.grip = h('div', { class: 'lq-panel__grip', title: 'ドラッグで幅を変更（ダブルクリックで初期の幅に戻す）', 'aria-hidden': 'true' });
+      Dom.append(root, [this.head, this.body, this.grip]);
+      this._bindResize();
       LQ.FormNav.attach(this.body);
       ctx.bus.on('panel', () => this.render());
       ctx.bus.on('profiles', () => this.render());
@@ -227,6 +214,7 @@
       const changed = this._shown !== id;
       this.root.hidden = false;
       this.root.dataset.size = panel.size || 'md';
+      this._applyWidth(id);
       this.head.dataset.role = panel.role || '';
       this.icon.className = 'fa-solid fa-' + panel.icon + ' lq-panel__icon';
       this.title.textContent = panel.title;
@@ -243,6 +231,53 @@
         this._shown = id;
         if (panel.onShow) panel.onShow();
       }
+    }
+
+    _widthKey(id) {
+      return 'panelWidth:' + id;
+    }
+
+    /** 記憶した幅を当てる（画面が狭くなっていれば収まる幅にする。記憶がなければ CSS の初期の幅） */
+    _applyWidth(id) {
+      const w = LQ.Prefs.get(this._widthKey(id), null);
+      this.root.style.width = w ? this._clamp(w) + 'px' : '';
+    }
+
+    _clamp(w) {
+      const min = parseFloat(getComputedStyle(this.root).getPropertyValue('--w-panel-min')) || 0;
+      return Math.round(Util.clamp(w, min, Math.max(min, global.innerWidth * PANEL_MAX_RATIO)));
+    }
+
+    _bindResize() {
+      this.grip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const id = this.state.panel;
+        const startX = e.clientX;
+        const startW = this.root.getBoundingClientRect().width;
+        this.grip.setPointerCapture(e.pointerId);
+        this.root.classList.add('is-resizing');
+        const move = (ev) => {
+          this.root.style.width = this._clamp(startW + ev.clientX - startX) + 'px';
+        };
+        const up = () => {
+          this.grip.removeEventListener('pointermove', move);
+          this.grip.removeEventListener('pointerup', up);
+          this.grip.removeEventListener('pointercancel', up);
+          this.root.classList.remove('is-resizing');
+          if (id) LQ.Prefs.set(this._widthKey(id), Math.round(this.root.getBoundingClientRect().width));
+        };
+        this.grip.addEventListener('pointermove', move);
+        this.grip.addEventListener('pointerup', up);
+        this.grip.addEventListener('pointercancel', up);
+      });
+      this.grip.addEventListener('dblclick', () => {
+        const id = this.state.panel;
+        if (!id) return;
+        LQ.Prefs.set(this._widthKey(id), null);
+        this._applyWidth(id);
+        LQ.Flash.el(this.root);
+      });
     }
   }
 

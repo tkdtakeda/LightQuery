@@ -408,8 +408,9 @@
         this.picker.value = '';
         if (name) ctx.app.columnMenu.open(this.picker, this.role, name);
       });
-      this.el = UI.section('絞り込み（抽出の前に行を減らす）', [this.list, this.picker,
-        h('p', { class: 'lq-field__hint', text: '右の表の見出し（読み込み範囲の表示ではヘッダー行の列名）を押しても、同じ一覧で絞り込めます。すべてを満たす行だけを、抽出・集計・出力に使います。列の名前で記憶し、次に同じ列のある表を読み込んだときも掛け直します。' })]);
+      this.el = UI.section('絞り込み（抽出・集計の前に行を減らす）', [this.list, this.picker,
+        h('p', { class: 'lq-field__hint', text: '右の表の見出しを押しても絞り込めます。すべてを満たす行だけを使います。' })]);
+      this.el.title = '右の表の見出し（読み込み範囲の表示ではヘッダー行の列名）を押しても、同じ一覧で絞り込めます。すべてを満たす行だけを、抽出・集計・出力に使います。列の名前で記憶し、次に同じ列のある表を読み込んだときも掛け直します。';
     }
 
     render(ds) {

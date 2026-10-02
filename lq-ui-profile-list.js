@@ -2,7 +2,8 @@
  * LightQuery - lq-ui-profile-list.js
  * 抽出条件の一覧（条件パネルの上部）：上ほど優先。1 行＝順位・有効／無効・名前と ② の要約・状態・操作。
  *   並べ替えはつまみのドラッグ・順位の数字の入力・Alt+↑／↓。行を押すと、その抽出条件を下で編集する。
- *   抽出条件が 2 件以上のときは「1 行が複数に該当したとき」（振り分け／それぞれに出力）と「該当なし」の設定を出す。
+ *   抽出条件が 2 件以上のときは「1 行が複数に該当したとき」（振り分け／それぞれに出力）と「該当なし」の設定を出す
+ *   （全体を束ねる最後の段階の設定のため、1 行の要約を付けて畳んでおき、下の編集欄を押し下げない）。
  *   行は id ごとに使い回し、入力中のフォーカスを失わないようにする。
  * ========================================================================= */
 (function (global) {
@@ -96,8 +97,10 @@
         this.app.profiles.setCombine({ includeUnmatched: on });
         Flash.el(sw.el);
       });
-      const el = h('div', { class: 'lq-combine' }, [UI.field('1 行が複数の抽出条件に該当したとき', seg.el), desc, sw.el]);
-      return { el: el, seg: seg, desc: desc, sw: sw };
+      const fold = UI.collapsible('振り分け', [UI.field('1 行が複数の抽出条件に該当したとき', seg.el), desc, sw.el],
+        { open: LQ.Prefs.get('combineOpen', false), onToggle: (open) => LQ.Prefs.set('combineOpen', open) });
+      fold.el.classList.add('lq-combine');
+      return { el: fold.el, summary: fold.summary, seg: seg, desc: desc, sw: sw };
     }
 
     /* ---------------- 更新 ---------------- */
@@ -208,6 +211,7 @@
       this.combine.seg.set(c.mode);
       this.combine.desc.textContent = mode ? mode.desc : '';
       this.combine.sw.input.checked = c.includeUnmatched;
+      this.combine.summary.textContent = (mode ? mode.label : '') + (c.includeUnmatched ? '・該当なしも出力' : '');
       if (d.combine) Flash.el(this.combine.el);
     }
 
