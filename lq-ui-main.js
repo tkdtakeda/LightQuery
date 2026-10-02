@@ -191,7 +191,8 @@
           if (ds) {
             title = (title ? title + '\n' : '') + ds.name + '（' + ds.source.kindLabel + '・' + Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列）';
             marks = [
-              ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample', text: 'サンプル' }) : null,
+              ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample lq-tab__sample', title: 'サンプルデータを表示中' },
+                [Dom.icon('flask'), h('span', { class: 'lq-tab__sample-text', text: 'サンプル' })]) : null,
               ds.filterInfo ? h('span', { class: 'lq-tab__filter', title: '絞り込み中：' + Util.formatInt(ds.baseRowCount) + ' 行中 ' + Util.formatInt(ds.rowCount) + ' 行' },
                 Dom.icon('filter')) : null
             ];
@@ -544,7 +545,8 @@
       ];
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
       if (raw) {
-        this.info.appendChild(UI.note('tip', '元のシートのまま表示しています。行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列の一覧（値で絞り込む・出力する）が開きます（出力しない列は薄く表示）。'));
+        this.info.appendChild(UI.note('tip', h('span', { title: '行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列の一覧（値で絞り込む・出力する）が開きます（出力しない列は薄く表示）。' },
+          '元のシートのまま表示中。行番号・列記号で範囲を、列名で絞り込み・出力を指定できます。')));
       }
       if (!ds.rowCount) this.info.appendChild(UI.note('warn', 'データ行がありません。「読み込み範囲」でヘッダー行・データ開始行を確認してください。'));
     }

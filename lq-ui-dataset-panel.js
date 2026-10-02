@@ -164,6 +164,8 @@
  * ① 元データ / ② 条件データの読み込みパネル：
  *   ファイル（選択・シート・文字コード・区切り文字と判定の根拠）、読み込み範囲（ヘッダー・開始行・開始列・終了行）、
  *   列の追加、絞り込み、読み込み結果（行数・列数・列名）の順（処理の順）に並べる。入力欄は作り直さず値だけ更新し、フォーカスを保つ。
+ *   「読み方」（文字コード・区切り文字）と「読み込み範囲」は、見出しに要約を出して畳んでおく（開閉は ① / ② ごとに記憶。
+ *   判定が不確かなときは読み方を開く）。範囲は右の表の行番号・列記号でも指定できるため、畳んでいても操作できる。
  *   ② は選択中の抽出条件のもの（抽出条件を切り替えると、このパネルもその ② に切り替わる）。
  *   ② のパネルは上部に条件データの一覧（CondTableList）を置き、ここでも切り替え・追加できる。
  * ========================================================================= */
@@ -223,7 +225,8 @@
         h('div', { class: 'lq-colpick__head' }, [this.filter, this.allOn, this.allOff]),
         this.count,
         this.list,
-        h('p', { class: 'lq-field__hint', text: 'タグを押すと、その列を表示する／しないを切り替えます（出力列パネルと同じ設定）。A・B などの記号は、選択中の抽出条件のその条件で使っている列です。' })
+        h('p', { class: 'lq-field__hint', text: 'タグを押すと出力する／しないを切り替えます。A・B は条件で使っている列です。',
+          title: 'タグを押すと、その列を表示する／しないを切り替えます（出力列パネルと同じ設定）。A・B などの記号は、選択中の抽出条件のその条件で使っている列です。' })
       ]);
       ['output', 'query', 'profiles'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
     }
@@ -373,6 +376,8 @@
       }
       /* 処理の順（読み込み範囲 → 列の追加 → 絞り込み）に並べ、その結果の列を最後に出す */
       this.body.appendChild(this._fileSection(ds));
+      const read = this._readSection(ds);
+      if (read) this.body.appendChild(read);
       this.body.appendChild(this._rangeSection());
       this.body.appendChild(this.derived.el);
       this.body.appendChild(this.filterSection.el);
@@ -443,6 +448,14 @@
         this.f.extentReason = h('div', { class: 'lq-reason' });
         children.push(this.f.extentReason);
       }
+      return UI.section('ファイル', children);
+    }
+
+    /** 読み方（文字コード・区切り文字。CSV・テキストのとき）。判定どおりなら畳み、見出しに要約を出す */
+    _readSection(ds) {
+      const src = ds.source;
+      if (!src.hasEncoding && !src.hasDelimiter) return null;
+      const children = [];
       if (src.hasEncoding) {
         this.f.encoding = h('select', { class: 'lq-select' });
         this.f.encodingReason = h('div', { class: 'lq-reason' });
@@ -457,7 +470,12 @@
         children.push(UI.field('区切り文字', this.f.delimiter));
         children.push(this.f.delimiterReason);
       }
-      return UI.section('ファイル', children);
+      const key = 'readOpen:' + this.role;
+      const uncertain = [src.encoding, src.delimiter].some((info) => info && info.certain === false);
+      this.f.readFold = UI.collapsible('読み方', children,
+        { open: uncertain || LQ.Prefs.get(key, false), onToggle: (open) => LQ.Prefs.set(key, open) });
+      this.f.readFold.el.title = '文字コード・区切り文字（自動で判定します。文字化けや列の分かれ方がおかしいときに切り替えます）';
+      return this.f.readFold.el;
     }
 
     _rangeSection() {
@@ -473,7 +491,8 @@
       this.f.autoReason = h('div', { class: 'lq-reason' });
       const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '読み込み範囲を自動判定の結果に戻す', onclick: () => this.app.resetReadSettings(this.role) },
         [Dom.icon('wand-magic-sparkles'), '自動判定に戻す']);
-      return UI.section('読み込み範囲', [
+      const key = 'rangeOpen:' + this.role;
+      this.f.rangeFold = UI.collapsible('読み込み範囲', [
         UI.field('ヘッダー（列名の行）', this.f.hasHeader.el),
         h('div', { class: 'lq-rangegrid' }, [
           UI.field(FIELD_LABEL.headerRow, this.f.headerRow, 'ヘッダーなしのときは使いません'),
@@ -481,15 +500,15 @@
           UI.field(FIELD_LABEL.startCol, this.f.startCol, '列記号（B）または番号（2）'),
           UI.field(FIELD_LABEL.endRow, this.f.endRow, '空欄＝最後の行まで（合計行を除くときに指定）')
         ]),
-        this.f.autoReason,
-        UI.note('tip', '右の表（読み込み範囲）の行番号や列記号をクリックしても指定できます。Enter で次の欄へ進みます。')
-      ], [reset]);
+        h('div', { class: 'lq-row lq-row--between' }, [this.f.autoReason, reset])
+      ], { open: LQ.Prefs.get(key, false), onToggle: (open) => LQ.Prefs.set(key, open) });
+      this.f.rangeFold.el.title = '右の表（読み込み範囲）の行番号や列記号をクリックしても指定できます';
+      return this.f.rangeFold.el;
     }
 
     _resultSection() {
       this.f.status = h('div');
-      this.f.detail = h('div', { class: 'lq-reason' });
-      return UI.section('読み込み結果', [this.f.status, this.f.detail, UI.field('列（押して表示／非表示を切り替え）', this.chips.el)]);
+      return UI.section('読み込み結果', [this.f.status, UI.field('列（押して表示／非表示を切り替え）', this.chips.el)]);
     }
 
     _numberInput(key, placeholder) {
@@ -610,6 +629,7 @@
         UI.fillSelect(this.f.sheet, src.sheetNames.map((n) => ({ value: n, label: n })), src.sheetName);
         this._extentReason(src.extent);
       }
+      this._readSummary(src);
       if (this.f.encoding) {
         const detected = src.encodingChoice === 'auto' && src.encoding ? LQ.EncodingDetector.label(src.encoding.value) : '';
         UI.fillSelect(this.f.encoding, [{ value: 'auto', label: '自動' + (detected ? '（判定：' + detected + '）' : '') }]
@@ -633,7 +653,27 @@
       Dom.clear(this.f.autoReason);
       Dom.append(this.f.autoReason, [Dom.icon('wand-magic-sparkles'),
         h('span', { text: (isAuto ? '自動判定のまま：' : '自動判定の結果（現在は変更済み）：') + ds.auto.reasons.join('／') })]);
+      this._setSummary(this.f.rangeFold, (isAuto ? '自動判定：' : '変更済み：') + (set.hasHeader ? 'ヘッダー ' + set.headerRow + ' 行目' : 'ヘッダーなし') +
+        '・範囲 ' + ds.stats.rangeText);
       this._updateResult(ds);
+    }
+
+    /** 読み方の要約：「UTF-8・カンマ（自動判定）」 */
+    _readSummary(src) {
+      if (!this.f.readFold) return;
+      const parts = [];
+      if (src.encoding) parts.push(LQ.EncodingDetector.label(src.encoding.value));
+      if (src.delimiter) parts.push(LQ.CsvParser.delimiterLabel(src.delimiter.value));
+      const manual = src.encodingChoice !== 'auto' || src.delimiterChoice !== 'auto';
+      this._setSummary(this.f.readFold, (manual ? '手動：' : '自動判定：') + parts.join('・'));
+    }
+
+    /** 畳んだ区画の見出しの要約を変え、変わったときは反映の合図を出す */
+    _setSummary(fold, text) {
+      if (!fold || fold.summary.textContent === text) return;
+      const changed = fold.summary.textContent !== '';
+      fold.summary.textContent = text;
+      if (changed) Flash.el(fold.summary);
     }
 
     /** Excel に記録された使用範囲の外にもデータがあったときだけ、実際の範囲で読んだことを示す */
@@ -658,15 +698,13 @@
     }
 
     _updateResult(ds) {
+      /* 行数と範囲を 1 行にまとめる（範囲は読み込み範囲の要約にも出している） */
       Dom.clear(this.f.status);
+      const detail = '（範囲 ' + ds.stats.rangeText + (ds.stats.skippedEmpty ? '・空行 ' + Util.formatInt(ds.stats.skippedEmpty) + ' 行を除外' : '') +
+        '・元の表は ' + Util.formatInt(ds.rawRowCount) + ' 行）';
       this.f.status.appendChild(ds.rowCount
-        ? UI.status('ok', Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列を読み込みます')
-        : UI.status('warn', 'データ行がありません。ヘッダー行・データ開始行を確認してください'));
-      Dom.clear(this.f.detail);
-      Dom.append(this.f.detail, [Dom.icon('crop-simple'), h('span', {
-        text: '範囲 ' + ds.stats.rangeText + (ds.stats.skippedEmpty ? '・空行 ' + Util.formatInt(ds.stats.skippedEmpty) + ' 行を除外' : '') +
-          '・元の表は ' + Util.formatInt(ds.rawRowCount) + ' 行'
-      })]);
+        ? UI.status('ok', Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列を読み込みます' + detail)
+        : UI.status('warn', 'データ行がありません。読み込み範囲のヘッダー行・データ開始行を確認してください' + detail));
       this.chips.setDataset(ds);
       this.filterSection.render(ds);
       this.derived.render(ds);
@@ -1055,16 +1093,16 @@
       this.list = h('div', { class: 'lq-derivedlist' });
       const add = (kind) => h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: Derive.KINDS[kind].label + 'で列を追加する',
         onclick: () => this.editor.open(this.role, kind, null) }, [Dom.icon(Derive.KINDS[kind].icon), Derive.KINDS[kind].label]);
-      this.el = UI.section('列を追加（読み替え・計算）', [this.list,
-        h('p', { class: 'lq-field__hint', text: '追加した列は、元の列と同じように条件・出力・集計で使えます。設定はこのブラウザに記憶し、次に同じ列のある表を読み込んだときも自動で作ります。' })],
-      [h('span', { class: 'lq-section__tools' }, [add('map'), add('calc')])]);
+      this.el = UI.section('列を追加（読み替え・計算）', [this.list],
+        [h('span', { class: 'lq-section__tools' }, [add('map'), add('calc')])]);
+      this.el.title = '追加した列は、元の列と同じように条件・出力・集計で使えます。設定はこのブラウザに記憶し、次に同じ列のある表を読み込んだときも自動で作ります。';
     }
 
     render(ds) {
       Dom.clear(this.list);
       const defs = this.state.derived[this.role];
       if (!defs.length) {
-        this.list.appendChild(h('p', { class: 'lq-field__hint', text: '例：「ぶどう ⇒ 果物」のように値を読み替える列や、([単価]+[送料])×[数量] のように計算する列を加えられます。' }));
+        this.list.appendChild(h('p', { class: 'lq-field__hint', text: '例：ぶどう ⇒ 果物 の読み替え、[単価]×[数量] の計算。条件・出力・集計で使えます。' }));
         return;
       }
       defs.forEach((def) => {

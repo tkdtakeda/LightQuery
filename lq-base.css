@@ -812,6 +812,22 @@ input[type="radio"] {
   flex-wrap: wrap;
 }
 
+/* 左に説明、右にボタン（説明は縮み、ボタンは右端に寄せる） */
+.lq-row--between {
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+
+.lq-row--between > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lq-row--between > .lq-btn {
+  flex: none;
+}
+
 /* ---------- バッジ・タグ ---------- */
 .lq-badge {
   display: inline-grid;
