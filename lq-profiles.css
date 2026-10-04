@@ -812,68 +812,6 @@
   flex-shrink: 0;
 }
 
-/* =========================================================================
- * ── 集計パネル ──
- * 集計パネル（グループにする列の一覧・集計する値の行・順位）
- * ========================================================================= */
-.lq-agglist {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-  list-style: none;
-}
-
-.lq-agglist__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: var(--h-control);
-  padding: 0 var(--space-2) 0 var(--space-4);
-  border: var(--border-width) solid var(--color-border);
-  border-left: var(--indicator-width) solid var(--color-primary-line);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-}
-
-.lq-agglist__name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lq-aggmeasures {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.lq-aggmeasure {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.8fr) var(--h-control);
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: var(--border-width) solid var(--color-border);
-  border-left: var(--indicator-width) solid var(--color-accent-line);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-
-.lq-aggmeasure .lq-select,
-.lq-aggmeasure .lq-combo {
-  width: 100%;
-}
-
-.lq-aggrank {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
 /* ---------- ① / ② の絞り込み（抽出の前に行を減らす） ---------- */
 .lq-tag--filter {
   border-color: var(--color-primary-line);

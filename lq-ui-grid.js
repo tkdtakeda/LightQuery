@@ -269,6 +269,17 @@
       return this.root.querySelector('tr[data-ri="' + ri + '"]');
     }
 
+    /** 表以外の部品（ピボットの表など）をそのまま入れる。列幅の調整・並べ替えなどの操作は付けない */
+    showNode(node) {
+      this.model = null;
+      this._scrollKey = null;
+      this.root.classList.remove('is-empty');
+      if (node.parentNode !== this.root || this.root.childNodes.length !== 1) {
+        Dom.clear(this.root);
+        this.root.appendChild(node);
+      }
+    }
+
     showEmpty(node) {
       this.model = null;
       this._scrollKey = null;

@@ -554,7 +554,8 @@
           derived: Util.clone(this.derived)
         };
       } else {
-        own = this.profiles.items.filter((p) => !p.isSample);
+        /* サンプル表示中に自分で作った抽出条件は残す（空のまま自動で用意したものは残さない） */
+        own = this.profiles.items.filter((p) => !p.isSample && !p.isBlank());
       }
       this.datasets.source = source;
       this.view.pages.source = 0;

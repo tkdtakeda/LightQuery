@@ -244,6 +244,15 @@
   --w-combo-letter: 28px;
   --w-wsbtn-max: 260px;
   --h-wslist-max: 52dvh;
+  --w-pvfield-max: 180px;
+  --w-pvlabel-max: 240px;
+  --h-pvfields-max: 220px;
+  --h-pvzone-min: 40px;
+  --color-pv-number: var(--c-blue-600);
+  --color-pv-date: var(--c-teal-600);
+  --color-pv-text: var(--c-gray-600);
+  --color-pv-count: var(--c-amber-700);
+  --color-pv-total: var(--c-blue-50);
 
   /* ---------- 影 ---------- */
   --shadow-sm: 0 1px 2px rgba(19, 48, 79, 0.08);
