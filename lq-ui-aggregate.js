@@ -166,9 +166,12 @@
       }
       const paging = main._paging('aggregate', c.rows.length);
       const rows = c.rows.slice(paging.start, paging.start + s.view.pageSize);
+      this._pageStart = paging.start;
       main.grid.render({
         mode: 'data',
         role: 'aggregate',
+        openable: !!c.drill,
+        openTitle: 'ダブルクリック（Enter）で、このグループに入った行（内訳）を表示',
         scrollKey: 'aggregate:' + paging.page + ':' + this._key,
         columns: c.header.map((name) => ({ key: name, label: name, letter: '' })),
         rows: rows.map((cells, i) => ({ head: { text: fmt(paging.start + i + 1) }, cells: cells })),
@@ -178,16 +181,37 @@
       main._renderPager('aggregate', c.rows.length, paging);
     }
 
+    /** 集計の対象の言い表し（要約・内訳の見出し用） */
+    _scopeText(view) {
+      const src = this.state.datasets.source;
+      return view.result.allRows ? '① 元データの全行' + (src.filters && src.filters.length ? '（絞り込み後）' : '')
+        : (view.filter === null ? '抽出結果すべて' : (view.filter < 0 ? '該当なしの行' : '「' + view.partName(view.filter) + '」の行'));
+    }
+
     _renderSummary(view, c) {
       const s = this.state;
-      const src = s.datasets.source;
-      const scope = view.result.allRows ? '① 元データの全行' + (src.filters && src.filters.length ? '（絞り込み後）' : '')
-        : (view.filter === null ? '抽出結果すべて' : (view.filter < 0 ? '該当なしの行' : '「' + view.partName(view.filter) + '」の行'));
       this.main.info.appendChild(h('div', { class: 'lq-summary' }, [
         h('span', { class: 'lq-summary__main' }, [Dom.icon('calculator'), fmt(c.groupCount) + ' グループ']),
-        h('span', { class: 'lq-summary__item lq-num', text: '対象：' + scope + ' ' + fmt(c.rowCount) + ' 行' }),
-        h('span', { class: 'lq-summary__item', text: LQ.Aggregator.describe(s.aggregate) })
+        h('span', { class: 'lq-summary__item lq-num', text: '対象：' + this._scopeText(view) + ' ' + fmt(c.rowCount) + ' 行' }),
+        h('span', { class: 'lq-summary__item', text: LQ.Aggregator.describe(s.aggregate) }),
+        c.drill ? h('span', { class: 'lq-summary__item lq-summary__hint' }, [Dom.icon('magnifying-glass-chart'), '行をダブルクリックで内訳を表示']) : null
       ]));
+    }
+
+    /**
+     * 集計表の表示中の ri 行目の内訳を開く（閉じたらその行にフォーカスを戻す）
+     * @param {number} ri 表示中のページの何行目か
+     */
+    openDrill(ri) {
+      const c = this.computed();
+      const entry = c && c.drill ? c.drill[(this._pageStart || 0) + ri] : null;
+      if (!entry) return;
+      if (!this.drill) this.drill = new LQ.DrillView(this.main.ctx, this.main.root);
+      const view = this.view();
+      this.drill.open(entry, view, this._scopeText(view), () => {
+        const tr = this.main.grid.rowElement(ri);
+        if (tr) tr.focus();
+      });
     }
   }
 

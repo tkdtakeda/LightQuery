@@ -231,7 +231,8 @@
     /**
      * @param {object} ctx
      * @param {HTMLElement} root スクロールする入れ物
-     * @param {{onSort:Function, onMove:Function, onRowHead:Function, onColHead:Function}} handlers
+     * @param {{onSort:Function, onMove:Function, onRowHead:Function, onColHead:Function, onRowOpen?:Function}} handlers
+     *        onRowOpen(ri, tr)：model.openable のとき、行のダブルクリック・Enter で呼ぶ（ri は表示中の何行目か）
      */
     constructor(ctx, root, handlers) {
       this.ctx = ctx;
@@ -248,6 +249,24 @@
       root.addEventListener('dragover', (e) => this._onDragOver(e));
       root.addEventListener('drop', (e) => this._onDrop(e));
       root.addEventListener('dragend', () => this._endDrag());
+      root.addEventListener('dblclick', (e) => this._onRowOpen(e));
+      root.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.isComposing) this._onRowOpen(e);
+      });
+    }
+
+    /** 開ける行（model.openable）のダブルクリック・Enter */
+    _onRowOpen(e) {
+      if (!this.model || !this.model.openable || !this.handlers.onRowOpen || e.target.closest('.lq-colresize, thead')) return;
+      const tr = e.target.closest('tr[data-ri]');
+      if (!tr) return;
+      e.preventDefault();
+      this.handlers.onRowOpen(Number(tr.dataset.ri), tr);
+    }
+
+    /** 表示中の ri 行目の行（フォーカスを戻すため） */
+    rowElement(ri) {
+      return this.root.querySelector('tr[data-ri="' + ri + '"]');
     }
 
     showEmpty(node) {
@@ -283,8 +302,10 @@
       const cellClass = this._cellClasses(model);
       const sizeIds = model.columns.map((col) => this._sizeId(col, model));
       const sizeStyle = sizeIds.map((id) => this.sizer.styleOf(id));
+      const openTitle = model.openable ? ' tabindex="0" title="' + esc(model.openTitle || 'ダブルクリック（Enter）で内訳を表示') + '"' : '';
       model.rows.forEach((row, ri) => {
-        out.push(row.rowClass ? '<tr class="' + row.rowClass + '">' : '<tr>');
+        const rowClass = (row.rowClass || '') + (model.openable ? (row.rowClass ? ' ' : '') + 'is-openable' : '');
+        out.push('<tr' + (rowClass ? ' class="' + rowClass + '"' : '') + (model.openable ? ' data-ri="' + ri + '"' + openTitle : '') + '>');
         out.push('<th class="lq-grid__rowhead" scope="row">' + this._rowHead(row.head, ri, model.mode) + '</th>');
         const isToggleRow = ri === model.toggleRow;
         for (let c = 0; c < model.columns.length; c++) {

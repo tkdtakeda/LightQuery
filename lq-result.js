@@ -770,7 +770,8 @@
      * @param {LQ.ResultView} view 抽出結果の見せ方（絞り込みを反映）
      * @param {object} settings AggregateSettings
      * @returns {{header:string[], rows:Array<Array<string>>, numeric:Set<number>, groupCount:number, rowCount:number,
-     *           missing:string[], notes:string[]}}
+     *           missing:string[], notes:string[], drill:Array<{by:Array<{name:string, value:string}>, keys:number[]}>}}
+     *          drill：rows と同じ並びで、そのグループに入った結果の行（内訳の表示用）
      */
     compute(view, settings) {
       const norm = new Normalizer(view.rules);
@@ -792,10 +793,11 @@
         const key = raws.map((v) => norm.text(v)).join('\u0001');
         let g = groups.get(key);
         if (!g) {
-          g = { labels: raws.map((v) => (Normalizer.isBlank(v) ? BLANK_LABEL : String(v))), count: 0, accs: measures.map(newAcc) };
+          g = { labels: raws.map((v) => (Normalizer.isBlank(v) ? BLANK_LABEL : String(v))), count: 0, accs: measures.map(newAcc), keys: [] };
           groups.set(key, g);
         }
         g.count++;
+        g.keys.push(k);
         for (let j = 0; j < measures.length; j++) {
           const kind = addValue(g.accs[j], view.rawValue(measures[j].def, k));
           if (kind === 'blank') skipped[j].blank++;
@@ -805,6 +807,7 @@
       const list = Array.from(groups.values()).map((g) => ({
         labels: g.labels,
         count: g.count,
+        keys: g.keys,
         results: g.accs.map((acc, j) => finish(acc, measures[j].m.fn))
       }));
       const header = groupDefs.map((d) => d.name);
@@ -856,7 +859,8 @@
         if (sk.blank) parts.push('空欄 ' + LQ.Util.formatInt(sk.blank) + ' 件');
         notes.push(AggregateSettings.measureLabel(x.m) + '：' + parts.join('・') + 'を除いて計算しました');
       });
-      return { header: header, rows: rows, numeric: numeric, groupCount: list.length, rowCount: n, missing: missing, notes: notes };
+      const drill = order.map((i) => ({ by: groupDefs.map((d, c) => ({ name: d.name, value: list[i].labels[c] })), keys: list[i].keys }));
+      return { header: header, rows: rows, numeric: numeric, groupCount: list.length, rowCount: n, missing: missing, notes: notes, drill: drill };
     },
 
     /**
@@ -867,7 +871,7 @@
      * @param {object} settings
      * @param {LQ.QueryEngine} engine
      * @param {LQ.CancelToken} token
-     * @returns {Promise<object|null>} compute と同じ形（中止したら null）
+     * @returns {Promise<object|null>} compute と同じ形（中止したら null）。drill は keys の代わりに ① の行（src）を持つ
      */
     async computeByCondition(view, settings, engine, token) {
       const source = view.source;
@@ -906,6 +910,7 @@
       if (useRank) header.push('順位');
       const skipped = measures.map(() => ({ blank: 0, invalid: 0 }));
       const rows = [];
+      const drill = [];
       let pairs = 0;
       const N = source.rowCount;
       for (let n = 0; n < linked.length; n++) {
@@ -923,12 +928,17 @@
         const M = cond.rowCount;
         const counts = new Int32Array(M);
         const accs = [];
-        for (let r = 0; r < M; r++) accs.push(measures.map(newAcc));
+        const members = [];
+        for (let r = 0; r < M; r++) {
+          accs.push(measures.map(newAcc));
+          members.push([]);
+        }
         for (let j = 0; j < res.length; j++) {
           const x = res.src[j];
           const r = res.cond[j];
           if (!mark[x] || r < 0) continue;
           counts[r]++;
+          members[r].push(x);
           pairs++;
           for (let t = 0; t < measures.length; t++) {
             const kind = addValue(accs[r][t], source.cell(x, measures[t].idx));
@@ -950,6 +960,11 @@
           results[r].forEach((x) => row.push(x.text));
           if (rankOf) row.push(rankOf[r] === null ? '' : String(rankOf[r]));
           rows.push(row);
+          drill.push({
+            by: (multi ? [{ name: '抽出条件', value: view.partName(i) }] : [])
+              .concat(condNames.map((name, t) => ({ name: name, value: colIdx[t] >= 0 ? String(cond.cell(r, colIdx[t])) : '' }))),
+            src: members[r]
+          });
         });
       }
       const numeric = new Set();
@@ -963,7 +978,7 @@
         notes.push(AggregateSettings.measureLabel(x.m) + '：' + parts.join('・') + 'を除いて計算しました');
       });
       if (multi && useRank) notes.push('順位は抽出条件ごとに付けています');
-      return { header: header, rows: rows, numeric: numeric, groupCount: rows.length, rowCount: pairs, missing: missing, notes: notes, byCondition: true };
+      return { header: header, rows: rows, numeric: numeric, groupCount: rows.length, rowCount: pairs, missing: missing, notes: notes, byCondition: true, drill: drill };
     },
 
     /** 出力用の表（Exporters の table と同じ形） */

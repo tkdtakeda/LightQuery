@@ -254,6 +254,7 @@
   /* ---------- 重なり順 ---------- */
   --z-sticky: 5;
   --z-sticky-corner: 6;
+  --z-drill: 15;
   --z-panel: 20;
   --z-topbar: 30;
   --z-popover: 60;

@@ -45,7 +45,8 @@
         onMove: (key, target, after) => this.state.moveColumn(key, target, after),
         onRowHead: (head, anchor) => this._onRowHead(head, anchor),
         onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col),
-        onColumnMenu: (name, anchor) => this.app.columnMenu.open(anchor, this.state.view.tab, name)
+        onColumnMenu: (name, anchor) => this.app.columnMenu.open(anchor, this.state.view.tab, name),
+        onRowOpen: (ri) => this.aggregate.openDrill(ri)
       });
       this.display = new LQ.GridDisplay(ctx, this.gridwrap);
       this.aggregate = new LQ.AggregateTab(this);
