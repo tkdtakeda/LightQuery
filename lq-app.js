@@ -561,6 +561,7 @@
         if (bundle.output) s.importOutputColumns(bundle.output.columns);
         if (bundle.derived) ['source', 'condition'].forEach((role) => s.setDerived(role, bundle.derived[role]));
         if (bundle.aggregate) s.setAggregate(bundle.aggregate);
+        if (bundle.charts) s.setCharts(bundle.charts);
         if (bundle.view) s.setPageSize(bundle.view.pageSize);
       }
       const adopted = whole ? 0 : this._adoptRules(added, bundle.rules);
@@ -640,6 +641,7 @@
         ['source', 'condition'].forEach((role) => s.setDerived(role, derived[role] || []));
         s.applyOutputPreset(built.output);
         s.setAggregate(built.aggregate || (s.sampleStash ? s.sampleStash.aggregate : s.aggregate));
+        s.setCharts(built.charts || (s.sampleStash ? s.sampleStash.charts : s.charts));
         s.setTab(built.tab || 'result');
       } catch (err) {
         built = null;
@@ -736,7 +738,8 @@
         query: new LQ.QueryPanel(ctx),
         rules: new LQ.RulesPanel(ctx),
         output: new LQ.OutputPanel(ctx),
-        aggregate: new LQ.AggregatePanel(ctx)
+        aggregate: new LQ.AggregatePanel(ctx),
+        chart: new LQ.ChartPanel(ctx)
       };
       this.main = new LQ.MainView(ctx);
       this.progressCard = new LQ.ProgressCard(ctx, Dom.qs('#lqMain'));
@@ -812,6 +815,8 @@
         return { id: 'loadSource', label: '① 元データを読み込む', icon: 'file-import',
           status: { kind: 'info', text: last ? 'このセットは前回「' + last + '」を使いました' : 'ドラッグ＆ドロップや Ctrl+V の貼り付けでも読み込めます' } };
       }
+      const chartCta = this._chartCta();
+      if (chartCta) return chartCta;
       const aggCta = this._sourceAggregateCta();
       if (aggCta) return aggCta;
       const all = this.validationAll();
@@ -857,6 +862,26 @@
       return { id: 'setupAggregate', label: 'ピボットを設定する', icon: 'table-cells', disabled: open,
         status: { kind: 'info', text: open ? '左の「ピボット」で項目を押すと表に入ります（② は不要です）'
           : '② を使わずに ① 元データの全行でピボットを作れます（行・列・値を選びます）' } };
+    }
+
+    /** グラフタブの CTA（グラフの設定 → 画像で保存）。抽出結果を使っていて未反映なら、再抽出を優先する */
+    _chartCta() {
+      const s = this.state;
+      const tab = this.main ? this.main.chart : null;
+      if (s.view.tab !== 'chart' || !tab) return null;
+      const chart = tab.chart();
+      if (chart && tab.target(chart) === 'result' && s.isStale()) return null;
+      const open = s.panel === 'chart';
+      if (!LQ.ChartSettings.isConfigured(chart)) {
+        return { id: 'setupChart', label: 'グラフを設定する', icon: 'chart-column', disabled: open,
+          status: { kind: 'info', text: open ? '左の「グラフ」で列を押すと、合う種類を選んで描きます' : '列を選ぶだけで、合うグラフを選んで描きます（② は不要です）' } };
+      }
+      const spec = tab.computed();
+      if (!spec || spec.error) {
+        return { id: 'setupChart', label: 'グラフを設定する', icon: 'chart-column', disabled: open, status: { kind: 'warn', text: spec ? spec.message : '' } };
+      }
+      return { id: 'saveChart', label: 'グラフを画像で保存する', icon: 'image',
+        status: { kind: 'ok', text: '「' + LQ.ChartSettings.title(chart) + '」を PNG で保存します（グラフ右上の「コピー」で Excel・PowerPoint に貼り付けも可）' } };
     }
 
     /** 出力の CTA：件数は出力ダイアログと同じ数え方（表示中の行）にし、内訳を状態の文に入れる */
@@ -936,6 +961,8 @@
         case 'chooseColumns': this.state.openPanel('output'); break;
         case 'showAll': this.state.setFilter(null); break;
         case 'setupAggregate': this.state.openPanel('aggregate'); break;
+        case 'setupChart': this.state.openPanel('chart'); break;
+        case 'saveChart': this.main.chart.save(); break;
         case 'export': this.resultDialogs.openExport(anchor); break;
         default: break;
       }
@@ -1383,13 +1410,13 @@
     }
 
     /* 読み込みパネルを開いている間は、その表を「読み込み範囲」表示にする。
-     * ピボットの設定を開いたら、結果が見えるようピボットタブにする（閉じてもピボットタブのまま） */
+     * ピボット・グラフの設定を開いたら、結果が見えるようピボット・グラフのタブにする（閉じてもそのタブのまま） */
     _syncPanelView() {
       const s = this.state;
       const p = s.panel;
-      if (p === 'aggregate' && s.datasets.source && s.view.tab !== 'aggregate') {
+      if ((p === 'aggregate' || p === 'chart') && s.datasets.source && s.view.tab !== p) {
         if (this._tabBeforePanel !== null) this._tabBeforePanel = null;
-        s.setTab('aggregate');
+        s.setTab(p);
       }
       ['source', 'condition'].forEach((role) => {
         if (p !== role) s.setRaw(role, false);

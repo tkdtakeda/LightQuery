@@ -150,6 +150,7 @@
           output: Util.clone(state.userOutputMemory()),
           derived: Util.clone(state.derived),
           aggregate: Util.clone(state.aggregate),
+          charts: Util.clone(state.charts),
           read: read,
           view: { pageSize: state.view.pageSize }
         },
@@ -173,6 +174,7 @@
         output: [],
         derived: { source: [], condition: [] },
         aggregate: null,
+        charts: null,
         read: null,
         view: { pageSize: state.view.pageSize }
       };
@@ -195,6 +197,7 @@
       state.setCombine(c.combine || { mode: 'assign', includeUnmatched: false });
       ['source', 'condition'].forEach((role) => state.setDerived(role, (c.derived && c.derived[role]) || []));
       state.setAggregate(c.aggregate || null);
+      state.setCharts(c.charts || null);
       if (c.view && c.view.pageSize) state.setPageSize(c.view.pageSize);
       state.replaceProfiles(list, c.activeId || null);
       state.importOutputColumns(c.output || []);
@@ -232,6 +235,7 @@
         output: { columns: c.output || [] },
         derived: c.derived || { source: [], condition: [] },
         aggregate: c.aggregate || null,
+        charts: c.charts || null,
         read: c.read || {},
         view: c.view || null
       };
@@ -245,7 +249,7 @@
   const SAVE_DELAY = 800;
   const MAX_SETS = 50;
   const NAME_MAX = 40;
-  const SAVE_TOPICS = new Set(['profiles', 'query', 'datasets', 'rules', 'output', 'aggregate']);
+  const SAVE_TOPICS = new Set(['profiles', 'query', 'datasets', 'rules', 'output', 'aggregate', 'charts']);
 
   class Worksets {
     /**

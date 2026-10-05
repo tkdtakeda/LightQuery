@@ -1,0 +1,301 @@
+@charset "UTF-8";
+/* =========================================================================
+ * LightQuery - lq-chart.css
+ * グラフ：描画領域と操作バー（種類のボタン・画像の保存）、ピボットの「並べて」表示、設定パネル（種類の一覧・題名・区間の数）
+ * 値はすべて lq-tokens.css のトークンを参照する。
+ * ========================================================================= */
+
+/* ---------- メインの描画領域（表の枠をそのまま使い、中でスクロールさせない） ---------- */
+.lq-gridwrap.is-chart {
+  overflow: hidden;
+}
+
+.lq-chart {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--chart-surface);
+}
+
+.lq-chart__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--h-chartbar);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: var(--border-width) solid var(--color-border-soft);
+  background: var(--color-surface-alt);
+}
+
+.lq-chart__tools,
+.lq-chart__exports {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.lq-chart__exports[hidden] {
+  display: none;
+}
+
+.lq-chart__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-5) var(--space-6) var(--space-4);
+}
+
+.lq-chart__plot {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.lq-chart__canvas {
+  display: block;
+}
+
+/* 描き直したことが分かるよう、ふわっと現れる */
+.lq-chart.is-drawn .lq-chart__plot {
+  animation: lq-chart-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes lq-chart-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--shift-sm));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lq-chart__status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  color: var(--color-text-sub);
+  font-size: var(--fs-md);
+  text-align: center;
+}
+
+.lq-chart__status[hidden] {
+  display: none;
+}
+
+.lq-chart__status .fa-solid {
+  font-size: var(--icon-xl);
+  color: var(--color-primary);
+}
+
+.lq-chart__status--error .fa-solid {
+  color: var(--color-warning);
+}
+
+/* ---------- 種類のボタン（操作バー・設定パネル共通） ---------- */
+.lq-chtypes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 目的ごとの区切り（比較｜推移｜構成｜分布｜関係） */
+.lq-chtypes__group {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
+
+.lq-chtype {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-control-sm);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-sub);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-chtype:hover:not(.is-active) {
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
+}
+
+.lq-chtype:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-width) var(--color-focus-ring);
+}
+
+.lq-chtype.is-active {
+  background: var(--color-surface);
+  color: var(--color-primary-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 今の列では描けない種類：押せるが、薄くして理由をポップアップに出す */
+.lq-chtype.is-unfit:not(.is-active) {
+  color: var(--color-text-disabled);
+}
+
+.lq-chtype.is-rec:not(.is-active) {
+  color: var(--color-success-strong);
+}
+
+.lq-chtype__rec {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-success-soft);
+  color: var(--color-success-strong);
+  font-size: var(--fs-2xs);
+}
+
+/* 箱ひげの記号（横向きのスライダーを縦にして、箱とひげに見せる） */
+.lq-chicon--rot {
+  transform: rotate(90deg);
+}
+
+/* 押している状態の切替ボタン（行と列を入れ替え） */
+.lq-btn.is-on {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+/* ---------- ピボットの「並べて」表示（左に表・右にグラフ） ---------- */
+.lq-pvsplit {
+  display: grid;
+  grid-template-columns: minmax(var(--w-chart-split-min), 1fr) minmax(var(--w-chart-split-min), 1.2fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.lq-pvsplit__table {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: var(--border-width) solid var(--color-border);
+}
+
+.lq-pvsplit__chart {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* グラフの棒にポイントしているとき、対応する表のセル */
+.lq-pivot td.is-linked {
+  background: var(--color-flash);
+  box-shadow: inset 0 0 0 var(--border-width-strong) var(--color-accent);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+/* ---------- 設定パネル ---------- */
+.lq-chlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.lq-chlist__chip {
+  max-width: var(--w-chart-name-max);
+}
+
+.lq-chname {
+  align-items: flex-end;
+}
+
+.lq-chname__field {
+  flex: 1 1 auto;
+}
+
+/* 種類の一覧：目的ごとに 1 行（左に目的、右に種類） */
+.lq-chgallery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lq-chgallery__row {
+  display: grid;
+  grid-template-columns: var(--w-chart-type) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width) solid var(--color-border-soft);
+}
+
+.lq-chgallery__row:last-child {
+  border-bottom: 0;
+}
+
+.lq-chgallery__purpose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--color-primary-strong);
+  font-size: var(--fs-sm);
+}
+
+.lq-chgallery__purpose span {
+  display: none;
+}
+
+.lq-chgallery__purpose .fa-solid {
+  color: var(--color-text-muted);
+  font-size: var(--icon-sm);
+}
+
+.lq-chgallery__types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.lq-chgallery__types .lq-chtype {
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.lq-chgallery__types .lq-chtype.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+/* 描くのに必要な置き場所が空のとき */
+.lq-pvzone.is-needed {
+  border-color: var(--color-accent-line);
+  background: var(--color-accent-faint);
+}
+
+.lq-chbins {
+  align-items: center;
+}
+
+.lq-range {
+  flex: 1 1 auto;
+  accent-color: var(--color-primary);
+}
+
+.lq-chbins__value {
+  min-width: var(--w-progress);
+  color: var(--color-text-sub);
+  font-size: var(--fs-sm);
+}

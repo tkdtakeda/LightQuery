@@ -1,7 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-samples.js
- * 動作確認用のサンプルデータ（10 パターン）。値は乱数の種を固定して毎回同じものを生成する。
+ * 動作確認用のサンプルデータ。値は乱数の種を固定して毎回同じものを生成する。
  *   build() は ① の grid と、抽出条件（名前・② の grid・条件・個別の照合ルール）の一覧、振り分けの設定、出力列の初期値を返す。
+ *   ピボット（aggregate）・グラフ（charts）の設定と、最初に開くタブ（tab）も返せる。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -404,6 +405,98 @@
             values: [{ key: 's:金額', fn: 'sum' }],
             sort: { by: 'value', dir: 'desc', value: 0 }
           },
+          tab: 'aggregate'
+        };
+      }
+    },
+    {
+      id: 'chart-trend',
+      icon: 'chart-line',
+      title: 'グラフ：月ごとの売上の推移と、商品ごとの売上（2 枚）',
+      desc: '① 元データの全行から、受注日（月）× 地域の金額の合計を折れ線に、商品ごとの金額の合計を横棒（上位 10 件＋その他）にします。グラフタブ上の「表示するグラフ」で 2 枚を切り替えられます。左の「グラフ」で列を押したり、種類を選んだりして変えられます。',
+      tags: ['グラフ', '折れ線', '横棒', '上位 N 件'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1616) },
+          profiles: [],
+          output: ORDER_HEADER.map((h) => 's:' + h),
+          charts: {
+            items: [
+              { id: 'smp-chart-trend', name: '月ごとの売上（地域別）', target: 'source', type: 'line', typeLocked: true,
+                slots: { x: [{ key: 's:受注日', grain: 'month' }], y: [{ key: 's:金額', fn: 'sum' }], color: [{ key: 's:地域' }] } },
+              { id: 'smp-chart-top', name: '商品ごとの売上（上位 10 件）', target: 'source', type: 'hbar', typeLocked: true,
+                slots: { x: [{ key: 's:商品名' }], y: [{ key: 's:金額', fn: 'sum' }] }, opts: { top: 10 } }
+            ],
+            activeId: 'smp-chart-trend'
+          },
+          tab: 'chart'
+        };
+      }
+    },
+    {
+      id: 'chart-dist',
+      icon: 'chart-simple',
+      title: 'グラフ：金額の分布（ヒストグラム）とカテゴリごとのばらつき（箱ひげ・バイオリン）',
+      desc: '金額をきりのよい幅の区間に分けて件数を数え、平均と中央値の線を引きます。2 枚目はカテゴリごとの金額を、バイオリン（分布の形）の中に箱ひげ（中央値・四分位・外れ値）を描いて比べます。棒や箱を押すと、そこに入った受注が出ます。',
+      tags: ['グラフ', 'ヒストグラム', '箱ひげ', 'バイオリン'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1717) },
+          profiles: [],
+          output: ORDER_HEADER.map((h) => 's:' + h),
+          charts: {
+            items: [
+              { id: 'smp-chart-hist', name: '', target: 'source', type: 'hist', typeLocked: true, slots: { x: [{ key: 's:金額' }] }, opts: { lines: true } },
+              { id: 'smp-chart-box', name: '', target: 'source', type: 'box', typeLocked: true,
+                slots: { y: [{ key: 's:金額' }], x: [{ key: 's:カテゴリ' }] }, opts: { shape: 'both', groupSort: 'median' } }
+            ],
+            activeId: 'smp-chart-hist'
+          },
+          tab: 'chart'
+        };
+      }
+    },
+    {
+      id: 'chart-scatter',
+      icon: 'braille',
+      title: 'グラフ：数量と金額の関係（散布図・回帰直線・相関係数）',
+      desc: '1 受注＝1 点で、横軸に数量、縦軸に金額を置き、カテゴリで色分けします（4 つ目以降は「その他」）。回帰直線を引き、相関係数 r と R² を題名の下に出します。点を押すと、その受注が出ます。金額の桁が大きく違うときは「縦軸を対数に」が便利です。',
+      tags: ['グラフ', '散布図', '相関', '色分け'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1818) },
+          profiles: [],
+          output: ORDER_HEADER.map((h) => 's:' + h),
+          charts: {
+            items: [
+              { id: 'smp-chart-scatter', name: '', target: 'source', type: 'scatter', typeLocked: true,
+                slots: { x: [{ key: 's:数量' }], y: [{ key: 's:金額' }], color: [{ key: 's:カテゴリ' }] }, opts: { trend: true } }
+            ],
+            activeId: 'smp-chart-scatter'
+          },
+          tab: 'chart'
+        };
+      }
+    },
+    {
+      id: 'chart-pivot',
+      icon: 'table-columns',
+      title: 'グラフ：ピボットを表とグラフで並べて見る（地域 × カテゴリ）',
+      desc: 'ピボット（行：地域、列：カテゴリ、値：金額の合計）を、左に表・右にグラフで並べます。グラフは表の形から「おすすめ」を選び、系列が 4 つまでなので並べた棒にします。棒にポイントすると表の対応するセルが光ります。上の「積み上げ」「100%」「行と列を入れ替え」で見方を変えられます。',
+      tags: ['グラフ', 'ピボット', '並べて表示', '積み上げ'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1919) },
+          profiles: [],
+          output: ORDER_HEADER.map((h) => 's:' + h),
+          aggregate: {
+            target: 'source',
+            rows: [{ key: 's:地域' }],
+            cols: [{ key: 's:カテゴリ' }],
+            values: [{ key: 's:金額', fn: 'sum' }],
+            sort: { by: 'value', dir: 'desc', value: 0 }
+          },
+          charts: { items: [], activeId: null, pivot: { view: 'split', type: 'auto', arrange: 'auto' } },
           tab: 'aggregate'
         };
       }

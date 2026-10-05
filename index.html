@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="lq-panels.css">
   <link rel="stylesheet" href="lq-profiles.css">
   <link rel="stylesheet" href="lq-pivot.css">
+  <link rel="stylesheet" href="lq-chart.css">
 </head>
 <body>
   <div class="lq-app">
@@ -26,7 +27,7 @@
   <div id="lqPopovers"></div>
   <div id="lqOverlay"></div>
 
-  <!-- 処理（Excel の読み書きに使う SheetJS は lq-readers.js が必要時に CDN から読み込む） -->
+  <!-- 処理（Excel の読み書きに使う SheetJS は lq-readers.js が、グラフの Chart.js は lq-chart-render.js が必要時に CDN から読み込む） -->
   <script src="lq-core.js"></script>
   <script src="lq-readers.js"></script>
   <script src="lq-dataset.js"></script>
@@ -34,6 +35,10 @@
   <script src="lq-profiles.js"></script>
   <script src="lq-result.js"></script>
   <script src="lq-pivot.js"></script>
+  <script src="lq-chart-stats.js"></script>
+  <script src="lq-chart-types.js"></script>
+  <script src="lq-chart-data.js"></script>
+  <script src="lq-chart-render.js"></script>
   <script src="lq-state.js"></script>
   <script src="lq-exporters.js"></script>
   <script src="lq-storage.js"></script>
@@ -46,6 +51,8 @@
   <script src="lq-ui-grid.js"></script>
   <script src="lq-ui-pivot.js"></script>
   <script src="lq-ui-pivot-panel.js"></script>
+  <script src="lq-ui-chart.js"></script>
+  <script src="lq-ui-chart-panel.js"></script>
   <script src="lq-ui-drill.js"></script>
   <script src="lq-ui-main.js"></script>
   <script src="lq-ui-dataset-panel.js"></script>

@@ -88,7 +88,8 @@
     ] },
     { label: '出力', items: [
       { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' },
-      { id: 'aggregate', icon: 'table-cells', label: 'ピボット', title: 'ピボット：抽出結果または ① の全行を、行 × 列 × 値（件数・合計・平均など）で集計' }
+      { id: 'aggregate', icon: 'table-cells', label: 'ピボット', title: 'ピボット：抽出結果または ① の全行を、行 × 列 × 値（件数・合計・平均など）で集計' },
+      { id: 'chart', icon: 'chart-column', label: 'グラフ', title: 'グラフ：比較（棒）・推移（折れ線）・構成（ドーナツ）・分布（ヒストグラム・箱ひげ・バイオリン）・関係（散布図）' }
     ] }
   ];
   const RAIL_SETTINGS = { label: '設定', items: [
@@ -145,6 +146,8 @@
       const agg = s.aggregate;
       const placed = agg.rows.length + agg.cols.length + agg.values.length;
       this._mark('aggregate', placed ? { kind: 'count', text: String(placed), title: 'ピボット：' + LQ.Aggregator.describe(agg) } : null);
+      const charts = s.charts.items.filter((c) => LQ.ChartSettings.isConfigured(c));
+      this._mark('chart', charts.length ? { kind: 'count', text: String(charts.length), title: 'グラフ ' + charts.length + ' 枚：' + charts.map((c) => LQ.ChartSettings.title(c)).join('、') } : null);
     }
 
     /** 抽出条件の印：要設定の件数（警告）／整っていれば有効な件数（複数のとき）かチェック */

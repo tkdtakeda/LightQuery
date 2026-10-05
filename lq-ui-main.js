@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-main.js
- * メイン領域：タブ（抽出結果 / ピボット / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
+ * メイン領域：タブ（抽出結果 / ピボット / グラフ / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
  *   空の状態（はじめに・次の一歩）。② のタブは選択中の抽出条件の ② を表示し、
  *   上の切替ボタン（CondTableBar）で表示する条件データ（＝選択中の抽出条件）を切り替える。
  *   注意帯は描き直すたびに作るため、ボタンのフォーカスは data-focus-key で戻す。
@@ -48,7 +48,10 @@
         onColumnMenu: (name, anchor) => this.app.columnMenu.open(anchor, this.state.view.tab, name)
       });
       this.display = new LQ.GridDisplay(ctx, this.gridwrap);
+      this._allRows = null;
+      this._drill = null;
       this.aggregate = new LQ.AggregateTab(this);
+      this.chart = new LQ.ChartTab(this);
       LQ.FormNav.attach(this.pager);
       ctx.bus.on('change', (e) => this._schedule(e));
       this._find = null;
@@ -118,6 +121,36 @@
       return this._rv;
     }
 
+    /**
+     * ピボット・グラフが使う見せ方。'result'：抽出結果（表示中の絞り込みを反映）／'source'：① の全行（抽出なしの結果。① が変わるまで使い回す）
+     * @param {'result'|'source'} target
+     */
+    targetView(target) {
+      if (target === 'result') return this.resultView();
+      const s = this.state;
+      const src = s.datasets.source;
+      if (!src) return null;
+      const key = src.id + ':' + src.version;
+      if (!this._allRows || this._allRows.key !== key) {
+        this._allRows = { key: key, view: new LQ.ResultView(LQ.BatchRunner.allRows(src, s.rules), src, s.rules) };
+      }
+      this._allRows.view.setRules(s.rules);
+      return this._allRows.view;
+    }
+
+    /** 見せ方の対象の言い表し（① 元データの全行／抽出結果すべて／「○○」の行） */
+    scopeText(view) {
+      const src = this.state.datasets.source;
+      return view.result.allRows ? '① 元データの全行' + (src && src.filters && src.filters.length ? '（絞り込み後）' : '')
+        : (view.filter === null ? '抽出結果すべて' : (view.filter < 0 ? '該当なしの行' : '「' + view.partName(view.filter) + '」の行'));
+    }
+
+    /** 内訳（ピボットのセル・グラフの棒や点に入った行）を重ねて表示する部品 */
+    drillView() {
+      if (!this._drill) this._drill = new LQ.DrillView(this.ctx, this.root);
+      return this._drill;
+    }
+
     /** 絞り込みの指定（抽出条件の id）→ 結果の中の番号。結果にないものは解除する */
     _filterIndex(view) {
       const s = this.state;
@@ -140,11 +173,12 @@
       Dom.clear(this.info);
       Dom.clear(this.tools);
       Dom.clear(this.pager);
-      this.gridwrap.classList.remove('is-stale');
+      this.gridwrap.classList.remove('is-stale', 'is-chart');
       if (tab === 'result') this._renderResult();
       else if (tab === 'aggregate') this.aggregate.render();
+      else if (tab === 'chart') this.chart.render();
       else this._renderDataset(tab);
-      this.tools.appendChild(this.display.button());
+      if (tab !== 'chart') this.tools.appendChild(this.display.button());
       if (focusKey) this._restoreFocus(focusKey);
     }
 
@@ -165,6 +199,7 @@
       const specs = [
         { id: 'result', icon: 'filter', label: '抽出結果', count: res ? Util.formatInt(res.length) + ' 行' : '未実行', stale: s.isStale() },
         { id: 'aggregate', icon: 'table-cells', label: 'ピボット', count: this.aggregate.tabCount(), stale: !!res && s.isStale() && this.aggregate.target() === 'result' },
+        { id: 'chart', icon: 'chart-column', label: 'グラフ', count: this.chart.tabCount(), stale: !!res && s.isStale() && this.chart.target(this.chart.chart()) === 'result' && LQ.ChartSettings.isConfigured(this.chart.chart()) },
         { id: 'source', role: 'source' },
         { id: 'condition', role: 'condition' }
       ];
