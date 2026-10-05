@@ -402,13 +402,14 @@
       this.state = ctx.state;
       this.role = role;
       this.list = h('div', { class: 'lq-stack' });
-      this.picker = h('select', { class: 'lq-select', title: '絞り込む列を選ぶと、条件の小窓が開きます' });
+      this.picker = h('select', { class: 'lq-select', title: '絞り込む列を選ぶと、条件の小窓が開きます（入力して探せます）' });
+      this.pickerCombo = LQ.ColumnCombo.enhance(this.picker, { letterOf: (v) => LQ.ColumnCombo.letterIn(this.state.datasets[role], v) });
       this.picker.addEventListener('change', () => {
         const name = this.picker.value;
         this.picker.value = '';
         if (name) ctx.app.columnMenu.open(this.picker, this.role, name);
       });
-      this.el = UI.section('絞り込み（抽出・集計の前に行を減らす）', [this.list, this.picker,
+      this.el = UI.section('絞り込み（抽出・集計の前に行を減らす）', [this.list, this.pickerCombo.el,
         h('p', { class: 'lq-field__hint', text: '右の表の見出しを押しても絞り込めます。すべてを満たす行だけを使います。' })]);
       this.el.title = '右の表の見出し（読み込み範囲の表示ではヘッダー行の列名）を押しても、同じ一覧で絞り込めます。すべてを満たす行だけを、抽出・集計・出力に使います。列の名前で記憶し、次に同じ列のある表を読み込んだときも掛け直します。';
     }

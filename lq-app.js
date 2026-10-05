@@ -7,8 +7,8 @@
 /* =========================================================================
  * ── 出力の操作 ──
  * 出力の操作：表示中の結果（絞り込み・並べ替え・列）を表にし、Excel・CSV・クリップボードへ出力する。
- *   Excel は「まとめ＋抽出条件ごとのシート」にも分けられ、「集計」シートも付けられる。出力の根拠（抽出条件シート）の行も作る。
- *   集計タブを表示中は、集計の表を出力する。
+ *   Excel は「まとめ＋抽出条件ごとのシート」にも分けられ、「ピボット」シートも付けられる。出力の根拠（抽出条件シート）の行も作る。
+ *   ピボットタブを表示中は、ピボットの表を出力する。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -32,7 +32,7 @@
     /**
      * 出力する表を用意する。
      * @param {{split?:boolean, aggregate?:boolean}} opts split：まとめ＋抽出条件ごとのシートにも分ける（Excel 用）／
-     *        aggregate：「集計」シートを付ける（Excel 用）
+     *        aggregate：「ピボット」シートを付ける（Excel 用）
      * @returns {{kind:'result'|'aggregate', view:LQ.ResultView, defs:Array, table:object, sheets:Array|null, aggregate:object|null}|null}
      */
     prepare(opts) {
@@ -41,7 +41,7 @@
       const agg = aggTab.computed();
       if (this.state.view.tab === 'aggregate' && agg) {
         const table = LQ.Aggregator.toTable(agg);
-        return { kind: 'aggregate', view: aggTab.view(), defs: table.defs, table: table, sheets: [{ name: '集計', table: table }], aggregate: agg };
+        return { kind: 'aggregate', view: aggTab.view(), defs: table.defs, table: table, sheets: [{ name: 'ピボット', table: table }], aggregate: agg };
       }
       const view = this.app.main.resultView();
       if (!view) return null;
@@ -51,12 +51,12 @@
       if (o.split && view.multi) out.sheets = this._sheets(view);
       if (o.aggregate && agg && aggTab.target() === 'result') {
         out.aggregate = agg;
-        out.sheets = (out.sheets || [{ name: '抽出結果', table: out.table }]).concat([{ name: '集計', table: LQ.Aggregator.toTable(agg) }]);
+        out.sheets = (out.sheets || [{ name: '抽出結果', table: out.table }]).concat([{ name: 'ピボット', table: LQ.Aggregator.toTable(agg) }]);
       }
       return out;
     }
 
-    /** 抽出結果に「集計」シートを付けられるか（集計の対象が抽出結果で、集計が設定されている） */
+    /** 抽出結果に「ピボット」シートを付けられるか（ピボットの対象が抽出結果で、項目が置かれている） */
     hasAggregate() {
       const aggTab = this.app.main.aggregate;
       return aggTab.target() === 'result' && !!aggTab.computed();
@@ -84,7 +84,6 @@
      * @param {{fileName:string, protect:boolean, split:boolean}} options
      */
     async exportResult(formatId, options) {
-      const s = this.state;
       const opts = options || {};
       const xlsx = formatId === 'xlsx';
       const prepared = this.prepare({ split: xlsx && !!opts.split, aggregate: xlsx && !!opts.aggregate });
@@ -93,7 +92,9 @@
         return;
       }
       const format = LQ.Exporters.get(formatId);
-      s.setBusy({ kind: 'export', label: '出力中…', detail: format.label + 'を作成しています' });
+      const progress = this.app.startProgress({ kind: 'export', label: '出力中…', title: '出力しています', detail: format.label + 'を作成しています',
+        steps: [{ id: 'build', label: format.label + 'の作成' }] });
+      progress.begin('build', false);
       await Async.paint();
       try {
         const out = await LQ.Exporters.build(formatId, prepared.table, { metaLines: this.metaLines(prepared), protect: !!opts.protect, sheets: prepared.sheets });
@@ -108,7 +109,7 @@
       } catch (err) {
         this.toasts.show({ type: 'error', title: '出力できませんでした', message: err.message });
       } finally {
-        s.setBusy(null);
+        progress.close();
       }
     }
 
@@ -132,7 +133,7 @@
       if (!split && view && view.filter !== null) scope = view.filter < 0 ? '該当なし' : view.partName(view.filter);
       const aggTab = this.app.main.aggregate;
       if (this.state.view.tab === 'aggregate' && aggTab.computed()) {
-        scope = aggTab.target() === 'result' ? (view && view.filter !== null ? scope + '_' : '') + '集計' : '集計';
+        scope = aggTab.target() === 'result' ? (view && view.filter !== null ? scope + '_' : '') + 'ピボット' : 'ピボット';
       }
       return Util.sanitizeFileName((src ? Util.baseName(src.name) : 'LightQuery') + '_' + scope + '_' + Util.timestamp());
     }
@@ -190,7 +191,7 @@
       lines.push(['結果', '① ' + fmt(st.sourceRows) + ' 行中 ' + fmt(st.matchedSources) + ' 行が該当・出力 ' + fmt(st.outputRows) + ' 行' +
         (st.includeUnmatched ? '（該当なし ' + fmt(st.unmatchedRows) + ' 行を含む）' : '')]);
       if (prepared.aggregate) {
-        lines.push(['集計', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(prepared.aggregate.rowCount) + ' 行・' + fmt(prepared.aggregate.groupCount) + ' グループ）']);
+        lines.push(['ピボット', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(prepared.aggregate.rowCount) + ' 行・表 ' + fmt(prepared.aggregate.groupCount) + ' 行）']);
         prepared.aggregate.notes.forEach((n) => lines.push(['', n]));
       }
       if (prepared.sheets && prepared.sheets.length > 1) lines.push(['シート', prepared.sheets.map((sh) => sh.name).join('、')]);
@@ -202,16 +203,16 @@
       return lines;
     }
 
-    /** ① の全行（抽出なし）を集計したときの根拠の行 */
+    /** ① の全行（抽出なし）でピボットを作ったときの根拠の行 */
     _allRowsMetaLines(prepared) {
       const s = this.state;
       const src = s.datasets.source;
       const agg = prepared.aggregate;
       const lines = [['項目', '内容'], ['出力日時', Util.dateTimeText(new Date())], ['① 元データ', this._describeDataset(src)]];
       if (src.filters && src.filters.length) lines.push(['① の絞り込み', fmt(src.baseRowCount) + ' 行中 ' + fmt(src.rowCount) + ' 行（列ごとの絞り込み ' + src.filters.length + ' 件）']);
-      lines.push(['集計の対象', '① 元データの全行（② は使わず、抽出なし）']);
+      lines.push(['ピボットの対象', '① 元データの全行（② は使わず、抽出なし）']);
       lines.push(['照合ルール', prepared.view.result.snapshot.rules]);
-      lines.push(['集計', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(agg.rowCount) + ' 行・' + fmt(agg.groupCount) + ' グループ）']);
+      lines.push(['ピボット', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(agg.rowCount) + ' 行・表 ' + fmt(agg.groupCount) + ' 行）']);
       agg.notes.forEach((n) => lines.push(['', n]));
       lines.push(['出力した列', prepared.defs.map((d) => d.name).join('、')]);
       lines.push(['作成', 'LightQuery（簡易クエリ）']);
@@ -521,9 +522,11 @@
         this.toasts.show({ type: 'error', title: '抽出条件を読み込めませんでした', message: file.name + '：' + err.message });
         return;
       }
+      const ws = this.app.worksets;
+      const canNewSet = bundle.kind === 'library' && !!ws && ws.available;
       if (bundle.kind === 'library' && !this._ownListIsBlank()) {
-        this.app.profileDialogs.openImportChoice({ fileName: file.name, count: bundle.profiles.length },
-          (mode) => this.applyBundle(bundle, mode, file.name));
+        this.app.profileDialogs.openImportChoice({ fileName: file.name, count: bundle.profiles.length, canNewSet: canNewSet },
+          (mode) => (mode === 'newSet' ? ws.importAsNew(bundle, file.name, obj.worksetName) : this.applyBundle(bundle, mode, file.name)));
         return;
       }
       this.applyBundle(bundle, bundle.kind === 'library' ? 'replace' : 'add', file.name);
@@ -619,7 +622,9 @@
       if (this.app._blockedByBusy()) return;
       const snap = s.snapshot();
       const hadStash = !!s.sampleStash;
-      s.setBusy({ kind: 'read', label: '準備中…', detail: 'サンプルデータを作成しています' });
+      const progress = this.app.startProgress({ kind: 'read', label: '準備中…', title: 'サンプルを準備しています', detail: 'サンプルデータを作成しています',
+        steps: [{ id: 'build', label: 'サンプルデータの作成' }] });
+      progress.begin('build', false);
       await Async.paint();
       let built = null;
       try {
@@ -640,7 +645,7 @@
         built = null;
         this.toasts.show({ type: 'error', title: 'サンプルを読み込めませんでした', message: err.message });
       } finally {
-        s.setBusy(null);
+        progress.close();
       }
       if (!built) return;
       const stashed = !hadStash && s.sampleStash ? s.sampleStash.profiles.filter((p) => !p.isBlank()).length : 0;
@@ -690,6 +695,8 @@
   const fmt = Util.formatInt;
 
   const ROLE_LABEL = { source: '① 元データ', condition: '② 条件データ' };
+  /* 読み込みの最後の段階（読み込んだ表を画面の表にする。割合は測れない） */
+  const TABLE_STEP = { id: 'table', label: '表の準備', weight: 1 };
   const FILE_ACCEPT = '.xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt';
   const RE_GENERIC_SHEET = /^(sheet|シート)\s*\d+$/i;
 
@@ -732,7 +739,11 @@
         aggregate: new LQ.AggregatePanel(ctx)
       };
       this.main = new LQ.MainView(ctx);
+      this.progressCard = new LQ.ProgressCard(ctx, Dom.qs('#lqMain'));
       this.shell = new LQ.Shell(ctx, this.panels);
+      this.worksets = new LQ.Worksets(this);
+      this.worksetButton = new LQ.WorksetButton(ctx, Dom.qs('#lqTopbar'), this.worksets);
+      this.worksets.init(restored);
       this.store.attach((notice) => this.toasts.show(notice));
       this.bus.on('panel', () => this._syncPanelView());
       LQ.ExcelLibrary.subscribe(() => this.bus.emit('change', { topic: 'library' }));
@@ -790,15 +801,16 @@
     cta() {
       const s = this.state;
       const busy = s.busy;
-      if (busy && busy.kind === 'run') {
-        return { id: 'cancel', label: '中止する', icon: 'stop', variant: 'stop', progress: busy.ratio || 0,
-          status: { kind: 'info', text: busy.label + '… ' + Util.formatPercent(busy.ratio || 0, 0) } };
+      if (busy) {
+        const status = { kind: 'info', text: busy.title + '… ' + Util.formatPercent(busy.ratio || 0, 0) + (busy.step && busy.steps.length > 1 ? '（' + busy.step.label + '）' : '') };
+        if (busy.cancellable) return { id: 'cancel', label: '中止する', icon: 'stop', variant: 'stop', progress: busy.ratio || 0, status: status };
+        return { id: 'busy', label: busy.label, icon: 'spinner', spin: true, disabled: true, progress: busy.ratio || 0, status: status };
       }
-      if (busy) return { id: 'busy', label: busy.label, icon: 'spinner', spin: true, disabled: true, status: { kind: 'info', text: busy.detail || '処理中です' } };
       const src = s.datasets.source;
       if (!src) {
+        const last = this.worksets ? this.worksets.lastSourceName() : '';
         return { id: 'loadSource', label: '① 元データを読み込む', icon: 'file-import',
-          status: { kind: 'info', text: 'ドラッグ＆ドロップや Ctrl+V の貼り付けでも読み込めます' } };
+          status: { kind: 'info', text: last ? 'このセットは前回「' + last + '」を使いました' : 'ドラッグ＆ドロップや Ctrl+V の貼り付けでも読み込めます' } };
       }
       const aggCta = this._sourceAggregateCta();
       if (aggCta) return aggCta;
@@ -816,8 +828,8 @@
       if (s.result.length === 0) return { id: 'review', label: '条件を見直す', icon: 'sliders', status: { kind: 'warn', text: '一致する行はありませんでした' } };
       const agg = s.view.tab === 'aggregate' && this.main ? this.main.aggregate.computed() : null;
       if (agg) {
-        return { id: 'export', label: fmt(agg.groupCount) + ' グループの集計を出力する', icon: 'file-export',
-          status: { kind: 'ok', text: '集計の表を Excel・CSV・コピーで出力できます' } };
+        return { id: 'export', label: 'ピボット（' + fmt(agg.groupCount) + ' 行）を出力する', icon: 'file-export',
+          status: { kind: 'ok', text: 'ピボットの表を Excel・CSV・コピーで出力できます' } };
       }
       if (!this._hasOutputColumn()) {
         return { id: 'chooseColumns', label: '出力する列を選ぶ', icon: 'table-columns', status: { kind: 'warn', text: '出力できる列が 0 列のため出力できません（左の「出力列」で選びます）' } };
@@ -825,26 +837,26 @@
       return this._exportCta();
     }
 
-    /** 集計タブで ① の全行を集計しているときの CTA（② を使わない流れ。集計の設定 → 集計の出力） */
+    /** ピボットタブで ① の全行を使っているときの CTA（② を使わない流れ。ピボットの設定 → 出力） */
     _sourceAggregateCta() {
       const s = this.state;
       const aggTab = this.main ? this.main.aggregate : null;
       if (s.view.tab !== 'aggregate' || !aggTab || aggTab.target() !== 'source') return null;
       const c = aggTab.computed();
       if (c) {
-        return { id: 'export', label: fmt(c.groupCount) + ' グループの集計を出力する', icon: 'file-export',
-          status: { kind: 'ok', text: '① 元データの全行（' + fmt(c.rowCount) + ' 行）の集計を Excel・CSV・コピーで出力できます' } };
+        return { id: 'export', label: 'ピボット（' + fmt(c.groupCount) + ' 行）を出力する', icon: 'file-export',
+          status: { kind: 'ok', text: '① 元データの全行（' + fmt(c.rowCount) + ' 行）のピボットを Excel・CSV・コピーで出力できます' } };
       }
-      if (aggTab.pending) return { id: 'busy', label: '集計中…', icon: 'spinner', spin: true, disabled: true, status: { kind: 'info', text: '集計しています' } };
-      /* 集計パネルを開いているときは押しても何も起きないため、押せない状態にして次にすることを示す */
+      if (aggTab.pending) return { id: 'busy', label: '計算中…', icon: 'spinner', spin: true, disabled: true, status: { kind: 'info', text: 'ピボットを計算しています' } };
+      /* ピボットの設定を開いているときは押しても何も起きないため、押せない状態にして次にすることを示す */
       const open = s.panel === 'aggregate';
-      if (s.aggregate.mode === 'condRows') {
-        return { id: 'setupAggregate', label: '集計を設定する', icon: 'calculator', disabled: open,
-          status: { kind: 'warn', text: '「② の行ごと」は ① の全行では使えません（「列を選んで集計」にするか、抽出してから集計します）' } };
+      if (LQ.PivotSettings.usesCondRow(s.aggregate)) {
+        return { id: 'setupAggregate', label: 'ピボットを設定する', icon: 'table-cells', disabled: open,
+          status: { kind: 'warn', text: '「② の行」は ① の全行では使えません（行から外すか、抽出してから作ります）' } };
       }
-      return { id: 'setupAggregate', label: '集計を設定する', icon: 'calculator', disabled: open,
-        status: { kind: 'info', text: open ? '左の集計パネルで、グループにする列か集計する値を選んでください（② は不要です）'
-          : '② を使わずに ① 元データの全行を集計できます（グループにする列・集計する値を選びます）' } };
+      return { id: 'setupAggregate', label: 'ピボットを設定する', icon: 'table-cells', disabled: open,
+        status: { kind: 'info', text: open ? '左の「ピボット」で項目を押すと表に入ります（② は不要です）'
+          : '② を使わずに ① 元データの全行でピボットを作れます（行・列・値を選びます）' } };
     }
 
     /** 出力の CTA：件数は出力ダイアログと同じ数え方（表示中の行）にし、内訳を状態の文に入れる */
@@ -929,6 +941,15 @@
       }
     }
 
+    /**
+     * 進み具合を作り、変わるたびに状態（busy）へ反映する。終わったら呼び出し側で progress.close() にする。
+     * @param {object} spec LQ.Progress の spec
+     * @returns {LQ.Progress}
+     */
+    startProgress(spec) {
+      return new LQ.Progress(spec, (snap) => this.state.setBusy(snap));
+    }
+
     /** 処理中は、結果とデータの対応が崩れる操作を止めて理由を知らせる */
     _blockedByBusy() {
       if (!this.state.busy) return false;
@@ -984,15 +1005,18 @@
         this.profiles.importJsonFile(file);
         return;
       }
-      this.state.setBusy({ kind: 'read', label: '読み込み中…', detail: file.name + '（' + Util.formatBytes(file.size) + '）を読み込んでいます' });
+      const progress = this.startProgress({ kind: 'read', label: '読み込み中…', title: ROLE_LABEL[role] + 'を読み込んでいます',
+        detail: file.name + '（' + Util.formatBytes(file.size) + '）', steps: LQ.SourceFile.loadSteps(file.name).concat([TABLE_STEP]) });
       await Async.paint();
       try {
-        const source = await LQ.SourceFile.fromFile(file);
+        const source = await LQ.SourceFile.fromFile(file, progress);
+        progress.begin(TABLE_STEP.id, false);
+        await Async.paint();
         this._putDataset(role, new LQ.Dataset(role, source));
       } catch (err) {
         this.toasts.show({ type: 'error', title: ROLE_LABEL[role] + 'を読み込めませんでした', message: file.name + '：' + this._friendlyError(err) });
       } finally {
-        this.state.setBusy(null);
+        progress.close();
       }
     }
 
@@ -1011,21 +1035,26 @@
         return;
       }
       if (!list.length) return;
-      this.state.setBusy({ kind: 'read', label: '読み込み中…', detail: list.map((f) => f.name).join('、') + ' を読み込んでいます' });
-      await Async.paint();
+      const progress = this.startProgress({ kind: 'read', label: '読み込み中…', title: ROLE_LABEL.condition + 'を読み込んでいます' });
       const tables = [];
       const failed = [];
       try {
         for (let i = 0; i < list.length; i++) {
           try {
-            const src = await LQ.SourceFile.fromFile(list[i]);
+            if (list.length > 1) progress.item(i, list.length, list[i].name);
+            progress.plan(LQ.SourceFile.loadSteps(list[i].name).concat([TABLE_STEP]));
+            progress.setDetail(list[i].name + '（' + Util.formatBytes(list[i].size) + '）');
+            await Async.paint();
+            const src = await LQ.SourceFile.fromFile(list[i], progress);
+            progress.begin(TABLE_STEP.id, false);
+            await Async.paint();
             this._collectTables(src, list[i].name).forEach((t) => tables.push(t));
           } catch (err) {
             failed.push(list[i].name + '：' + this._friendlyError(err));
           }
         }
       } finally {
-        this.state.setBusy(null);
+        progress.close();
       }
       failed.forEach((msg) => this.toasts.show({ type: 'error', title: '② 条件データを読み込めませんでした', message: msg }));
       if (!tables.length) return;
@@ -1225,18 +1254,15 @@
           rules: Util.clone(s.rulesFor(p)), ownRules: !!p.rules });
       });
       const ctx = { source: s.datasets.source, rules: Util.clone(s.rules), combine: s.effectiveCombine(), profiles: profiles };
-      s.setBusy({ kind: 'run', label: '準備中', ratio: 0 });
+      const progress = this.startProgress({ kind: 'run', label: '抽出中…', title: '抽出しています', detail: this._runSummary(), cancellable: true,
+        steps: [{ id: 'run', label: '照合' }] });
+      progress.begin('run', true);
+      progress.update(0, '準備中');
       await Async.paint();
-      let last = 0;
       try {
         const result = await this.batch.run(ctx, {
           token: token,
-          onProgress: (p) => {
-            const now = performance.now();
-            if (now - last < 80 && p.ratio < 1) return;
-            last = now;
-            s.setBusy({ kind: 'run', label: p.label, ratio: p.ratio });
-          }
+          onProgress: (p) => progress.update(p.ratio, p.done !== undefined ? p.label + ' ' + fmt(p.done) + ' / ' + fmt(p.total) + ' 行' : p.label)
         });
         if (result.cancelled) {
           this.toasts.show({ type: 'info', title: '抽出を中止しました', message: s.result ? '表示中の結果は前回のものです。' : '' });
@@ -1257,7 +1283,7 @@
         this.toasts.show({ type: 'error', title: '抽出できませんでした', message: err.message });
       } finally {
         this._token = null;
-        s.setBusy(null);
+        progress.close();
       }
     }
 
@@ -1357,7 +1383,7 @@
     }
 
     /* 読み込みパネルを開いている間は、その表を「読み込み範囲」表示にする。
-     * 集計パネルを開いたら、設定の結果が見えるよう集計タブにする（閉じても集計タブのまま） */
+     * ピボットの設定を開いたら、結果が見えるようピボットタブにする（閉じてもピボットタブのまま） */
     _syncPanelView() {
       const s = this.state;
       const p = s.panel;

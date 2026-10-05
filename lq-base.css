@@ -336,6 +336,7 @@ ol {
 
 /* ---------- メイン ---------- */
 .lq-main {
+  position: relative;
   grid-area: main;
   display: grid;
   grid-template-rows: minmax(var(--h-tabbar), auto) auto minmax(0, 1fr) auto;

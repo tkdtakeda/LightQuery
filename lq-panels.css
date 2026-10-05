@@ -233,7 +233,8 @@
 }
 
 .lq-cond.is-pair .lq-cond__right .lq-input,
-.lq-cond.is-pair .lq-cond__right .lq-select {
+.lq-cond.is-pair .lq-cond__right .lq-select,
+.lq-cond.is-pair .lq-cond__right .lq-combo {
   flex: 1 1 0;
   min-width: 0;
 }
@@ -248,7 +249,8 @@
 }
 
 .lq-cond .lq-select,
-.lq-cond .lq-input {
+.lq-cond .lq-input,
+.lq-cond .lq-combo {
   width: 100%;
 }
 

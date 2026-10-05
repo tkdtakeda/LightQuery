@@ -345,19 +345,19 @@
     {
       id: 'aggregate',
       icon: 'calculator',
-      title: '抽出結果を地域ごとに集計（件数・合計・平均・標準偏差・順位）',
-      desc: '上期（2025/04/01〜2025/09/30）の受注を抽出し、集計タブで地域ごとの件数・金額の合計・平均・標準偏差、最初と最後の受注日を求め、合計金額の大きい順に順位を付けます。左の「集計」で列や集計のしかたを変えられます。',
-      tags: ['集計', 'グループごと', '順位', '範囲'],
+      title: '抽出結果を地域ごとに集計（ピボット：件数・合計・平均・標準偏差）',
+      desc: '上期（2025/04/01〜2025/09/30）の受注を抽出し、ピボットで地域ごとの件数・金額の合計・平均・標準偏差、最初と最後の受注日を求め、合計金額の大きい順に並べます。左の「ピボット」で項目を押したり、ドラッグしたりして変えられます。',
+      tags: ['ピボット', 'グループごと', '並べ替え', '範囲'],
       build() {
         return {
           source: { name: ORDERS_NAME, grid: orders(1212) },
           profiles: [{ name: '上期の受注', condition: null, query: Q([C('受注日', 'between', fixedRange('2025/04/01', '2025/09/30'))]) }],
           output: ORDER_HEADER.map((h) => 's:' + h),
           aggregate: {
-            groupBy: ['s:地域'],
-            count: true,
-            measures: [{ key: 's:金額', fn: 'sum' }, { key: 's:金額', fn: 'avg' }, { key: 's:金額', fn: 'stdev' }, { key: 's:受注日', fn: 'min' }, { key: 's:受注日', fn: 'max' }],
-            rank: { target: 'sum|s:金額', dir: 'desc' }
+            rows: [{ key: 's:地域' }],
+            values: [{ fn: 'count' }, { key: 's:金額', fn: 'sum' }, { key: 's:金額', fn: 'avg' }, { key: 's:金額', fn: 'stdev' },
+              { key: 's:受注日', fn: 'min' }, { key: 's:受注日', fn: 'max' }],
+            sort: { by: 'value', dir: 'desc', value: 1 }
           },
           tab: 'aggregate'
         };
@@ -366,9 +366,9 @@
     {
       id: 'condagg',
       icon: 'list-check',
-      title: '② の顧客ごとに件数・金額・順位を出す（② の行ごとの集計）',
-      desc: '② の重点顧客リストの 1 行ごとに、受注の件数・金額の合計・平均と、合計金額の順位を集計タブに出します。受注が 0 件の顧客（C9999）も 0 件として表に出ます。グループにする列を選ぶ必要はありません。',
-      tags: ['集計', '② の行ごと', '0 件の行も出す', '順位'],
+      title: '② の顧客ごとに件数・金額を出す（ピボットの「② の行」）',
+      desc: '② の重点顧客リストの 1 行ごとに、受注の件数・金額の合計・平均をピボットに出し、合計金額の大きい順に並べます。受注が 0 件の顧客（C9999）も 0 件として表に出ます。行に「② の行」を置くだけで、列を選ぶ必要はありません。',
+      tags: ['ピボット', '② の行', '0 件の行も出す', '並べ替え'],
       build() {
         const cond = [['顧客ID', '担当', '重点理由'],
           ['C0012', '佐藤', '大口'], ['C0045', '鈴木', '新規'], ['C0078', '佐藤', '休眠復活'], ['C0101', '高橋', '大口'],
@@ -378,10 +378,31 @@
           profiles: [{ name: '重点顧客', condition: { name: 'サンプル_重点顧客.csv', grid: cond }, query: Q([C('顧客ID', 'eq', col('顧客ID'))]) }],
           output: ['s:受注番号', 's:受注日', 's:顧客ID', 's:顧客名', 's:金額', 'c:担当'],
           aggregate: {
-            mode: 'condRows',
-            count: true,
-            measures: [{ key: 's:金額', fn: 'sum' }, { key: 's:金額', fn: 'avg' }],
-            rank: { target: 'sum|s:金額', dir: 'desc' }
+            rows: [{ key: 'x:condRow' }],
+            values: [{ fn: 'count' }, { key: 's:金額', fn: 'sum' }, { key: 's:金額', fn: 'avg' }],
+            sort: { by: 'value', dir: 'desc', value: 1 }
+          },
+          tab: 'aggregate'
+        };
+      }
+    },
+    {
+      id: 'pivot',
+      icon: 'table-cells',
+      title: 'ピボット：地域 × 月の売上（② を使わずに ① だけで作る）',
+      desc: '① 元データの全行で、行に「地域」、列に「受注日（月）」、値に「金額の合計」を置いたピボットです。日付は月ごとにまとまります。タグの ▾ で「曜日」「四半期」などに変えたり、値を「総計に対する %」にしたりできます。セルをダブルクリックすると内訳が出ます。',
+      tags: ['ピボット', '行 × 列', '日付のまとめ方', '① だけ'],
+      build() {
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1515) },
+          profiles: [],
+          output: ORDER_HEADER.map((h) => 's:' + h),
+          aggregate: {
+            target: 'source',
+            rows: [{ key: 's:地域' }],
+            cols: [{ key: 's:受注日', grain: 'month' }],
+            values: [{ key: 's:金額', fn: 'sum' }],
+            sort: { by: 'value', dir: 'desc', value: 0 }
           },
           tab: 'aggregate'
         };
@@ -406,7 +427,7 @@
             condition: []
           },
           output: ['s:受注番号', 's:受注日', 's:カテゴリ', 's:大分類', 's:数量', 's:金額', 's:税込金額', 's:1 個あたり税込'],
-          aggregate: { mode: 'columns', groupBy: ['s:大分類'], count: true, measures: [{ key: 's:税込金額', fn: 'sum' }, { key: 's:税込金額', fn: 'avg' }], rank: { target: 'sum|s:税込金額', dir: 'desc' } }
+          aggregate: { rows: [{ key: 's:大分類' }], values: [{ fn: 'count' }, { key: 's:税込金額', fn: 'sum' }, { key: 's:税込金額', fn: 'avg' }], sort: { by: 'value', dir: 'desc', value: 1 } }
         };
       }
     },

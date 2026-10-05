@@ -326,6 +326,8 @@
       let total = 0;
       let quota = false;
       let failed = false;
+      /* 出力列の並びは ② のデータより先に保存する（容量が足りないとき、② はファイル名だけの保存に切り替わる） */
+      if (!this._write(ls, KEY_OUTPUT, JSON.stringify({ format: 1, memory: s.userOutputMemory() }))) failed = true;
       profiles.forEach((p) => {
         const ref = p.currentRef();
         let stored = false;
@@ -359,7 +361,6 @@
       });
       const lib = { format: 1, order: profiles.map((p) => p.id), activeId: s.userActiveId(), combine: s.userCombine() };
       if (!this._write(ls, KEY_LIBRARY, JSON.stringify(lib))) failed = true;
-      if (!this._write(ls, KEY_OUTPUT, JSON.stringify({ format: 1, memory: s.userOutputMemory() }))) failed = true;
       this._sweep(ls, new Set(lib.order));
       if (failed) this._warnOnce('unavailable');
       else if (quota) this._warnOnce('quota');

@@ -214,13 +214,49 @@
     },
 
     parse(text, delimiter) {
-      const rows = [];
-      const d = delimiter.charCodeAt(0);
-      const n = text.length;
-      let row = [];
-      let field = '';
-      let started = false;
-      let i = 0;
+      const parser = createCsvParser(text, delimiter);
+      parser.run(null);
+      return parser.rows;
+    },
+
+    /**
+     * 大きなテキストを小分けに解析し、合間に画面へ処理を返す（進み具合を onRatio で伝える）。
+     * @param {string} text
+     * @param {string} delimiter
+     * @param {Function} [onRatio] 0〜1（解析した文字数の割合）
+     * @returns {Promise<string[][]>}
+     */
+    async parseAsync(text, delimiter, onRatio) {
+      const parser = createCsvParser(text, delimiter);
+      const slicer = LQ.Async.createSlicer();
+      while (!parser.run(slicer.due)) {
+        if (onRatio) onRatio(parser.ratio());
+        await LQ.Async.yieldToUI();
+        slicer.reset();
+      }
+      if (onRatio) onRatio(1);
+      return parser.rows;
+    }
+  };
+
+  /* 区切りを確かめる間隔（行数）。毎行の時刻確認を避ける */
+  const CSV_CHECK_ROWS = 512;
+
+  /**
+   * 区切り文字テキストの解析器。run(due) は due() が真になった行の区切りで止まり、続きは次の run で再開する。
+   * @returns {{rows:string[][], run:Function, ratio:Function}} run：最後まで解析したら true
+   */
+  function createCsvParser(text, delimiter) {
+    const rows = [];
+    const d = delimiter.charCodeAt(0);
+    const n = text.length;
+    let row = [];
+    let field = '';
+    let started = false;
+    let i = 0;
+    let sinceCheck = 0;
+
+    function run(due) {
       while (i < n) {
         const c = text.charCodeAt(i);
         if (c === 34 && !started) {
@@ -246,6 +282,10 @@
           field = '';
           started = false;
           i += (c === 13 && text.charCodeAt(i + 1) === 10) ? 2 : 1;
+          if (due && ++sinceCheck >= CSV_CHECK_ROWS) {
+            sinceCheck = 0;
+            if (due()) return false;
+          }
           continue;
         }
         let j = i + 1;
@@ -261,10 +301,14 @@
       if (started || row.length) {
         row.push(field);
         rows.push(row);
+        row = [];
+        started = false;
       }
-      return rows;
+      return true;
     }
-  };
+
+    return { rows: rows, run: run, ratio: () => (n ? i / n : 1) };
+  }
 
   /* ---------------------------------------------------------------------
    * ExcelReader：ブックの読み込みとシート → grid 変換
@@ -362,30 +406,72 @@
      * @returns {{grid:string[][], declared:string, actual:string}} declared：記録された範囲 / actual：実際の範囲（値がなければ ''）
      */
     readSheet(workbook, name) {
-      const XLSX = global.XLSX;
-      const ws = workbook.Sheets[name];
-      const declared = ws && ws['!ref'] ? ws['!ref'] : '';
-      if (!ws) return { grid: [], declared: declared, actual: '' };
-      const props = workbook.Workbook && workbook.Workbook.WBProps;
-      const date1904 = !!(props && props.date1904);
-      const rows = [];
-      const put = (r, c, cell) => {
-        const text = cellToText(XLSX, cell, date1904);
-        if (text === '') return;
-        (rows[r] || (rows[r] = []))[c] = text;
-      };
-      const dense = ws['!data'];
-      if (dense) {
-        dense.forEach((rowCells, r) => {
-          if (rowCells) rowCells.forEach((cell, c) => put(r, c, cell));
-        });
-      } else {
-        Object.keys(ws).forEach((key) => {
-          if (key.charAt(0) === '!') return;
-          const at = XLSX.utils.decode_cell(key);
-          put(at.r, at.c, ws[key]);
-        });
+      const reader = createSheetReader(workbook, name);
+      reader.run(null);
+      return reader.result();
+    },
+
+    /** readSheet を小分けに実行し、合間に画面へ処理を返す（進み具合を onRatio で伝える） */
+    async readSheetAsync(workbook, name, onRatio) {
+      const reader = createSheetReader(workbook, name);
+      const slicer = LQ.Async.createSlicer();
+      while (!reader.run(slicer.due)) {
+        if (onRatio) onRatio(reader.ratio());
+        await LQ.Async.yieldToUI();
+        slicer.reset();
       }
+      if (onRatio) onRatio(1);
+      return reader.result();
+    }
+  };
+
+  /* 区切りを確かめる間隔（行数・セル数） */
+  const SHEET_CHECK_ROWS = 256;
+  const SHEET_CHECK_CELLS = 4096;
+
+  /**
+   * シートの読み取り器。run(due) は due() が真になったところで止まり、続きは次の run で再開する。
+   * @returns {{run:Function, ratio:Function, result:Function}} run：最後まで読んだら true
+   */
+  function createSheetReader(workbook, name) {
+    const XLSX = global.XLSX;
+    const ws = workbook.Sheets[name];
+    const declared = ws && ws['!ref'] ? ws['!ref'] : '';
+    const props = workbook.Workbook && workbook.Workbook.WBProps;
+    const date1904 = !!(props && props.date1904);
+    const rows = [];
+    const put = (r, c, cell) => {
+      const text = cellToText(XLSX, cell, date1904);
+      if (text === '') return;
+      (rows[r] || (rows[r] = []))[c] = text;
+    };
+    const dense = ws ? ws['!data'] : null;
+    const keys = ws && !dense ? Object.keys(ws).filter((key) => key.charAt(0) !== '!') : [];
+    const total = !ws ? 0 : (dense ? dense.length : keys.length);
+    let pos = 0;
+
+    function run(due) {
+      if (dense) {
+        while (pos < total) {
+          const rowCells = dense[pos];
+          if (rowCells) rowCells.forEach((cell, c) => put(pos, c, cell));
+          pos++;
+          if (due && pos % SHEET_CHECK_ROWS === 0 && due()) return false;
+        }
+        return true;
+      }
+      while (pos < total) {
+        const key = keys[pos];
+        const at = XLSX.utils.decode_cell(key);
+        put(at.r, at.c, ws[key]);
+        pos++;
+        if (due && pos % SHEET_CHECK_CELLS === 0 && due()) return false;
+      }
+      return true;
+    }
+
+    function result() {
+      if (!ws) return { grid: [], declared: declared, actual: '' };
       const grid = new Array(rows.length);
       let minR = -1;
       let minC = Infinity;
@@ -411,7 +497,9 @@
       const actual = minR < 0 ? '' : XLSX.utils.encode_range({ s: { r: minR, c: minC }, e: { r: rows.length - 1, c: maxC } });
       return { grid: grid, declared: declared, actual: actual };
     }
-  };
+
+    return { run: run, ratio: () => (total ? pos / total : 1), result: result };
+  }
 
   /* ---------------------------------------------------------------------
    * SourceFile：読み込んだファイル（または貼り付け）を保持し、
@@ -449,6 +537,22 @@
     return null;
   }
 
+  /** ファイルを読み取る（読み取った割合を onRatio で伝える） */
+  function readFileBuffer(file, onRatio) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onprogress = (e) => {
+        if (e.lengthComputable && e.total) onRatio(e.loaded / e.total);
+      };
+      reader.onload = () => {
+        onRatio(1);
+        resolve(reader.result);
+      };
+      reader.onerror = () => reject(reader.error || new Error('ファイルを読み取れませんでした。'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
   function unsupportedError(label) {
     return new Error(label + 'は読み込めません。Excel（.xlsx .xls など）・CSV・TSV・TXT のファイルを選んでください。');
   }
@@ -481,11 +585,37 @@
       return SourceFile.isSupportedName(file.name) || TEXT_MIME.test(file.type || '');
     }
 
-    static async fromFile(file) {
+    /**
+     * 読み込みの段階（呼び出し側が Progress.plan に渡す。後ろに呼び出し側の段階を足してよい）。
+     * 拡張子で判断できないファイルは区切り文字テキストの段階にする。
+     */
+    static loadSteps(fileName) {
+      if (EXCEL_EXT.has(LQ.Util.extName(fileName))) {
+        return [
+          { id: 'read', label: 'ファイルの読み取り', weight: 2 },
+          { id: 'library', label: 'Excel 用ライブラリの準備', weight: 1 },
+          { id: 'parse', label: 'ブックの解析', weight: 5 },
+          { id: 'convert', label: 'セルの読み取り', weight: 2 }
+        ];
+      }
+      return [
+        { id: 'read', label: 'ファイルの読み取り', weight: 2 },
+        { id: 'decode', label: '文字コードの判定', weight: 1 },
+        { id: 'parse', label: '区切りの解析', weight: 4 }
+      ];
+    }
+
+    /**
+     * @param {File} file
+     * @param {LQ.Progress} [progress] 段階（loadSteps の id）ごとに進み具合を伝える
+     */
+    static async fromFile(file, progress) {
+      const P = progress || LQ.Progress.none();
       const ext = LQ.Util.extName(file.name);
       const known = EXCEL_EXT.has(ext) || TEXT_EXT.has(ext);
       if (!known && MEDIA_MIME.test(file.type || '')) throw unsupportedError(/^image/i.test(file.type) ? '画像' : '音声・動画');
-      const buffer = await file.arrayBuffer();
+      P.begin('read', true);
+      const buffer = await readFileBuffer(file, (ratio) => P.update(ratio, LQ.Util.formatBytes(file.size * ratio) + ' / ' + LQ.Util.formatBytes(file.size)));
       const bytes = new Uint8Array(buffer);
       const kind = EXCEL_EXT.has(ext) ? 'excel' : (TEXT_EXT.has(ext) ? 'csv' : sniffKind(bytes));
       if (kind === 'csv') {
@@ -494,6 +624,14 @@
       }
       const src = new SourceFile(kind, file.name, file.size);
       if (kind === 'excel') {
+        if (ExcelLibrary.state === 'ready') P.skip('library');
+        else {
+          P.begin('library', false);
+          await ExcelLibrary.ensure();
+        }
+        P.begin('parse', false);
+        /* ブックの解析は途中経過を返さない同期処理のため、段階の表示を描いてから入る */
+        await LQ.Async.paint();
         src._workbook = await ExcelReader.readWorkbook(buffer);
         src.sheetNames = src._workbook.SheetNames.slice();
         src.sheetName = ExcelReader.firstUsedSheet(src._workbook);
@@ -501,7 +639,7 @@
         src._bytes = bytes;
         if (ext === 'tsv') src.delimiterChoice = '\t';
       }
-      src.build();
+      await src._buildAsync(P);
       return src;
     }
 
@@ -550,22 +688,48 @@
 
     build() {
       if (this.kind === 'excel') {
-        const sheet = ExcelReader.readSheet(this._workbook, this.sheetName);
-        this.grid = sheet.grid;
-        this.extent = { declared: sheet.declared, actual: sheet.actual, beyond: ExcelReader.isBeyond(sheet.declared, sheet.actual) };
+        this._applySheet(ExcelReader.readSheet(this._workbook, this.sheetName));
         return;
       }
       if (this.kind === 'sample' || this.kind === 'stored') return;
-      let text = this._text;
-      if (this.kind === 'csv') {
-        if (this.encodingChoice === 'auto') {
-          const detected = EncodingDetector.detect(this._bytes);
-          this.encoding = { value: detected.encoding, reason: detected.reason, certain: detected.certain, auto: true };
-        } else {
-          this.encoding = { value: this.encodingChoice, reason: '手動で指定', certain: true, auto: false };
-        }
-        text = EncodingDetector.decode(this._bytes, this.encoding.value);
+      const text = this._decodeText();
+      this.grid = CsvParser.parse(text, this._resolveDelimiter(text));
+    }
+
+    /** build の小分け版（ファイルを開いたときだけ使い、進み具合を伝える） */
+    async _buildAsync(P) {
+      if (this.kind === 'excel') {
+        P.begin('convert', true);
+        this._applySheet(await ExcelReader.readSheetAsync(this._workbook, this.sheetName, (r) => P.update(r)));
+        return;
       }
+      P.begin('decode', false);
+      await LQ.Async.paint();
+      const text = this._decodeText();
+      const delimiter = this._resolveDelimiter(text);
+      P.begin('parse', true);
+      this.grid = await CsvParser.parseAsync(text, delimiter, (r) => P.update(r));
+    }
+
+    _applySheet(sheet) {
+      this.grid = sheet.grid;
+      this.extent = { declared: sheet.declared, actual: sheet.actual, beyond: ExcelReader.isBeyond(sheet.declared, sheet.actual) };
+    }
+
+    /** 文字コードを決めてテキストにする（CSV 以外は持っているテキスト） */
+    _decodeText() {
+      if (this.kind !== 'csv') return this._text;
+      if (this.encodingChoice === 'auto') {
+        const detected = EncodingDetector.detect(this._bytes);
+        this.encoding = { value: detected.encoding, reason: detected.reason, certain: detected.certain, auto: true };
+      } else {
+        this.encoding = { value: this.encodingChoice, reason: '手動で指定', certain: true, auto: false };
+      }
+      return EncodingDetector.decode(this._bytes, this.encoding.value);
+    }
+
+    /** 区切り文字を決めて返す */
+    _resolveDelimiter(text) {
       if (this.delimiterChoice === 'auto') {
         const detected = this.kind === 'paste' && text.indexOf('\t') !== -1
           ? { delimiter: '\t', reason: 'Excel からの貼り付けはタブ区切りのため' }
@@ -574,7 +738,7 @@
       } else {
         this.delimiter = { value: this.delimiterChoice, reason: '手動で指定', auto: false };
       }
-      this.grid = CsvParser.parse(text, this.delimiter.value);
+      return this.delimiter.value;
     }
 
     setEncoding(choice) {

@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-main.js
- * メイン領域：タブ（抽出結果 / 集計 / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
+ * メイン領域：タブ（抽出結果 / ピボット / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
  *   空の状態（はじめに・次の一歩）。② のタブは選択中の抽出条件の ② を表示し、
  *   上の切替ボタン（CondTableBar）で表示する条件データ（＝選択中の抽出条件）を切り替える。
  *   注意帯は描き直すたびに作るため、ボタンのフォーカスは data-focus-key で戻す。
@@ -164,7 +164,7 @@
       const res = s.result;
       const specs = [
         { id: 'result', icon: 'filter', label: '抽出結果', count: res ? Util.formatInt(res.length) + ' 行' : '未実行', stale: s.isStale() },
-        { id: 'aggregate', icon: 'calculator', label: '集計', count: this.aggregate.tabCount(), stale: !!res && s.isStale() && this.aggregate.target() === 'result' },
+        { id: 'aggregate', icon: 'table-cells', label: 'ピボット', count: this.aggregate.tabCount(), stale: !!res && s.isStale() && this.aggregate.target() === 'result' },
         { id: 'source', role: 'source' },
         { id: 'condition', role: 'condition' }
       ];
@@ -392,7 +392,7 @@
       };
       const sampleBtn = h('button', { class: 'lq-btn', type: 'button', onclick: () => this.app.dialogs.openSamples(sampleBtn, 'bottom-start') }, [Dom.icon('flask'), 'サンプルで試す']);
       const aggNote = h('p', { class: 'lq-empty__lead' }, [Dom.icon('calculator'), ' ② を使わずに ',
-        h('strong', { text: '① だけを集計' }), 'することもできます（① を読み込み、「集計」タブで設定します）。']);
+        h('strong', { text: '① だけでピボット' }), 'を作ることもできます（① を読み込み、「ピボット」タブで設定します）。']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: '① と ② を読み込み、条件に一致する行を取り出します' }),
         h('p', { class: 'lq-empty__lead', text: '① 元データの各行を、② 条件データの各行（1 行＝1 セットの条件）と照らし合わせ、一致した行を表示・出力します。② は抽出条件ごとに持てるので、列の構成が違う表を複数使い、名前と優先順位で振り分けることもできます。Excel（.xlsx / .xls）と CSV に対応しています。' }),
@@ -426,11 +426,11 @@
         ]));
       });
       /* ② を使わずに ① だけを集計する入口（主要動作ではないので控えめなリンクにする） */
-      const aggOnly = h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', title: '集計タブに切り替え、集計パネルを開きます（① の全行を集計します）',
+      const aggOnly = h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', title: 'ピボットタブに切り替え、ピボットの設定を開きます（① の全行で作ります）',
         onclick: () => {
           s.setTab('aggregate');
           s.openPanel('aggregate');
-        } }, [Dom.icon('calculator'), '② を使わずに ① だけ集計する']);
+        } }, [Dom.icon('table-cells'), '② を使わずに ① だけでピボットを作る']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: 'あと少しで抽出できます' }),
         list,

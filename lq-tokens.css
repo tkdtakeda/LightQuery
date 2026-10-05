@@ -118,6 +118,9 @@
   --color-flash: var(--c-amber-200);
   --color-focus-ring: rgba(58, 124, 192, 0.35);
   --color-overlay: rgba(19, 48, 79, 0.36);
+  --color-overlay-soft: rgba(238, 242, 246, 0.72);
+  --color-stripe: rgba(255, 255, 255, 0.45);
+  --color-mark: var(--c-amber-200);
   --color-drop-src: rgba(42, 103, 163, 0.9);
   --color-drop-cond: rgba(27, 127, 121, 0.9);
   --color-scrollbar: var(--c-gray-300);
@@ -233,6 +236,23 @@
   --icon-xl: 28px;
   --icon-2xl: 40px;
   --progress-height: 6px;
+  --progress-height-lg: 12px;
+  --w-busy-card: 520px;
+  --w-stripe: 16px;
+  --h-combo-list: 320px;
+  --w-combo-list-min: 240px;
+  --w-combo-letter: 28px;
+  --w-wsbtn-max: 260px;
+  --h-wslist-max: 52dvh;
+  --w-pvfield-max: 180px;
+  --w-pvlabel-max: 240px;
+  --h-pvfields-max: 220px;
+  --h-pvzone-min: 40px;
+  --color-pv-number: var(--c-blue-600);
+  --color-pv-date: var(--c-teal-600);
+  --color-pv-text: var(--c-gray-600);
+  --color-pv-count: var(--c-amber-700);
+  --color-pv-total: var(--c-blue-50);
 
   /* ---------- 影 ---------- */
   --shadow-sm: 0 1px 2px rgba(19, 48, 79, 0.08);
@@ -243,11 +263,13 @@
   /* ---------- 重なり順 ---------- */
   --z-sticky: 5;
   --z-sticky-corner: 6;
+  --z-drill: 15;
   --z-panel: 20;
   --z-topbar: 30;
   --z-popover: 60;
   --z-drop: 70;
   --z-modal: 90;
+  --z-combo: 95;
   --z-toast: 55;
 
   /* ---------- 動き ---------- */
@@ -255,6 +277,8 @@
   --dur-normal: 200ms;
   --dur-slow: 320ms;
   --dur-flash: 1100ms;
+  --dur-stripe: 900ms;
+  --delay-busy: 250ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-emphasis: cubic-bezier(0.3, 1.4, 0.5, 1);

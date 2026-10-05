@@ -261,7 +261,7 @@
       const aggCheck = h('input', { type: 'checkbox', checked: LQ.Prefs.get('exportAggregate', true) });
       aggCheck.addEventListener('change', () => LQ.Prefs.set('exportAggregate', aggCheck.checked));
       const aggLabel = canAgg ? h('label', { class: 'lq-switch' }, [aggCheck, h('span', { class: 'lq-switch__track' }),
-        h('span', { text: '「集計」シートを付ける（' + LQ.Aggregator.describe(this.state.aggregate) + '）' })]) : null;
+        h('span', { text: '「ピボット」シートを付ける（' + LQ.Aggregator.describe(this.state.aggregate) + '）' })]) : null;
       const formats = LQ.Exporters.formats;
       let formatId = LQ.Prefs.get('exportFormat', 'xlsx');
       if (!LQ.Exporters.availability(formatId).ok) formatId = (formats.find((f) => LQ.Exporters.availability(f.id).ok) || formats[1]).id;
@@ -296,11 +296,11 @@
         protect.disabled = !fmtDef.protectable;
         if (aggLabel) {
           aggCheck.disabled = !isXlsx;
-          aggLabel.title = isXlsx ? '' : '集計シートは Excel 形式のときだけ付けられます（CSV は集計タブを表示中に出力すると集計の表になります）';
+          aggLabel.title = isXlsx ? '' : 'ピボットのシートは Excel 形式のときだけ付けられます（CSV はピボットタブを表示中に出力するとピボットの表になります）';
         }
         protectLabel.title = fmtDef.protectable ? '' : 'Excel 形式では不要です（値の種類をそのまま保存します）';
         downloadBtn.lastChild.textContent = 'ダウンロード（.' + fmtDef.ext + '）';
-        if (isAgg) title.textContent = '出力：集計 ' + fmt(prepared.table.rowCount) + ' グループ × ' + prepared.defs.length + ' 列';
+        if (isAgg) title.textContent = '出力：ピボット ' + fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列';
         else title.textContent = scope === 'split'
           ? '出力：まとめ ' + fmt(view.result.length) + ' 行＋抽出条件ごとのシート'
           : '出力：' + fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列';
@@ -343,7 +343,7 @@
       const body = h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
         UI.field('ファイルの形式', list),
         scopeList ? UI.field('出力する範囲', scopeList.el) : null,
-        isAgg ? UI.note('info', '集計タブを表示中のため、集計の表を出力します。抽出結果の行を出力するときは「抽出結果」タブに切り替えてください。') : null,
+        isAgg ? UI.note('info', 'ピボットタブを表示中のため、ピボットの表を出力します。抽出結果の行を出力するときは「抽出結果」タブに切り替えてください。') : null,
         aggLabel,
         protectLabel,
         UI.field('ファイル名', h('div', { class: 'lq-export-name' }, [nameInput, h('span', { class: 'lq-muted', text: '＋拡張子' })])),
@@ -621,18 +621,28 @@
       const btn = (mode, icon, title, sub, key, primary) => h('button', {
         class: 'lq-btn lq-btn--block lq-btn--tall' + (primary ? ' lq-btn--primary' : ''), type: 'button', onclick: () => choose(mode)
       }, [Dom.icon(icon), h('span', { class: 'lq-btn__text' }, [h('span', { text: title }), h('span', { class: 'lq-btn__sub', text: sub })]), h('span', { class: 'lq-kbd', text: key })]);
-      const first = btn('replace', 'arrows-rotate', '今の一覧と置き換える', '照合ルール・出力列・振り分けの設定もファイルの内容にします', '1', true);
+      /* 作業セットが使えるときは「新しいセットとして追加」を先頭にする（今の作業を上書きしないため） */
+      const modes = (info.canNewSet ? ['newSet'] : []).concat(['replace', 'add']);
+      const DEF = {
+        newSet: ['folder-plus', '新しい作業セットとして追加する', '今のセットはそのまま。ファイルの内容で新しいセットを作って開きます'],
+        replace: ['arrows-rotate', '今の一覧と置き換える', '照合ルール・出力列・振り分けの設定もファイルの内容にします'],
+        add: ['plus', '今の一覧の後ろに追加する', '今の設定はそのまま。優先順位は下になり、照合ルールが違う分は個別の設定として付けます']
+      };
+      const buttons = modes.map((m, i) => btn(m, DEF[m][0], DEF[m][1], DEF[m][2], String(i + 1), i === 0));
       this.pop.open(null, [
         this._head('file-import', '抽出条件の一括ファイルを読み込みます'),
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
-          h('p', { text: info.fileName + '（抽出条件 ' + info.count + ' 件）を、どのように読み込みますか？' }),
-          first,
-          btn('add', 'plus', '今の一覧の後ろに追加する', '今の設定はそのまま。優先順位は下になり、照合ルールが違う分は個別の設定として付けます', '2', false),
-          h('p', { class: 'lq-field__hint', text: 'どちらも、通知の「元に戻す」で読み込む前に戻せます。' })
-        ])])
+          h('p', { text: info.fileName + '（抽出条件 ' + info.count + ' 件）を、どのように読み込みますか？' })
+        ].concat(buttons, [
+          h('p', { class: 'lq-field__hint', text: 'どれも、通知の「元に戻す」で読み込む前に戻せます。' })
+        ]))])
       ], { key: 'importchoice', size: 'lg', onClose: () => release && release() });
-      release = this._keys({ 1: () => choose('replace'), 2: () => choose('add') });
-      first.focus();
+      const keys = {};
+      modes.forEach((m, i) => {
+        keys[i + 1] = () => choose(m);
+      });
+      release = this._keys(keys);
+      buttons[0].focus();
     }
 
     /* ---------------- 表（複数ファイル・複数シート）の選択 ---------------- */

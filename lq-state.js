@@ -18,7 +18,9 @@
   const Util = LQ.Util;
 
   const GROUP_ORDER = ['lead', 's:', 'c:', 'm:'];
-  const MEMORY_MAX = 600;
+  /* 覚えておく列の上限。Excel の最大列数（16,384 列）の表に ② と根拠の列を加えても収まるようにする。
+     少ないと、① を読み込む前（起動直後など）に使っていない列として捨てられ、読み込み直すと既定の表示に戻ってしまう */
+  const MEMORY_MAX = 20000;
   const RE_KEY = /^[scm]:/;
 
   /** 並びのまとまり（抽出条件・優先順位は先頭にまとめる） */
@@ -552,7 +554,8 @@
           derived: Util.clone(this.derived)
         };
       } else {
-        own = this.profiles.items.filter((p) => !p.isSample);
+        /* サンプル表示中に自分で作った抽出条件は残す（空のまま自動で用意したものは残さない） */
+        own = this.profiles.items.filter((p) => !p.isSample && !p.isBlank());
       }
       this.datasets.source = source;
       this.view.pages.source = 0;

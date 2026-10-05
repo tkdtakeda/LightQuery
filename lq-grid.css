@@ -735,3 +735,110 @@
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
+
+/* ---------- 集計の内訳（行のダブルクリックで集計表の上に重ねる） ---------- */
+.lq-grid tbody tr.is-openable {
+  cursor: pointer;
+}
+
+.lq-grid tbody tr.is-openable:focus {
+  outline: none;
+}
+
+.lq-grid tbody tr.is-openable:focus td,
+.lq-grid tbody tr.is-openable:focus .lq-grid__rowhead {
+  background: var(--color-surface-selected);
+}
+
+.lq-summary__hint {
+  color: var(--color-primary);
+}
+
+.lq-drill {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-drill);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  background: var(--color-bg);
+  box-shadow: inset 0 var(--indicator-width) 0 var(--color-primary);
+}
+
+.lq-drill:focus {
+  outline: none;
+}
+
+.lq-drill.is-in {
+  animation: lq-drill-in var(--dur-normal) var(--ease-out);
+}
+
+@keyframes lq-drill-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--shift-md));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lq-drill__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+}
+
+.lq-drill__icon {
+  color: var(--color-primary);
+  font-size: var(--icon-lg);
+}
+
+.lq-drill__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.lq-drill__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.lq-drill__title {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  color: var(--color-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lq-drill__count {
+  flex: 0 0 auto;
+  color: var(--color-primary-strong);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+}
+
+.lq-drill__scope {
+  color: var(--color-text-sub);
+  font-size: var(--fs-sm);
+}
+
+.lq-drill__pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--h-pager);
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
+}

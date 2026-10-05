@@ -1,0 +1,271 @@
+@charset "UTF-8";
+/* =========================================================================
+ * LightQuery - lq-pivot.css
+ * ピボット：設定パネル（項目の一覧・置き場所の行／列／値・タグ）とメインの表（見出しの段・総計）
+ * 値はすべて lq-tokens.css のトークンを参照する。
+ * ========================================================================= */
+
+/* ---------- 項目の一覧（押すと表に入る・ドラッグできる） ---------- */
+.lq-pvfields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-height: var(--h-pvfields-max);
+  overflow-y: auto;
+}
+
+.lq-pvfield {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: var(--w-pvfield-max);
+  height: var(--h-control-sm);
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--fs-sm);
+  cursor: grab;
+  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+
+.lq-pvfield:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface-hover);
+}
+
+.lq-pvfield:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-width) var(--color-focus-ring);
+}
+
+.lq-pvfield__name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lq-pvfield.is-placed {
+  border-style: dashed;
+  background: var(--color-surface-alt);
+  color: var(--color-text-sub);
+}
+
+.lq-pvfield__zone {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+}
+
+/* 種類の色（アイコン）：数値＝青・日付＝青緑・文字＝灰・件数＝琥珀 */
+.lq-pvfield--number .lq-pvfield__icon,
+.lq-pvtag--number .lq-pvtag__icon { color: var(--color-pv-number); }
+.lq-pvfield--date .lq-pvfield__icon,
+.lq-pvtag--date .lq-pvtag__icon { color: var(--color-pv-date); }
+.lq-pvfield--text .lq-pvfield__icon,
+.lq-pvtag--text .lq-pvtag__icon,
+.lq-pvfield--condRow .lq-pvfield__icon,
+.lq-pvtag--condRow .lq-pvtag__icon { color: var(--color-pv-text); }
+.lq-pvfield--count .lq-pvfield__icon,
+.lq-pvtag--count .lq-pvtag__icon { color: var(--color-pv-count); }
+
+/* ---------- 置き場所（行・列・値） ---------- */
+.lq-pvzone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--border-width) dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+
+.is-dragging .lq-pvzone {
+  border-color: var(--color-primary-line);
+}
+
+.lq-pvzone.is-over {
+  border-style: solid;
+  border-color: var(--color-primary);
+  background: var(--color-primary-faint);
+}
+
+.lq-pvzone__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  color: var(--color-primary-strong);
+  font-size: var(--fs-md);
+}
+
+.lq-pvzone__hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lq-pvzone__count {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.lq-pvzone__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: var(--h-control-sm);
+}
+
+.lq-pvzone__empty {
+  align-self: center;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.lq-pvtag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  height: var(--h-control-sm);
+  padding: 0 var(--space-1) 0 var(--space-4);
+  border: var(--border-width) solid var(--color-primary-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--fs-sm);
+  cursor: grab;
+}
+
+.lq-pvtag:hover {
+  border-color: var(--color-primary);
+}
+
+.lq-pvtag__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.lq-pvtag__menu {
+  display: inline-grid;
+  place-items: center;
+  width: var(--h-control-xs);
+  height: var(--h-control-xs);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text-sub);
+  cursor: pointer;
+}
+
+.lq-pvtag__menu:hover,
+.lq-pvtag__menu:focus-visible {
+  outline: none;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.lq-pvmenu__title {
+  padding: var(--space-3) var(--space-5) var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+/* ---------- メインの表 ---------- */
+.lq-pivotwrap {
+  display: inline-block;
+  min-width: 100%;
+}
+
+.lq-pivot thead th {
+  padding: 0 var(--grid-pad);
+  height: var(--grid-row);
+  border-bottom: var(--border-width) solid var(--color-border);
+  border-right: var(--border-width) solid var(--color-border-soft);
+  white-space: nowrap;
+}
+
+/* 見出しは段ごとに上からの位置をずらして、すべての段をスクロールしても見えるようにする */
+.lq-pivot thead tr:nth-child(2) th { top: var(--grid-row); }
+.lq-pivot thead tr:nth-child(3) th { top: calc(var(--grid-row) * 2); }
+
+.lq-pivot .lq-pivot__col,
+.lq-pivot .lq-pivot__value {
+  text-align: center;
+}
+
+.lq-pivot .lq-pivot__value {
+  color: var(--color-text-sub);
+  font-weight: var(--fw-regular);
+}
+
+.lq-pivot .lq-pivot__corner {
+  text-align: right;
+}
+
+.lq-pivot__colfield {
+  color: var(--color-text-sub);
+  font-weight: var(--fw-regular);
+}
+
+.lq-pivot .lq-pivot__rowfield {
+  text-align: left;
+  color: var(--color-primary-strong);
+}
+
+.lq-pivot tbody .lq-pivot__label {
+  max-width: var(--w-pvlabel-max);
+  padding: 0 var(--grid-pad);
+  overflow: hidden;
+  border-bottom: var(--border-width) solid var(--color-border);
+  border-right: var(--border-width) solid var(--color-border-soft);
+  background: var(--color-surface);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lq-pivot tbody .lq-pivot__label.is-repeat {
+  color: var(--color-text-disabled);
+  font-weight: var(--fw-regular);
+}
+
+.lq-pivot tbody tr:hover .lq-pivot__label {
+  background: var(--color-surface-hover);
+}
+
+.lq-pivot td {
+  cursor: pointer;
+}
+
+.lq-pivot td:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--border-width-strong) var(--color-primary);
+}
+
+/* 総計（右端の列・下端の行）は淡い青で区別する */
+.lq-pivot .is-total,
+.lq-pivot tr.is-total th,
+.lq-pivot tr.is-total td {
+  background: var(--color-pv-total);
+  font-weight: var(--fw-bold);
+}
+
+.lq-pivot thead .is-total {
+  color: var(--color-primary-strong);
+}

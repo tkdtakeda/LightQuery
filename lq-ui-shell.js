@@ -88,7 +88,7 @@
     ] },
     { label: '出力', items: [
       { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' },
-      { id: 'aggregate', icon: 'calculator', label: '集計', title: '集計：抽出結果または ① の全行を、グループごとに件数・合計・平均・標準偏差・最小・最大・順位で集計' }
+      { id: 'aggregate', icon: 'table-cells', label: 'ピボット', title: 'ピボット：抽出結果または ① の全行を、行 × 列 × 値（件数・合計・平均など）で集計' }
     ] }
   ];
   const RAIL_SETTINGS = { label: '設定', items: [
@@ -143,9 +143,8 @@
         : counts['s:'].visible + counts['c:'].visible + counts['m:'].visible;
       this._mark('output', s.output.columns.length ? { kind: 'count', text: String(visible), title: '表示する列 ' + visible + ' 列' } : null);
       const agg = s.aggregate;
-      const values = (agg.count ? 1 : 0) + agg.measures.length;
-      this._mark('aggregate', agg.groupBy.length || agg.measures.length
-        ? { kind: 'count', text: String(values), title: '集計：' + LQ.Aggregator.describe(agg) } : null);
+      const placed = agg.rows.length + agg.cols.length + agg.values.length;
+      this._mark('aggregate', placed ? { kind: 'count', text: String(placed), title: 'ピボット：' + LQ.Aggregator.describe(agg) } : null);
     }
 
     /** 抽出条件の印：要設定の件数（警告）／整っていれば有効な件数（複数のとき）かチェック */

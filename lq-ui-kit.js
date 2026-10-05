@@ -35,6 +35,8 @@
         if (el.dataset.navStop === 'true') return;
         e.preventDefault();
         el.dispatchEvent(new Event('change', { bubbles: true }));
+        /* 確定の処理がフォーカスを別の欄へ移した（例：固定値の入力欄へ）ときは、その移動を優先する */
+        if (document.activeElement !== el) return;
         FormNav.focusNext(root, el, e.shiftKey ? -1 : 1);
       });
     },
@@ -52,6 +54,7 @@
    * ------------------------------------------------------------------- */
   const Flash = {
     el(el, kind) {
+      if (el && el._lqCombo) el = el._lqCombo.input;
       if (!el) return;
       const cls = kind === 'warn' ? 'lq-flash--warn' : 'lq-flash';
       el.classList.remove('lq-flash', 'lq-flash--warn');
@@ -164,6 +167,7 @@
      */
     open(anchor, content, options) {
       const opt = options || {};
+      if (anchor && anchor._lqCombo) anchor = anchor._lqCombo.el;
       this.close();
       const el = h('div', {
         class: 'lq-popover' + (opt.size ? ' lq-popover--' + opt.size : '') + (opt.className ? ' ' + opt.className : ''),

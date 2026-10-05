@@ -257,11 +257,9 @@
       return map;
     }
 
-    /** 列名・列記号の絞り込み（列記号は完全一致、列名は一部一致。大文字・小文字は区別しない） */
+    /** 列名・列記号の絞り込み（列記号は完全一致、列名は一部一致。全角半角・大文字小文字・カタカナひらがなは区別しない） */
     static matches(name, letter, word) {
-      if (!word) return true;
-      const w = word.toLowerCase();
-      return name.toLowerCase().indexOf(w) !== -1 || (!!letter && letter.toLowerCase() === w);
+      return LQ.ColumnSearch.matches(name, letter, word);
     }
 
     setDataset(ds) {
@@ -829,7 +827,8 @@
     _mapFields() {
       const d = this.def;
       this.fromSelect = h('select', { class: 'lq-select', title: '読み替える元の列' });
-      UI.fillSelect(this.fromSelect, this._names().map((n) => ({ value: n, label: n })), d.from, '元の列を選択');
+      UI.fillSelect(this.fromSelect, this._names().map((n) => ({ value: n, label: n })), d.from, '元の列を選択（入力して探せます）');
+      this.fromCombo = LQ.ColumnCombo.enhance(this.fromSelect, { letterOf: (v) => LQ.ColumnCombo.letterIn(this.ds, v) });
       this.fromSelect.addEventListener('change', () => {
         d.from = this.fromSelect.value;
         Flash.el(this.fromSelect);
@@ -877,7 +876,7 @@
       this._renderRows();
       this._renderMissing();
       return h('div', { class: 'lq-stack' }, [
-        UI.field('元の列', this.fromSelect),
+        UI.field('元の列', this.fromCombo.el),
         UI.field('対応表（マスタ）', h('div', { class: 'lq-stack' }, [
           h('div', { class: 'lq-maptable__tools' }, [this.tableCount, h('span', { class: 'lq-topbar__spacer' }), addRow, fileBtn, fileInput, clearBtn]),
           table,
