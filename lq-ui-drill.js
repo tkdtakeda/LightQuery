@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-drill.js
- * 内訳：ピボットのセルをダブルクリック（Enter）すると、そのセルに入った行をピボットの表の上に重ねて表示する
+ * 内訳：ピボットのセルをダブルクリック（Enter）するか、グラフの棒・点を押すと、そこに入った行を表やグラフの上に重ねて表示する
  *   （ピボットテーブルの「詳細の表示」と同じ考え方）。タブやパネルは動かさず、閉じると元の行に戻る。
  *   内訳は見るだけ（ページ送りのみ）。右上の「コピー」「Excel」で書き出せる。
  *   列は出力列パネルの表示・並び順（「② の行」を使ったピボットでは ① の列）。
@@ -19,7 +19,9 @@
   const NUMERIC_RATIO = 0.8;
   const NUMERIC_SAMPLE = 200;
   /* 閉じずに描き直すだけの話題（表示中の内訳と関係しない変化） */
-  const KEEP_TOPICS = new Set(['busy', 'panel', 'library', 'start', 'worksets', 'aggregate-ready']);
+  const KEEP_TOPICS = new Set(['busy', 'panel', 'library', 'start', 'worksets', 'aggregate-ready', 'chart-library']);
+  /* 内訳を開いたまま表示を変えてよいタブ */
+  const DRILL_TABS = ['aggregate', 'chart'];
 
   /* ---------------------------------------------------------------------
    * DrillTable：内訳の表（Exporters の table と同じ形＋ページ用の rowAt）
@@ -106,13 +108,13 @@
         onclick: () => this._copy() }, [Dom.icon('copy'), 'コピー']);
       const xlsxBtn = h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '内訳を Excel（.xlsx）で出力します',
         onclick: () => this._exportXlsx() }, [Dom.icon('file-excel'), 'Excel']);
-      this.el = h('section', { class: 'lq-drill', hidden: true, role: 'dialog', 'aria-label': 'ピボットの内訳', tabindex: '-1' }, [
+      this.el = h('section', { class: 'lq-drill', hidden: true, role: 'dialog', 'aria-label': '内訳', tabindex: '-1' }, [
         h('div', { class: 'lq-drill__head' }, [
           h('span', { class: 'lq-drill__icon' }, Dom.icon('magnifying-glass-chart')),
           h('div', { class: 'lq-drill__heading' }, [h('div', { class: 'lq-drill__line' }, [this.title, this.count]), this.scope]),
           h('span', { class: 'lq-topbar__spacer' }),
           copyBtn, xlsxBtn,
-          UI.iconButton('xmark', '閉じてピボットに戻る（Esc）', () => this.close(), 'lq-btn--sm')
+          UI.iconButton('xmark', '閉じて元の表示に戻る（Esc）', () => this.close(), 'lq-btn--sm')
         ]),
         this.gridRoot,
         this.pager
@@ -137,9 +139,11 @@
      * @param {LQ.ResultView} view 集計に使った見せ方
      * @param {string} scopeText 集計の対象（例：抽出結果すべて）
      * @param {Function} returnFocus 閉じたときにフォーカスを戻す処理
+     * @param {{label:string, text:string}} [meta] Excel に書く設定の説明（例：ピボットの設定）
      */
-    open(entry, view, scopeText, returnFocus) {
+    open(entry, view, scopeText, returnFocus, meta) {
       this.entry = entry;
+      this.meta = meta || { label: 'ピボットの設定', text: LQ.Aggregator.describe(this.state.aggregate) };
       this.view = view;
       this.scopeText = scopeText;
       this._return = returnFocus || null;
@@ -176,7 +180,7 @@
         this._build();
         return;
       }
-      if (e.topic === 'view' && this.state.view.tab === 'aggregate' && !(e.detail && e.detail.tab)) return;
+      if (e.topic === 'view' && DRILL_TABS.indexOf(this.state.view.tab) >= 0 && !(e.detail && e.detail.tab)) return;
       this.close();
     }
 
@@ -254,7 +258,7 @@
     async _exportXlsx() {
       try {
         const meta = [['項目', '内容'], ['内訳', this.title.textContent.replace(/^内訳：/, '')], ['対象', this.scopeText], ['行数', String(this.table.rowCount)],
-          ['ピボットの設定', LQ.Aggregator.describe(this.state.aggregate)], ['出力日時', new Date().toLocaleString('ja-JP')]];
+          [this.meta.label, this.meta.text], ['出力日時', new Date().toLocaleString('ja-JP')]];
         const out = await LQ.Exporters.build('xlsx', this.table, { metaLines: meta, sheets: [{ name: '内訳', table: this.table }] });
         const name = this._fileName() + '.xlsx';
         LQ.Exporters.download(out.blob, name);

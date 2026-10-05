@@ -5,6 +5,7 @@
  *   ・行の項目が上の行と同じなら薄く表示して、まとまりを見やすくする
  *   ・右端・下端に総計。セルをダブルクリック（Enter）すると、そのセルに入った行（内訳）を重ねて表示する
  *   ・計算結果は「対象・結果・絞り込み・照合ルール・設定・抽出条件の名前」が同じあいだ使い回す
+ *   ・右上の「表｜グラフ｜並べて」で、同じ結果をグラフでも見られる（グラフは lq-ui-chart.js の PivotChart）
  *   （計算は lq-pivot.js。外からは以前の名前 LQ.AggregateTab で使う）
  * ========================================================================= */
 (function (global) {
@@ -17,6 +18,13 @@
   const h = Dom.h;
   const fmt = Util.formatInt;
   const Settings = LQ.PivotSettings;
+
+  /* 表とグラフの切り替え */
+  const VIEW_MODES = [
+    { value: 'table', label: '表', icon: 'table', title: 'ピボットを表で見る' },
+    { value: 'chart', label: 'グラフ', icon: 'chart-column', title: 'ピボットをグラフで見る（総計は描きません）' },
+    { value: 'split', label: '並べて', icon: 'table-columns', title: '左に表・右にグラフ。棒にポイントすると表の対応するセルを強調します' }
+  ];
 
   /* 平均・標準偏差を画面に出すときの小数の桁数 */
   const AVG_DIGITS = 2;
@@ -126,9 +134,11 @@
       this._pending = false;
       this._error = null;
       this._token = null;
-      this._allRows = null;
-      this.drill = null;
+      this._chart = null;
       this.node = h('div', { class: 'lq-pivotwrap' });
+      this.tableHost = h('div', { class: 'lq-pvsplit__table' });
+      this.chartHost = h('div', { class: 'lq-pvsplit__chart' });
+      this.split = h('div', { class: 'lq-pvsplit' }, [this.tableHost, this.chartHost]);
       this.node.addEventListener('dblclick', (e) => this._openCell(e));
       this.node.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.isComposing) this._openCell(e);
@@ -144,16 +154,13 @@
     /** 使う見せ方（抽出結果なら表示中の絞り込みを反映したもの、① の全行なら抽出なしの結果） */
     view() {
       const target = this.target();
-      if (target === 'result') return this.main.resultView();
-      if (!target) return null;
-      const s = this.state;
-      const src = s.datasets.source;
-      const key = src.id + ':' + src.version;
-      if (!this._allRows || this._allRows.key !== key) {
-        this._allRows = { key: key, view: new LQ.ResultView(LQ.BatchRunner.allRows(src, s.rules), src, s.rules) };
-      }
-      this._allRows.view.setRules(s.rules);
-      return this._allRows.view;
+      return target ? this.main.targetView(target) : null;
+    }
+
+    /** ピボットのグラフ（初めて使うときに作る） */
+    chart() {
+      if (!this._chart) this._chart = new LQ.PivotChart(this);
+      return this._chart;
     }
 
     /** 「② の行」は ② の行がひも付く抽出結果でだけ使える */
@@ -228,9 +235,7 @@
     }
 
     _scopeText(view) {
-      const src = this.state.datasets.source;
-      return view.result.allRows ? '① 元データの全行' + (src.filters && src.filters.length ? '（絞り込み後）' : '')
-        : (view.filter === null ? '抽出結果すべて' : (view.filter < 0 ? '該当なしの行' : '「' + view.partName(view.filter) + '」の行'));
+      return this.main.scopeText(view);
     }
 
     _setupButton(label) {
@@ -287,18 +292,36 @@
           : '表示中の抽出結果が 0 行です。絞り込みを「すべて」にするか、条件を見直してください。'));
         return;
       }
+      const mode = s.charts.pivot.view;
+      const seg = new LQ.Segmented(VIEW_MODES, mode, (v) => main.chart.actions.setPivot({ view: v }));
+      main.tools.insertBefore(seg.el, main.tools.firstChild);
+      main.gridwrap.classList.toggle('is-stale', onResult && s.isStale());
+      if (mode === 'chart') {
+        main.grid.showNode(this.chart().frame.el);
+        main.gridwrap.classList.add('is-chart');
+        this.chart().draw(c, view, null);
+        return;
+      }
       const paging = main._paging('aggregate', c.rows.length);
       const rows = c.rows.slice(paging.start, paging.start + s.view.pageSize);
-      const scrollKey = this._key + ':' + paging.page;
+      const scroller = mode === 'split' ? this.tableHost : main.gridwrap;
+      const scrollKey = mode + ':' + this._key + ':' + paging.page;
       const keep = this._scrollKey === scrollKey;
-      const top = main.gridwrap.scrollTop;
-      const left = main.gridwrap.scrollLeft;
+      const top = scroller.scrollTop;
+      const left = scroller.scrollLeft;
       this._scrollKey = scrollKey;
       this.node.innerHTML = PivotTable.html(c, rows);
-      main.grid.showNode(this.node);
-      main.gridwrap.scrollTop = keep ? top : 0;
-      main.gridwrap.scrollLeft = keep ? left : 0;
-      main.gridwrap.classList.toggle('is-stale', s.isStale());
+      if (mode === 'split') {
+        if (this.node.parentNode !== this.tableHost) this.tableHost.appendChild(this.node);
+        if (this.chart().frame.el.parentNode !== this.chartHost) this.chartHost.appendChild(this.chart().frame.el);
+        main.grid.showNode(this.split);
+        main.gridwrap.classList.add('is-chart');
+        this.chart().draw(c, view, this.node);
+      } else {
+        main.grid.showNode(this.node);
+      }
+      scroller.scrollTop = keep ? top : 0;
+      scroller.scrollLeft = keep ? left : 0;
       main._renderPager('aggregate', c.rows.length, paging);
     }
 
@@ -331,13 +354,12 @@
       e.preventDefault();
       const r = Number(td.dataset.r);
       const col = Number(td.dataset.c);
-      if (!this.drill) this.drill = new LQ.DrillView(this.main.ctx, this.main.root);
       const view = this.view();
       const index = Array.prototype.indexOf.call(this.node.querySelectorAll('td[data-r]'), td);
-      this.drill.open(c.drill(r, col), view, this._scopeText(view), () => {
+      this.main.drillView().open(c.drill(r, col), view, this._scopeText(view), () => {
         const again = this.node.querySelectorAll('td[data-r]')[index];
         if (again) again.focus();
-      });
+      }, { label: 'ピボットの設定', text: LQ.Aggregator.describe(this.state.aggregate) });
     }
   }
 

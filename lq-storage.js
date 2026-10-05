@@ -99,7 +99,7 @@
       return obj;
     },
 
-    /** 一括の書き出し用オブジェクト（今の一覧の全件と、振り分け・照合ルール・出力列・① の読み込み範囲・列の追加・集計の設定） */
+    /** 一括の書き出し用オブジェクト（今の一覧の全件と、振り分け・照合ルール・出力列・① の読み込み範囲・列の追加・集計・グラフの設定） */
     exportLibrary(state, withData) {
       const src = state.datasets.source;
       return {
@@ -113,6 +113,7 @@
         output: { columns: Util.clone(state.output.memory) },
         derived: Util.clone(state.derived),
         aggregate: Util.clone(state.aggregate),
+        charts: Util.clone(state.charts),
         read: src ? { source: { settings: Util.clone(src.settings), choices: src.source.exportChoices(), fileName: src.name } } : {},
         view: { pageSize: state.view.pageSize }
       };
@@ -178,6 +179,7 @@
           derived: obj.derived && typeof obj.derived === 'object'
             ? { source: LQ.Derive.cleanList(obj.derived.source), condition: LQ.Derive.cleanList(obj.derived.condition) } : null,
           aggregate: obj.aggregate && typeof obj.aggregate === 'object' ? LQ.AggregateSettings.clean(obj.aggregate) : null,
+          charts: obj.charts && typeof obj.charts === 'object' ? LQ.ChartSettings.cleanAll(obj.charts) : null,
           read: cleanRead(obj.read),
           view: cleanView(obj.view)
         };

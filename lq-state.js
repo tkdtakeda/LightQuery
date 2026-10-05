@@ -210,7 +210,7 @@
  * ── 状態管理 ──
  * アプリの状態（① 元データ・抽出条件の一覧・照合ルール・出力列・表示・結果）を一か所で管理し、
  *   変更を話題（topic）ごとに通知する。画面部品は状態を直接書き換えず、必ずここを通す。
- *   topic：datasets / profiles / query / rules / output / result / view / busy / panel（加えて change）
+ *   topic：datasets / profiles / query / rules / output / result / view / busy / panel / aggregate / charts（加えて change）
  *   query と datasets.condition は「選択中の抽出条件」のものを指す（条件パネル・② パネルはそれを編集する）。
  *   照合ルールは全体の設定（rules）を既定とし、抽出条件ごとに個別の設定（profile.rules）で上書きできる。
  * ========================================================================= */
@@ -259,6 +259,7 @@
       this.rules = Object.assign({}, Normalizer.DEFAULT_RULES, Normalizer.cleanRules(Prefs.get('rules', null)) || {});
       this.output = new LQ.OutputColumns();
       this.aggregate = LQ.AggregateSettings.clean(Prefs.get('aggregate', null));
+      this.charts = LQ.ChartSettings.cleanAll(Prefs.get('charts', null));
       const derived = Prefs.get('derived', null) || {};
       this.derived = { source: LQ.Derive.cleanList(derived.source), condition: LQ.Derive.cleanList(derived.condition) };
       LQ.Derive.setDefs('source', this.derived.source);
@@ -551,6 +552,7 @@
           combine: Util.clone(this.combine),
           outputMemory: Util.clone(this.output.memory),
           aggregate: Util.clone(this.aggregate),
+          charts: Util.clone(this.charts),
           derived: Util.clone(this.derived)
         };
       } else {
@@ -580,6 +582,8 @@
         this.output.setMemory(stash.outputMemory);
         this.aggregate = LQ.AggregateSettings.clean(stash.aggregate);
         this._emit('aggregate', {});
+        this.charts = LQ.ChartSettings.cleanAll(stash.charts);
+        this._emit('charts', {});
         if (stash.derived) ['source', 'condition'].forEach((role) => this._replaceDerived(role, stash.derived[role]));
       }
       const active = stash && stash.profiles.some((p) => p.id === stash.activeId) ? stash.activeId : null;
@@ -787,6 +791,16 @@
       this._emit('aggregate', {});
     }
 
+    /** グラフの一覧の設定を変える（サンプル表示中は記憶しない） */
+    setCharts(all, detail) {
+      this.charts = LQ.ChartSettings.cleanAll(all);
+      if (this.keepsUserSettings) {
+        Prefs.set('charts', this.charts);
+        this._syncStash('charts', this.charts);
+      }
+      this._emit('charts', detail || {});
+    }
+
     columnCounts() {
       return this.output.counts();
     }
@@ -912,6 +926,7 @@
         combine: Util.clone(this.combine),
         rules: Util.clone(this.rules),
         aggregate: Util.clone(this.aggregate),
+        charts: Util.clone(this.charts),
         derived: Util.clone(this.derived),
         sampleStash: stash ? {
           profiles: stash.profiles.map((p) => p.snapshot()),
@@ -920,6 +935,7 @@
           combine: Util.clone(stash.combine),
           outputMemory: Util.clone(stash.outputMemory),
           aggregate: Util.clone(stash.aggregate),
+          charts: Util.clone(stash.charts),
           derived: Util.clone(stash.derived)
         } : null,
         output: this.output.snapshot(),
@@ -947,6 +963,7 @@
         combine: cleanCombine(st.combine),
         outputMemory: Util.clone(st.outputMemory || []),
         aggregate: LQ.AggregateSettings.clean(st.aggregate),
+        charts: LQ.ChartSettings.cleanAll(st.charts),
         derived: st.derived ? Util.clone(st.derived) : null
       } : null;
       if (snap.derived && JSON.stringify(snap.derived) !== JSON.stringify(this.derived)) {
@@ -962,6 +979,10 @@
         this.aggregate = LQ.AggregateSettings.clean(snap.aggregate);
         if (!this.sampleStash) Prefs.set('aggregate', this.aggregate);
       }
+      if (snap.charts) {
+        this.charts = LQ.ChartSettings.cleanAll(snap.charts);
+        if (!this.sampleStash) Prefs.set('charts', this.charts);
+      }
       this.output.restore(snap.output);
       this.view = Util.clone(snap.view);
       const src = this.datasets.source;
@@ -969,7 +990,7 @@
         snap.profiles.every((s) => !s.condition || s.condition.version === s.conditionVersion);
       this.result = same ? snap.result : null;
       this.resultSignature = same ? snap.resultSignature : null;
-      ['datasets', 'profiles', 'query', 'rules', 'output', 'result', 'view', 'aggregate'].forEach((topic) => this._emit(topic, { restored: true }));
+      ['datasets', 'profiles', 'query', 'rules', 'output', 'result', 'view', 'aggregate', 'charts'].forEach((topic) => this._emit(topic, { restored: true }));
     }
   }
 

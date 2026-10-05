@@ -254,6 +254,44 @@
   --color-pv-count: var(--c-amber-700);
   --color-pv-total: var(--c-blue-50);
 
+  /* ---------- グラフ ---------- */
+  /* 系列の色（固定の順に割り当て、使い回さない）。隣り合う色は色覚の違いでも見分けられることを検証済み。
+     1 系列なら 1 番（青）だけを使う。点が重なるグラフ（散布図・重ねたヒストグラム）は 3 番までに限り、残りは「その他」 */
+  --chart-1: #2a67a3;
+  --chart-2: #d9682f;
+  --chart-3: #1b9a7e;
+  --chart-4: #d99a10;
+  --chart-5: #c9608c;
+  --chart-6: #2f8a2f;
+  --chart-7: #5246a8;
+  --chart-8: #cc4544;
+  --chart-other: var(--c-gray-400);
+  --chart-mean: var(--c-amber-700);
+  --chart-median: var(--c-teal-700);
+  --chart-trend: var(--c-amber-700);
+  --chart-grid: var(--c-gray-150);
+  --chart-axis: var(--c-gray-300);
+  --chart-text: var(--c-gray-600);
+  --chart-title: var(--c-gray-900);
+  --chart-surface: var(--c-white);
+  --chart-area-alpha: 0.12;
+  --chart-overlay-alpha: 0.55;
+  --chart-dim-alpha: 0.18;
+  --chart-bar-max: 24px;
+  --chart-bar-radius: 4px;
+  --chart-line-width: 2px;
+  --chart-point-radius: 4px;
+  --chart-point-radius-dense: 2.5px;
+  --chart-font-size: 12px;
+  --chart-title-size: 15px;
+  --h-chartbar: 40px;
+  --w-chart-type: 64px;
+  --w-chart-name-max: 220px;
+  --w-chart-split-min: 360px;
+  --w-chcard-min: 520px;
+  --h-chcard: 400px;
+  --color-brush: rgba(42, 103, 163, 0.12);
+
   /* ---------- 影 ---------- */
   --shadow-sm: 0 1px 2px rgba(19, 48, 79, 0.08);
   --shadow-md: 0 4px 14px rgba(19, 48, 79, 0.12);
