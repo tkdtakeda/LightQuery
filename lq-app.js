@@ -872,6 +872,10 @@
       const chart = tab.chart();
       if (chart && tab.target(chart) === 'result' && s.isStale()) return null;
       const open = s.panel === 'chart';
+      if (tab.gridMode) {
+        return { id: 'chartSingle', label: '選んでいるグラフを大きく表示する', icon: 'up-right-and-down-left-from-center',
+          status: { kind: 'info', text: 'グラフ ' + s.charts.items.length + ' 枚を一覧で表示中。画像の保存・コピーは各グラフの右上から' } };
+      }
       if (!LQ.ChartSettings.isConfigured(chart)) {
         return { id: 'setupChart', label: 'グラフを設定する', icon: 'chart-column', disabled: open,
           status: { kind: 'info', text: open ? '左の「グラフ」で列を押すと、合う種類を選んで描きます' : '列を選ぶだけで、合うグラフを選んで描きます（② は不要です）' } };
@@ -963,6 +967,7 @@
         case 'setupAggregate': this.state.openPanel('aggregate'); break;
         case 'setupChart': this.state.openPanel('chart'); break;
         case 'saveChart': this.main.chart.save(); break;
+        case 'chartSingle': this.main.chart.actions.setView('single'); break;
         case 'export': this.resultDialogs.openExport(anchor); break;
         default: break;
       }

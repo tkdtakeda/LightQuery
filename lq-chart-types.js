@@ -132,6 +132,15 @@
     options: ['arrange', 'sort', 'top', 'labels']
   });
   ChartTypes.register({
+    id: 'pareto', group: 'compare', label: 'パレート図', icon: 'chart-gantt', family: 'agg', mode: 'pareto', orient: 'v',
+    desc: '値の大きい順に並べた棒（構成比）と累積の線で、上位の何件で全体の 8 割を占めるかを見ます（ABC 分析）。',
+    slots: [
+      { id: 'x', label: '項目', accepts: CAT, required: true, hint: '重点を見つけたい項目（商品・顧客など）' },
+      { id: 'y', label: '値', accepts: VALUE, value: true, hint: '大きさ（合計・件数のように足し合わせられる値）。空なら件数' }
+    ],
+    options: ['top']
+  });
+  ChartTypes.register({
     id: 'line', group: 'trend', label: '折れ線', icon: 'chart-line', family: 'agg', mode: 'line', orient: 'v',
     desc: '日付ごとの値を線で結び、増減の流れを見ます。日付は月・四半期などにまとめられます。',
     slots: [
@@ -169,6 +178,15 @@
     options: ['shape', 'points', 'groupSort']
   });
   ChartTypes.register({
+    id: 'ecdf', group: 'dist', label: '累積分布', icon: 'stairs', family: 'rows',
+    desc: '値の小さい順に、その値以下の行が全体の何 % かを階段状に描きます。グループどうしの分布の違い（どちらが大きい側にずれているか）を比べやすい形です。',
+    slots: [
+      { id: 'x', label: '数値', accepts: ['number'], required: true, hint: '分布を見る数値（金額など）' },
+      { id: 'color', label: '重ねて比べる', accepts: CAT, hint: 'グループごとに線を分ける項目（3 つまで。残りは「その他」）' }
+    ],
+    options: ['lines']
+  });
+  ChartTypes.register({
     id: 'scatter', group: 'relation', label: '散布図', icon: 'braille', family: 'rows',
     desc: '1 行＝1 点で、2 つの数値の関係を見ます。回帰直線と相関係数で、関係の強さが分かります。',
     slots: [
@@ -178,21 +196,35 @@
     ],
     options: ['trend', 'log']
   });
+  ChartTypes.register({
+    id: 'bubble', group: 'relation', label: 'バブル図', icon: 'circle-nodes', family: 'rows',
+    desc: '散布図に 3 つ目の数値を円の大きさ（面積）で加えます。数量・金額・利益のように 3 つの数値の関係を 1 枚で見ます。',
+    slots: [
+      { id: 'x', label: '横軸（数値）', accepts: ['number', 'date'], required: true, hint: '横軸の数値（数量など）' },
+      { id: 'y', label: '縦軸（数値）', accepts: ['number'], required: true, hint: '縦軸の数値（金額など）' },
+      { id: 'size', label: '円の大きさ（数値）', accepts: ['number'], required: true, hint: '円の面積で表す数値（0 以下は描けません）' },
+      { id: 'color', label: '色分け', accepts: ['text'], hint: '円を色で分ける項目（3 つまで。残りは「その他」）' }
+    ],
+    options: ['log']
+  });
 
   /* ---------------------------------------------------------------------
    * ChartSettings
-   *   グラフ 1 枚：{id, name, target:'result'|'source', type, typeLocked, slots:{x:[], y:[], color:[]}, opts}
+   *   グラフ 1 枚：{id, name, target:'result'|'source', type, typeLocked, slots:{x:[], y:[], size:[], color:[]}, opts, memo}
    *     置いた項目：{key:string|null, grain:string|null, fn:string|null}（件数は key:null・fn:'count'）
-   *   一覧：{items:[グラフ], activeId, pivot:{view, type, arrange, swap, value, top}}
+   *     memo：種類を切り替えても失わないための記憶。valueFn＝最後に選んだ集計のしかた、
+   *           parked＝今の種類に置けないため一時的に外している項目（種類を戻すと元の置き場所へ戻す）
+   *   一覧：{items:[グラフ], activeId, view:'single'|'grid', pivot:{view, type, arrange, swap, value, top}}
    *     pivot はピボットタブのグラフ（ピボットの結果を描く）の設定
    * ------------------------------------------------------------------- */
   const MAX_CHARTS = 30;
   const NAME_MAX = 40;
-  const SLOT_IDS = ['x', 'y', 'color'];
+  const SLOT_IDS = ['x', 'y', 'size', 'color'];
+  const PARKED_MAX = 6;
   const FNS = ['count', 'sum', 'avg', 'min', 'max'];
   const TOPS = ['auto', 0, 5, 10, 20, 30];
   const PIVOT_VIEWS = ['table', 'chart', 'split'];
-  const PIVOT_TYPES = ['auto', 'hbar', 'bar', 'line', 'donut'];
+  const PIVOT_TYPES = ['auto', 'hbar', 'bar', 'pareto', 'line', 'donut'];
   const ARRANGES = ['auto', 'group', 'stack', 'pct'];
   const SHAPES = ['box', 'violin', 'both'];
   const isKey = (k) => typeof k === 'string' && /^[scm]:/.test(k);
@@ -210,6 +242,29 @@
     if (!isKey(raw.key)) return null;
     const grain = LQ.PivotSettings.GRAINS.some((g) => g.id === raw.grain) ? raw.grain : null;
     return { key: raw.key, grain: grain, fn: fn };
+  }
+
+  /** 一時的に外している項目（どの置き場所にあったかも覚える。今置いている項目は除く） */
+  function cleanParked(list, slots) {
+    const placed = new Set();
+    SLOT_IDS.forEach((id) => slots[id].forEach((it) => placed.add(it.key || '#count')));
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach((raw) => {
+      const item = cleanItem(raw, 'y');
+      const id = item ? item.key || '#count' : null;
+      if (!item || placed.has(id) || out.some((p) => (p.key || '#count') === id)) return;
+      out.push(Object.assign(item, { slot: SLOT_IDS.indexOf(raw.slot) >= 0 ? raw.slot : 'x' }));
+    });
+    return out.slice(-PARKED_MAX);
+  }
+
+  /** 記憶：値の置き場所に集計のしかた（件数以外）があればそれを、なければ前の記憶を使う */
+  function cleanMemo(raw, type, slots) {
+    const r = raw && typeof raw === 'object' ? raw : {};
+    const vslot = type.slots.find((x) => x.value);
+    const now = vslot && slots[vslot.id][0] ? slots[vslot.id][0].fn : null;
+    const valueFn = now && now !== 'count' ? now : (FNS.indexOf(r.valueFn) > 0 ? r.valueFn : 'sum');
+    return { valueFn: valueFn, parked: cleanParked(r.parked, slots) };
   }
 
   function cleanOpts(raw) {
@@ -263,7 +318,8 @@
         type: type,
         typeLocked: !!r.typeLocked,
         slots: slots,
-        opts: cleanOpts(r.opts)
+        opts: cleanOpts(r.opts),
+        memo: cleanMemo(r.memo, t, slots)
       };
     },
 
@@ -290,7 +346,7 @@
       const items = (Array.isArray(r.items) ? r.items : []).map(ChartSettings.clean)
         .filter((c) => !seen.has(c.id) && seen.add(c.id)).slice(0, MAX_CHARTS);
       const activeId = items.some((c) => c.id === r.activeId) ? r.activeId : (items[0] ? items[0].id : null);
-      return { items: items, activeId: activeId, pivot: ChartSettings.cleanPivot(r.pivot) };
+      return { items: items, activeId: activeId, view: r.view === 'grid' ? 'grid' : 'single', pivot: ChartSettings.cleanPivot(r.pivot) };
     },
 
     active(all) {
@@ -328,6 +384,7 @@
       const t = ChartTypes.get(chart.type);
       const lab = (id) => (chart.slots[id][0] ? ChartSettings.itemLabel(chart.slots[id][0], id, t) : '');
       if (!ChartSettings.isConfigured(chart)) return '新しいグラフ';
+      if (t.id === 'pareto') return ChartSettings.itemLabel(ChartSettings.valueItem(chart), 'y', t) + 'のパレート図' + (lab('x') ? '（' + lab('x') + '別）' : '');
       if (t.family === 'agg') {
         const by = [lab('x'), lab('color')].filter(Boolean).map((s) => s + '別');
         return ChartSettings.itemLabel(ChartSettings.valueItem(chart), 'y', t) + (by.length ? '（' + by.join('・') + '）' : '');
@@ -335,6 +392,8 @@
       if (t.id === 'hist') return (lab('x') || '数値') + 'の分布' + (lab('color') ? '（' + lab('color') + '別）' : '');
       if (t.id === 'box') return (lab('y') || '数値') + 'のばらつき' + (lab('x') ? '（' + lab('x') + '別）' : '');
       if (t.id === 'scatter') return (lab('x') || 'X') + ' と ' + (lab('y') || 'Y') + ' の関係' + (lab('color') ? '（' + lab('color') + '別）' : '');
+      if (t.id === 'bubble') return (lab('x') || 'X') + '・' + (lab('y') || 'Y') + '・' + (lab('size') || '大きさ') + ' の関係' + (lab('color') ? '（' + lab('color') + '別）' : '');
+      if (t.id === 'ecdf') return (lab('x') || '数値') + 'の累積分布' + (lab('color') ? '（' + lab('color') + '別）' : '');
       return t.label;
     },
 
@@ -367,17 +426,18 @@
    * ------------------------------------------------------------------- */
   const TIME_GRAINS = ['year', 'fy', 'quarter', 'month', 'day'];
 
-  /** 値の置き場所に入れる項目（数値は合計、件数は件数） */
-  function valueOf(key, kind, type) {
-    const slot = ChartTypes.slot(type, 'y');
+  /** 値の置き場所に入れる項目（数値は覚えている集計のしかた＝初めは合計、件数は件数） */
+  function valueOf(key, kind, memoFn) {
     if (kind === 'count') return { key: null, grain: null, fn: 'count' };
-    return { key: key, grain: null, fn: slot && slot.value ? 'sum' : null };
+    return { key: key, grain: null, fn: memoFn || 'sum' };
   }
 
-  function itemFor(slot, key, kind, type) {
-    if (slot.value) return valueOf(key, kind, type);
+  function itemFor(slot, key, kind, memoFn) {
+    if (slot.value) return valueOf(key, kind, memoFn);
     return { key: key, grain: kind === 'date' ? 'month' : null, fn: null };
   }
+
+  const nameOfItem = (it) => (it.key ? LQ.ResultView.nameOf(it.key) : '件数');
 
   const ChartAdvisor = {
     /**
@@ -389,6 +449,7 @@
       const kinds = fields.map((f) => f.kind);
       const n = (k) => kinds.filter((x) => x === k).length;
       const nums = n('number');
+      if (nums >= 3) return 'bubble';
       if (nums >= 2) return 'scatter';
       if (n('date') > 0 && (nums === 1 || n('count') || kinds[0] === 'date')) return 'line';
       if (nums === 1 && !n('text') && !n('date')) return 'hist';
@@ -398,30 +459,34 @@
     },
 
     /**
-     * 置いている項目を別の種類に置き直す（押した順を保つ。入らない項目は捨てて返す）
+     * 置いている項目を別の種類に置き直す（押した順を保つ）。
+     * 一時的に外していた項目も、合う置き場所が空いていれば元に戻す。入らない項目は捨てずに一時的に外す
      * @param {object} chart
      * @param {string} typeId
      * @param {Function} kindOf key → 種類
-     * @returns {{chart:object, dropped:string[]}}
+     * @returns {{chart:object, dropped:string[], restored:string[]}} dropped＝今回外した項目／restored＝戻した項目
      */
     retype(chart, typeId, kindOf) {
-      const fields = ChartSettings.placed(chart).map((p) => ({ key: p.item.key, kind: p.item.key ? kindOf(p.item.key) : 'count', item: p.item, from: p.slot }));
+      const memo = chart.memo || { valueFn: 'sum', parked: [] };
+      const toField = (item, from, parked) => ({ key: item.key, kind: item.key ? kindOf(item.key) : 'count', item: item, from: from, parked: !!parked });
+      const fields = ChartSettings.placed(chart).map((p) => toField(p.item, p.slot))
+        .concat(memo.parked.map((it) => toField(it, it.slot, true)));
       const next = Util.clone(chart);
       next.type = typeId;
-      next.slots = { x: [], y: [], color: [] };
+      next.slots = { x: [], y: [], size: [], color: [] };
       const type = ChartTypes.get(typeId);
-      const dropped = [];
+      const carry = (slot, f) => ChartAdvisor._carry(slot, f, memo.valueFn);
       /* 同じ置き場所（x・y・color）に入るものはそのまま、それ以外は空いている合う場所へ */
       const rest = [];
       fields.forEach((f) => {
         const slot = type.slots.find((s) => s.id === f.from);
-        if (slot && slot.accepts.indexOf(f.kind) >= 0 && !next.slots[slot.id].length) next.slots[slot.id].push(ChartAdvisor._carry(slot, f, type));
+        if (slot && slot.accepts.indexOf(f.kind) >= 0 && !next.slots[slot.id].length) next.slots[slot.id].push(carry(slot, f));
         else rest.push(f);
       });
       const left = [];
       rest.forEach((f) => {
         const slot = type.slots.find((s) => s.accepts.indexOf(f.kind) >= 0 && !next.slots[s.id].length);
-        if (slot) next.slots[slot.id].push(ChartAdvisor._carry(slot, f, type));
+        if (slot) next.slots[slot.id].push(carry(slot, f));
         else left.push(f);
       });
       /* 必須の置き場所が空なら、任意の置き場所（色分けなど）から合う項目を移し、空いた所に残りを入れる */
@@ -431,18 +496,27 @@
         if (!donor) return;
         const item = next.slots[donor.id][0];
         const kind = item.key ? kindOf(item.key) : 'count';
-        next.slots[need.id] = [ChartAdvisor._carry(need, { key: item.key, kind: kind, item: item }, type)];
+        next.slots[need.id] = [carry(need, { key: item.key, kind: kind, item: item })];
         next.slots[donor.id] = [];
         const at = left.findIndex((f) => donor.accepts.indexOf(f.kind) >= 0);
-        if (at >= 0) next.slots[donor.id] = [ChartAdvisor._carry(donor, left.splice(at, 1)[0], type)];
+        if (at >= 0) next.slots[donor.id] = [carry(donor, left.splice(at, 1)[0])];
       });
-      left.forEach((f) => dropped.push(f.key ? LQ.ResultView.nameOf(f.key) : '件数'));
-      return { chart: ChartSettings.clean(next), dropped: dropped };
+      /* 置けなかった項目は、元の置き場所と日付のまとめ方を付けたまま一時的に外す */
+      next.memo = { valueFn: memo.valueFn, parked: left.map((f) => Object.assign({}, f.item, { slot: f.from })) };
+      const placedKeys = new Set(ChartSettings.placed(next).map((p) => p.item.key || '#count'));
+      return {
+        chart: ChartSettings.clean(next),
+        dropped: left.filter((f) => !f.parked).map((f) => nameOfItem(f.item)),
+        restored: fields.filter((f) => f.parked && placedKeys.has(f.key || '#count')).map((f) => nameOfItem(f.item))
+      };
     },
 
-    /** 置き場所を移るときの項目（値の置き場所なら集計のしかたを付け、そうでなければ外す） */
-    _carry(slot, f, type) {
-      if (slot.value) return f.item.fn ? Object.assign({}, f.item, { grain: null }) : valueOf(f.key, f.kind, type);
+    /**
+     * 置き場所を移るときの項目。値の置き場所では、項目が集計のしかたを持っていればそれを、
+     * なければ覚えている集計のしかた（例：平均）を使う。それ以外の置き場所では集計のしかたを外す
+     */
+    _carry(slot, f, memoFn) {
+      if (slot.value) return f.item.fn && f.item.key ? Object.assign({}, f.item, { grain: null }) : valueOf(f.key, f.kind, memoFn);
       return { key: f.key, grain: f.kind === 'date' ? (f.item.grain || 'month') : null, fn: null };
     },
 
@@ -458,7 +532,7 @@
         const fields = placed.map((p) => ({ kind: p.item.key ? kindOf(p.item.key) : 'count' })).concat([{ kind: kind }]);
         const best = ChartAdvisor.recommend(fields);
         if (best && best !== chart.type) {
-          const moved = ChartAdvisor.retype(chart, best, kindOf);
+          const moved = ChartAdvisor.retype(Object.assign({}, chart, { memo: { valueFn: chart.memo.valueFn, parked: [] } }), best, kindOf);
           const r = ChartAdvisor._put(moved.chart, key, kind);
           if (r.slot) return Object.assign(r, { retyped: true, dropped: moved.dropped });
         }
@@ -473,7 +547,7 @@
       let slot = type.slots.find((s) => s.accepts.indexOf(kind) >= 0 && !next.slots[s.id].length);
       if (!slot && (kind === 'number' || kind === 'count')) slot = type.slots.find((s) => s.value && s.accepts.indexOf(kind) >= 0);
       if (!slot) return { chart: chart, slot: null, full: true };
-      next.slots[slot.id] = [itemFor(slot, key, kind, type)];
+      next.slots[slot.id] = [itemFor(slot, key, kind, chart.memo ? chart.memo.valueFn : 'sum')];
       return { chart: ChartSettings.clean(next), slot: slot.id, full: false };
     },
 

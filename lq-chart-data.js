@@ -4,7 +4,8 @@
  *   ・項目ごとに集計する種類（棒・折れ線・ドーナツ）は、ピボットと同じ計算（LQ.Pivot.compute）を使う
  *   ・行の値をそのまま描く種類（ヒストグラム・箱ひげ・散布図）は、行ごとに値を読む
  *   ・どの種類も、棒や点を押したときの内訳（そこに入った行）を返せる
- *   描く内容 = {kind:'category'|'hist'|'box'|'scatter', ..., notes:[], pick(d, i) → 内訳}
+ *   描く内容 = {kind:'category'|'hist'|'box'|'ecdf'|'scatter', ..., notes:[], pick(d, i) → 内訳}
+ *     散布図・バブル図は select(範囲) → 範囲に入った行の内訳 も返す（ドラッグで囲む範囲選択）
  *
  * （下の区切りごとに独立した部品）
  *   SeriesTable … ピボットの結果 → 項目 × 系列の表（上位 N 件・その他・入れ替え）
@@ -31,6 +32,12 @@
   const DONUT_TOP = 7;
   const MAX_GROUPS = 30;
   const MAX_POINTS = 20000;
+  /* 円は点より重いので、描く数を少なめにする */
+  const MAX_BUBBLES = 3000;
+  /* 累積分布の線 1 本あたりの点の数の上限（多いときは順位で等間隔に選ぶ） */
+  const ECDF_POINTS = 600;
+  /* パレート図の項目の上限（自動のとき。残りは「その他」） */
+  const PARETO_TOP = 30;
   const AUTO_POINTS_MAX = 300;
   const OTHER = 'その他';
   const BLANK = '（空欄）';
@@ -259,7 +266,8 @@
       if (type.family === 'agg') return ChartData._agg(view, chart, type, kindOf);
       if (type.id === 'hist') return ChartData._hist(view, chart);
       if (type.id === 'box') return ChartData._box(view, chart);
-      return ChartData._scatter(view, chart, kindOf);
+      if (type.id === 'ecdf') return ChartData._ecdf(view, chart);
+      return ChartData._scatter(view, chart, kindOf, type.id === 'bubble');
     },
 
     /** 項目ごとに集計する種類：ピボットと同じ計算をしてから描く形にする */
@@ -277,14 +285,18 @@
       });
       const model = LQ.Pivot.compute(view, settings);
       if (model.error) return { error: 'pivot', message: model.message.replace('表にできません', 'グラフにできません').replace('「行」に置いてください（行には上限がありません）', '「' + type.slots[0].label + '」に置いてください') };
-      const timeLike = TIME_GRAINS.indexOf(x.grain) >= 0 || kindOf(x.key) === 'date';
-      const sort = chart.opts.sort === 'auto' ? (timeLike ? 'keep' : (type.mode === 'line' ? 'label' : 'value')) : chart.opts.sort;
+      const pareto = type.mode === 'pareto';
+      const timeLike = !pareto && (TIME_GRAINS.indexOf(x.grain) >= 0 || kindOf(x.key) === 'date');
+      const sort = pareto ? 'value' : (chart.opts.sort === 'auto' ? (timeLike ? 'keep' : (type.mode === 'line' ? 'label' : 'value')) : chart.opts.sort);
       const spec = ChartData.fromModel(model, 0, {
         mode: type.mode, orient: type.orient, arrange: chart.opts.arrange, area: chart.opts.area, swap: false,
         top: type.mode === 'line' ? 0 : chart.opts.top, sort: sort, timeLike: timeLike, showValues: chart.opts.labels
       });
       spec.missing = model.missing;
       spec.notes = model.notes.concat(spec.notes);
+      if (pareto && value.fn !== 'count' && value.fn !== 'sum') {
+        spec.notes.push('パレート図は足し合わせられる値（合計・件数）で見るものです。' + LQ.PivotSettings.funcOf(value.fn).label + 'の構成比は目安としてご覧ください');
+      }
       return spec;
     },
 
@@ -302,15 +314,16 @@
       const catCount = o.swap && model.colHeaders.length ? model.cols.length : model.rows.length;
       let top = o.top;
       if (donut && (top === 'auto' || !top || top > DONUT_TOP)) top = catCount > DONUT_TOP + 1 ? DONUT_TOP : 0;
+      if (o.mode === 'pareto' && top === 'auto') top = catCount > PARETO_TOP ? PARETO_TOP : 0;
       const table = SeriesTable.from(model, index, { swap: o.swap, top: top, sort: donut && o.sort === 'keep' ? 'value' : o.sort,
-        timeLike: donut ? false : o.timeLike, single: donut });
+        timeLike: donut ? false : o.timeLike, single: donut || o.mode === 'pareto' });
       const arrange = o.mode === 'donut' ? 'group' : LQ.ChartAdvisor.arrangeFor(o.arrange, table.series.length);
       const pct = v.show !== 'value' || arrange === 'pct';
       const dateValue = !pct && (v.fn === 'min' || v.fn === 'max') && model.rows.some((r) => model.cols.some((c) => model.get(r.i, c.i, index).date));
       const notes = table.notes.slice();
       if (dateValue) notes.push(v.label + 'は日付のため、棒の長さは日付の新しさを表します');
       return {
-        kind: 'category',
+        kind: o.mode === 'pareto' ? 'pareto' : 'category',
         mode: o.mode,
         orient: o.orient,
         arrange: arrange,
@@ -463,8 +476,76 @@
       };
     },
 
-    /** 散布図：1 行＝1 点（多いときは描く点だけを間引く。統計は全点） */
-    _scatter(view, chart, kindOf) {
+    /** 累積分布：グループごとに値を小さい順に並べ、その値以下の行の割合を描く */
+    _ecdf(view, chart) {
+      const rd = new RowReader(view);
+      const xi = chart.slots.x[0];
+      const ci = chart.slots.color[0] || null;
+      const xd = rd.def(xi.key);
+      const cd = ci ? rd.def(ci.key) : null;
+      if (!xd) return ChartData._missing(rd);
+      const notes = [];
+      const groups = new Map();
+      let skipped = 0;
+      let total = 0;
+      rd.each((k) => {
+        const val = rd.number(xd, k);
+        if (Number.isNaN(val)) {
+          skipped++;
+          return;
+        }
+        const g = cd ? rd.group(cd, ci.grain, k) : { key: '', label: '全体', sort: 0 };
+        if (!groups.has(g.key)) groups.set(g.key, { label: g.label, sort: g.sort, rows: [] });
+        groups.get(g.key).rows.push({ v: val, k: k });
+        total++;
+      });
+      const name = LQ.ResultView.nameOf(xi.key);
+      if (!total) return { error: 'empty', message: '「' + name + '」に数値がありません（' + fmt(skipped) + ' 行はすべて数値として読めないか空欄です）。' };
+      const list = capGroups(groups, cd ? MAX_OVERLAP : 1, cd ? LQ.ResultView.nameOf(ci.key) : name, notes);
+      const series = list.map((g) => {
+        const rows = g.rows.slice().sort((a, b) => a.v - b.v);
+        const n = rows.length;
+        const idx = [];
+        if (n <= ECDF_POINTS) for (let i = 0; i < n; i++) idx.push(i);
+        else {
+          for (let j = 0; j < ECDF_POINTS; j++) idx.push(Math.floor(j * (n - 1) / (ECDF_POINTS - 1)));
+        }
+        /* 同じ値が続くときは、最後の順位（その値以下の割合）を使う */
+        const points = [];
+        idx.forEach((i) => {
+          let last = i;
+          while (last + 1 < n && rows[last + 1].v === rows[i].v) last++;
+          const pt = { x: rows[i].v, y: (last + 1) / n };
+          if (!points.length || points[points.length - 1].x !== pt.x) points.push(pt);
+        });
+        const sorted = Float64Array.from(rows.map((r) => r.v));
+        return { name: g.label, other: !!g.other, points: points, rows: rows, median: Stats.quantile(sorted, 0.5) };
+      });
+      if (series.length > 1) notes.push('中央値：' + series.map((x) => x.name + ' ' + Stats.roundedNumber(x.median)).join('／'));
+      const sk = skippedNote(name, skipped);
+      if (sk) notes.push(sk);
+      return {
+        kind: 'ecdf',
+        series: series.map((x) => ({ name: x.name, other: x.other, points: x.points })),
+        valueLabel: name,
+        serTitle: cd ? LQ.ResultView.nameOf(ci.key) : '',
+        guide: chart.opts.lines,
+        rowCount: total,
+        notes: notes,
+        missing: rd.missing,
+        pick: (d, i) => {
+          const g = series[d];
+          const pt = g && g.points[i];
+          if (!pt) return null;
+          const by = [{ name: name, value: Stats.fullNumber(pt.x) + ' 以下' }];
+          if (cd) by.push({ name: LQ.ResultView.nameOf(ci.key), value: g.name });
+          return { by: by, keys: g.rows.filter((r) => r.v <= pt.x).map((r) => r.k) };
+        }
+      };
+    },
+
+    /** 散布図・バブル図：1 行＝1 点（多いときは描く点だけを間引く。統計・範囲選択は全点） */
+    _scatter(view, chart, kindOf, bubble) {
       const rd = new RowReader(view);
       const xi = chart.slots.x[0];
       const yi = chart.slots.y[0];
@@ -472,7 +553,9 @@
       const xd = rd.def(xi.key);
       const yd = rd.def(yi.key);
       const cd = ci ? rd.def(ci.key) : null;
-      if (!xd || !yd) return ChartData._missing(rd);
+      const si = bubble ? chart.slots.size[0] : null;
+      const sd = si ? rd.def(si.key) : null;
+      if (!xd || !yd || (bubble && !sd)) return ChartData._missing(rd);
       const xDate = kindOf(xi.key) === 'date';
       const logx = chart.opts.logx && !xDate;
       const logy = chart.opts.logy;
@@ -482,9 +565,12 @@
       const ys = [];
       let skipped = 0;
       let nonPositive = 0;
+      let noSize = 0;
+      let maxSize = 0;
       rd.each((k) => {
         const x = rd.numeric(xd, k, xDate);
         const y = rd.number(yd, k);
+        const size = sd ? rd.number(sd, k) : 1;
         if (Number.isNaN(x) || Number.isNaN(y)) {
           skipped++;
           return;
@@ -493,23 +579,37 @@
           nonPositive++;
           return;
         }
+        if (!(size > 0)) {
+          noSize++;
+          return;
+        }
+        if (size > maxSize) maxSize = size;
         const g = cd ? rd.group(cd, ci.grain, k) : { key: '', label: '全体', sort: 0 };
         if (!groups.has(g.key)) groups.set(g.key, { label: g.label, sort: g.sort, rows: [] });
-        groups.get(g.key).rows.push({ x: x, y: y, k: k });
+        groups.get(g.key).rows.push({ x: x, y: y, s: size, k: k });
         xs.push(x);
         ys.push(y);
       });
       if (!xs.length) return { error: 'empty', message: '2 つの列の両方に数値がある行がありません（' + fmt(skipped) + ' 行は数値として読めないか空欄です）。' };
       const list = capGroups(groups, cd ? MAX_OVERLAP : 1, cd ? LQ.ResultView.nameOf(ci.key) : '', notes);
-      const ratio = Math.min(1, MAX_POINTS / xs.length);
-      if (ratio < 1) notes.push('点が ' + fmt(xs.length) + ' 個あるため、描く点を約 ' + fmt(MAX_POINTS) + ' 個に間引いています（相関係数・回帰直線は全点で計算）');
+      const limit = bubble ? MAX_BUBBLES : MAX_POINTS;
+      const ratio = Math.min(1, limit / xs.length);
+      if (ratio < 1) notes.push((bubble ? '円' : '点') + 'が ' + fmt(xs.length) + ' 個あるため、描く数を約 ' + fmt(limit) + ' 個に間引いています（相関係数・回帰直線・範囲選択は全点で計算）');
+      if (noSize) notes.push('円の大きさ（' + LQ.ResultView.nameOf(si.key) + '）が 0 以下・空欄の ' + fmt(noSize) + ' 行は描けないため除きました');
       const series = list.map((g) => ({ name: g.label, other: !!g.other, points: Stats.thin(g.rows, Math.max(1, Math.round(g.rows.length * ratio))) }));
       const reg = Stats.regression(logx ? xs.map(Math.log10) : xs, logy ? ys.map(Math.log10) : ys);
       const sk = skippedNote(LQ.ResultView.nameOf(xi.key) + '・' + LQ.ResultView.nameOf(yi.key), skipped);
       if (sk) notes.push(sk);
       if (nonPositive) notes.push('対数の軸では 0 以下の値を描けないため、' + fmt(nonPositive) + ' 行を除きました');
+      const xName = ChartData._itemName(xi);
+      const yName = ChartData._itemName(yi);
+      const xText = (v) => (xDate ? ValueParser.formatDate(v) : Stats.fullNumber(v));
       return {
         kind: 'scatter',
+        bubble: !!bubble,
+        sizeLabel: si ? ChartData._itemName(si) : '',
+        maxSize: maxSize,
+        brush: true,
         series: series,
         xDate: xDate,
         logx: logx,
@@ -517,7 +617,7 @@
         xLabel: ChartData._itemName(xi),
         yLabel: ChartData._itemName(yi),
         serTitle: cd ? LQ.ResultView.nameOf(ci.key) : '',
-        trend: chart.opts.trend && reg && !xDate ? reg : null,
+        trend: !bubble && chart.opts.trend && reg && !xDate ? reg : null,
         regression: reg,
         rowCount: xs.length,
         notes: notes,
@@ -526,8 +626,20 @@
           const s = series[d];
           const p = s && s.points[i];
           if (!p) return null;
-          return { by: [{ name: ChartData._itemName(xi), value: xDate ? ValueParser.formatDate(p.x) : Stats.fullNumber(p.x) },
-            { name: ChartData._itemName(yi), value: Stats.fullNumber(p.y) }], keys: [p.k] };
+          return { by: [{ name: xName, value: xText(p.x) }, { name: yName, value: Stats.fullNumber(p.y) }], keys: [p.k] };
+        },
+        /** 範囲選択：囲んだ範囲（軸の値）に入った行（間引いた点も含む）。凡例で隠した系列は除く */
+        select: (x0, x1, y0, y1, hidden) => {
+          const keys = [];
+          list.forEach((g, d) => {
+            if (hidden && hidden[d]) return;
+            g.rows.forEach((r) => {
+              if (r.x >= x0 && r.x <= x1 && r.y >= y0 && r.y <= y1) keys.push(r.k);
+            });
+          });
+          const xr = (v) => (xDate ? ValueParser.formatDate(v) : Stats.roundedNumber(v));
+          return { by: [{ name: xName, value: xr(x0) + '〜' + xr(x1) }, { name: yName, value: Stats.roundedNumber(y0) + '〜' + Stats.roundedNumber(y1) }],
+            keys: keys.sort((a, b) => a - b) };
         }
       };
     },

@@ -9,8 +9,8 @@
  *   ChartLibrary  … ライブラリの読み込み（改ざん検知付き）と状態の通知
  *   ChartPalette  … トークンから色・寸法を読む
  *   ChartPlugins  … 背景・値の表示・線の端の名前・平均と中央値の線・縦の補助線
- *   ChartRenderer … 描く内容 → Chart.js の設定
- *   ChartCanvas   … 画面に置く描画領域（描く・描き直す・画像にする）
+ *   ChartRenderer … 描く内容 → Chart.js の設定（種類を増やすときは register()。パレート図・累積分布は lq-chart-forms.js）
+ *   ChartCanvas   … 画面に置く描画領域（描く・描き直す・画像にする・ドラッグで範囲を囲む）
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -238,7 +238,10 @@
       }
     },
 
-    /** ヒストグラムの平均・中央値の縦線（options.plugins.lqRefLines = {lines:[{value, label, color, dash}], toIndex}） */
+    /**
+     * 補助線（options.plugins.lqRefLines = {lines:[{value, label, color, dash, axis?}], toIndex?}）
+     *   axis が 'y' なら横線（パレート図の 80%・累積分布の 50%）、それ以外は縦線（ヒストグラムの平均・中央値）
+     */
     refLines: {
       id: 'lqRefLines',
       afterDatasetsDraw(chart, args, opts) {
@@ -251,7 +254,11 @@
         ctx.font = p.fontSize - 1 + 'px ' + p.font;
         ctx.textBaseline = 'top';
         opts.lines.forEach((line, n) => {
-          const x = scale.getPixelForValue(opts.toIndex(line.value));
+          if (line.axis === 'y') {
+            ChartPlugins._hLine(chart, line, p);
+            return;
+          }
+          const x = scale.getPixelForValue(opts.toIndex ? opts.toIndex(line.value) : line.value);
           if (!(x >= area.left && x <= area.right)) return;
           ctx.strokeStyle = line.color;
           ctx.lineWidth = p.lineWidth;
@@ -271,6 +278,27 @@
         });
         ctx.restore();
       }
+    },
+
+    _hLine(chart, line, p) {
+      const ctx = chart.ctx;
+      const area = chart.chartArea;
+      const y = chart.scales.y.getPixelForValue(line.value);
+      if (!(y >= area.top && y <= area.bottom)) return;
+      ctx.strokeStyle = line.color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash(line.dash || []);
+      ctx.beginPath();
+      ctx.moveTo(area.left, y);
+      ctx.lineTo(area.right, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const w = ctx.measureText(line.label).width;
+      ctx.fillStyle = p.surface;
+      ctx.fillRect(area.right - w - 6, y - p.fontSize - 3, w + 4, p.fontSize + 2);
+      ctx.fillStyle = p.title;
+      ctx.textAlign = 'left';
+      ctx.fillText(line.label, area.right - w - 4, y - p.fontSize - 2);
     },
 
     /** ポイント中の位置に縦の補助線（折れ線） */
@@ -301,6 +329,11 @@
   const LABEL_MAX = 16;
   const VALUES_MAX = 24;
   const DENSE_POINTS = 5000;
+  const BUBBLE_MIN = 3;
+  const BUBBLE_MAX = 22;
+  /* ドラッグで範囲を囲むと判定する動きの大きさ（px）と、その直後のクリックを無視する時間 */
+  const BRUSH_MIN = 5;
+  const BRUSH_QUIET_MS = 350;
   const QUIET_POINTS = 1000;
 
   function pctText(v) {
@@ -308,6 +341,13 @@
   }
 
   const ChartRenderer = {
+    /** 描く内容の種類（spec.kind）に対応する組み立てを加える（Open/Closed：既存の種類に手を入れずに増やせる） */
+    register(kind, build) {
+      ChartRenderer['_' + kind] = build;
+    },
+
+    pct: pctText,
+
     clip(text, max) {
       const s = String(text === null || text === undefined ? '' : text);
       return s.length > max ? s.slice(0, max - 1) + '…' : s;
@@ -540,8 +580,14 @@
       const p = ChartPalette.read();
       const total = spec.series.reduce((a, s) => a + s.points.length, 0);
       const dense = total > DENSE_POINTS;
+      /* バブル図：値の大きさを円の面積に比例させる（半径は平方根） */
+      const radius = (size) => Math.max(BUBBLE_MIN, Math.sqrt(size / (spec.maxSize || 1)) * BUBBLE_MAX);
       const datasets = spec.series.map((s, i) => {
         const color = ChartPalette.color(i, s.other);
+        if (spec.bubble) {
+          return { type: 'bubble', label: s.name, data: s.points.map((pt) => ({ x: pt.x, y: pt.y, r: radius(pt.s), s: pt.s })),
+            backgroundColor: ChartPalette.alpha(color, 0.45), borderColor: color, borderWidth: 1, hoverBorderWidth: 2, lqBase: color };
+        }
         return { label: s.name, data: s.points.map((pt) => ({ x: pt.x, y: pt.y })), backgroundColor: ChartPalette.alpha(color, dense ? p.overlayAlpha : 0.8),
           borderColor: p.surface, borderWidth: dense ? 0 : 1, pointRadius: dense ? p.pointDense : p.pointRadius, pointHoverRadius: p.pointRadius + 2, lqBase: color };
       });
@@ -576,7 +622,8 @@
           plugins: {
             tooltip: { callbacks: {
               label: (item) => (item.dataset.lqTrend ? '回帰直線' : (spec.series.length > 1 ? item.dataset.label + '　' : '') +
-                spec.xLabel + '：' + (spec.xDate ? LQ.ValueParser.formatDate(item.raw.x) : Stats.fullNumber(item.raw.x)) + '、' + spec.yLabel + '：' + Stats.fullNumber(item.raw.y))
+                spec.xLabel + '：' + (spec.xDate ? LQ.ValueParser.formatDate(item.raw.x) : Stats.fullNumber(item.raw.x)) + '、' + spec.yLabel + '：' + Stats.fullNumber(item.raw.y) +
+                (spec.bubble ? '、' + spec.sizeLabel + '：' + Stats.fullNumber(item.raw.s) : ''))
             } }
           }
         }
@@ -585,27 +632,91 @@
   };
 
   /* ---------------------------------------------------------------------
-   * ChartCanvas：描画領域（キャンバス）。凡例にポイントすると、ほかの系列を薄くする
+   * ChartCanvas：描画領域（キャンバス）。凡例にポイントすると、ほかの系列を薄くする。
+   *   散布図・バブル図は、グラフの中をドラッグして範囲を囲むと、そこに入った行を handlers.select に渡す
    * ------------------------------------------------------------------- */
   class ChartCanvas {
     constructor() {
       this.canvas = h('canvas', { class: 'lq-chart__canvas', role: 'img' });
-      this.el = h('div', { class: 'lq-chart__plot' }, [this.canvas]);
+      this.box = h('div', { class: 'lq-chart__brush', hidden: true });
+      this.el = h('div', { class: 'lq-chart__plot' }, [this.canvas, this.box]);
       this.chart = null;
       this.spec = null;
+      this._select = null;
+      this._quietUntil = 0;
+      this._bindBrush();
     }
 
     /**
      * @param {object} spec 描く内容（title・subtitle を含む）
-     * @param {{pick?:Function, hover?:Function}} handlers
+     * @param {{pick?:Function, hover?:Function, select?:Function}} handlers select：範囲選択（spec.brush のとき）
      */
     draw(spec, handlers) {
       this.destroy();
       this.spec = spec;
-      const config = ChartRenderer.config(spec, handlers || {});
+      const hd = handlers || {};
+      this._select = spec.brush && spec.select && hd.select ? hd.select : null;
+      this.el.classList.toggle('is-brushable', !!this._select);
+      /* 範囲を囲んだ直後のクリックは、点の内訳を開かない */
+      const pick = hd.pick ? (d, i) => {
+        if (Date.now() < this._quietUntil) return;
+        hd.pick(d, i);
+      } : null;
+      const config = ChartRenderer.config(spec, Object.assign({}, hd, { pick: pick }));
       this._legendHover(config);
       this.canvas.setAttribute('aria-label', spec.title || 'グラフ');
       this.chart = new global.Chart(this.canvas, config);
+    }
+
+    _pos(e) {
+      const r = this.canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+
+    _bindBrush() {
+      let start = null;
+      let moved = false;
+      const clamp = (pt) => {
+        const a = this.chart.chartArea;
+        return { x: Math.min(a.right, Math.max(a.left, pt.x)), y: Math.min(a.bottom, Math.max(a.top, pt.y)) };
+      };
+      this.canvas.addEventListener('pointerdown', (e) => {
+        if (!this._select || !this.chart || e.button !== 0) return;
+        const pt = this._pos(e);
+        const a = this.chart.chartArea;
+        if (pt.x < a.left || pt.x > a.right || pt.y < a.top || pt.y > a.bottom) return;
+        start = pt;
+        moved = false;
+        this.canvas.setPointerCapture(e.pointerId);
+      });
+      this.canvas.addEventListener('pointermove', (e) => {
+        if (!start) return;
+        const pt = clamp(this._pos(e));
+        if (!moved && Math.abs(pt.x - start.x) < BRUSH_MIN && Math.abs(pt.y - start.y) < BRUSH_MIN) return;
+        moved = true;
+        /* 実行時に決まる位置だけは style で与える */
+        const left = Math.min(start.x, pt.x) + this.canvas.offsetLeft;
+        const top = Math.min(start.y, pt.y) + this.canvas.offsetTop;
+        Object.assign(this.box.style, { left: left + 'px', top: top + 'px', width: Math.abs(pt.x - start.x) + 'px', height: Math.abs(pt.y - start.y) + 'px' });
+        this.box.hidden = false;
+      });
+      const finish = (e, cancel) => {
+        if (!start) return;
+        const from = start;
+        start = null;
+        this.box.hidden = true;
+        if (!moved || cancel || !this.chart) return;
+        this._quietUntil = Date.now() + BRUSH_QUIET_MS;
+        const to = clamp(this._pos(e));
+        const sx = this.chart.scales.x;
+        const sy = this.chart.scales.y;
+        const xs = [sx.getValueForPixel(from.x), sx.getValueForPixel(to.x)].sort((a, b) => a - b);
+        const ys = [sy.getValueForPixel(from.y), sy.getValueForPixel(to.y)].sort((a, b) => a - b);
+        const hidden = this.spec.series.map((s, d) => !this.chart.isDatasetVisible(d));
+        this._select(this.spec.select(xs[0], xs[1], ys[0], ys[1], hidden));
+      };
+      this.canvas.addEventListener('pointerup', (e) => finish(e, false));
+      this.canvas.addEventListener('pointercancel', (e) => finish(e, true));
     }
 
     _legendHover(config) {

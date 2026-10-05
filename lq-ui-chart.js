@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-chart.js
- * グラフの表示：メインの「グラフ」タブと、ピボットタブの「表｜グラフ｜並べて」のグラフ。
+ * グラフの表示の共通部品：一覧の操作・描画領域と、ピボットタブの「表｜グラフ｜並べて」のグラフ（グラフタブは lq-ui-chart-tab.js）。
  *   どちらも同じ描画領域（ChartFrame）を使い、上の操作バーで種類を変え、右端で画像に保存・コピーする。
  *   棒・点を押すと、そこに入った行（内訳）を重ねて表示する（ピボットのセルのダブルクリックと同じ）。
  *   （計算は lq-chart-data.js、描画は lq-chart-render.js、設定パネルは lq-ui-chart-panel.js）
@@ -8,7 +8,6 @@
  * （下の区切りごとに独立した部品）
  *   ChartActions … グラフの一覧の操作（追加・複製・削除・名前・選択・変更）
  *   ChartFrame   … 描画領域と操作バー（ライブラリの読み込み・画像の保存とコピー）
- *   ChartTab     … グラフタブ（行のデータからグラフ 1 枚を描く）
  *   PivotChart   … ピボットタブのグラフ（ピボットの結果を描く・表との対応づけ）
  * ========================================================================= */
 (function (global) {
@@ -130,9 +129,26 @@
       const moved = Advisor.retype(chart, typeId, kindOf(this.state));
       moved.chart.typeLocked = true;
       this.update((c) => Object.assign(c, moved.chart), { type: typeId });
-      if (moved.dropped.length) {
-        this.toasts.show({ type: 'info', title: Types.get(typeId).label + 'に置けない項目を外しました', message: moved.dropped.join('、') + '（「' + Types.get(typeId).label + '」の置き場所に合いません）' });
-      }
+      const label = Types.get(typeId).label;
+      const notes = [];
+      if (moved.restored.length) notes.push('一時的に外していた ' + moved.restored.join('、') + ' を元の置き場所に戻しました');
+      if (moved.dropped.length) notes.push(moved.dropped.join('、') + ' は' + label + 'に置けないため一時的に外しました（種類を戻すと元に戻ります）');
+      if (notes.length) this.toasts.show({ type: 'info', title: label + 'にしました', message: notes.join('。') + '。', duration: 6000 });
+    }
+
+    /** グラフタブの表示：'single'＝1 枚ずつ／'grid'＝一覧で並べる */
+    setView(view) {
+      if (this.all.view === view) return;
+      this.change((all) => {
+        all.view = view;
+      }, { view: view });
+    }
+
+    /** 一時的に外している項目を捨てる */
+    clearParked() {
+      this.update((c) => {
+        c.memo.parked = [];
+      });
     }
 
     /** ピボットタブの設定を変える */
@@ -186,13 +202,19 @@
       LQ.ChartLibrary.ensure().catch(() => {}).then(() => this.ctx.bus.emit('change', { topic: 'chart-library' }));
     }
 
+    /** 描かずに知らせだけを出す（一覧のカードで、未設定・描けないとき） */
+    message(text, action) {
+      this._show('info', text, action);
+    }
+
     _show(kind, text, action) {
       this.canvas.destroy();
       this._key = null;
       Dom.clear(this.status);
       this.status.hidden = false;
       this.status.className = 'lq-chart__status lq-chart__status--' + kind;
-      Dom.append(this.status, [Dom.icon(kind === 'loading' ? 'spinner' : 'triangle-exclamation', kind === 'loading' ? 'fa-spin' : ''), h('span', { text: text }), action || null]);
+      const icon = { loading: 'spinner', info: 'circle-info' }[kind] || 'triangle-exclamation';
+      Dom.append(this.status, [Dom.icon(icon, kind === 'loading' ? 'fa-spin' : ''), h('span', { text: text }), action || null]);
       this.exports.hidden = true;
     }
 
@@ -246,188 +268,16 @@
   function typeButton(type, opts) {
     const o = opts || {};
     return h('button', {
-      class: 'lq-chtype' + (o.active ? ' is-active' : '') + (o.unfit ? ' is-unfit' : '') + (o.rec ? ' is-rec' : ''), type: 'button',
+      class: 'lq-chtype' + (o.compact ? ' lq-chtype--compact' : '') + (o.active ? ' is-active' : '') + (o.unfit ? ' is-unfit' : '') + (o.rec ? ' is-rec' : ''), type: 'button',
       title: type.label + '：' + type.desc + (o.unfit ? '\n' + o.unfit : '') + (o.rec ? '\n（今の項目におすすめ）' : ''),
       'aria-pressed': o.active ? 'true' : 'false', onclick: o.onClick
     }, [Dom.icon(type.icon, type.iconClass || ''), h('span', { class: 'lq-chtype__label', text: o.label || type.label }), o.rec ? h('span', { class: 'lq-chtype__rec', text: 'おすすめ' }) : null]);
   }
 
   /* ---------------------------------------------------------------------
-   * ChartTab：グラフタブ
-   * ------------------------------------------------------------------- */
-  class ChartTab {
-    /** @param {LQ.MainView} main */
-    constructor(main) {
-      this.main = main;
-      this.ctx = main.ctx;
-      this.state = main.state;
-      this.actions = new ChartActions(main.ctx);
-      this.frame = new ChartFrame(main.ctx);
-      this._key = null;
-      this._spec = null;
-    }
-
-    chart() {
-      return Settings.active(this.state.charts);
-    }
-
-    target(chart) {
-      const s = this.state;
-      return LQ.PivotSettings.effectiveTarget({ target: chart ? chart.target : 'result' }, !!s.datasets.source, !!s.result);
-    }
-
-    view(chart) {
-      const t = this.target(chart);
-      return t ? this.main.targetView(t) : null;
-    }
-
-    /** 今のグラフの描く内容（描けなければ {error}。未設定なら null） */
-    computed() {
-      const s = this.state;
-      const chart = this.chart();
-      const view = this.view(chart);
-      if (!view || !Settings.isConfigured(chart)) return null;
-      const names = view.parts.map((p, i) => view.partName(i));
-      const key = JSON.stringify([view.result.id, view.filter, s.rules, chart.target, chart.type, chart.slots, chart.opts, names]);
-      if (key !== this._key) {
-        this._key = key;
-        try {
-          this._spec = LQ.ChartData.build(view, chart, kindOf(s));
-        } catch (err) {
-          this._spec = { error: 'exception', message: '描けませんでした：' + err.message };
-        }
-      }
-      return this._spec;
-    }
-
-    tabCount() {
-      const s = this.state;
-      if (!s.datasets.source) return '未読み込み';
-      const chart = this.chart();
-      if (!Settings.isConfigured(chart)) return '未設定';
-      const spec = this.computed();
-      if (spec && spec.error) return '要設定';
-      const n = s.charts.items.length;
-      return n > 1 ? n + ' 枚' : Types.get(chart.type).label;
-    }
-
-    _setupButton(label) {
-      const s = this.state;
-      return s.panel === 'chart' ? null : h('button', { class: 'lq-btn lq-btn--primary', type: 'button', onclick: () => s.openPanel('chart') }, [Dom.icon('chart-column'), label]);
-    }
-
-    render() {
-      const s = this.state;
-      const main = this.main;
-      main.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: 'グラフの種類・項目・表示を設定する',
-        onclick: () => s.togglePanel('chart') }, [Dom.icon('sliders'), 'グラフの設定']));
-      if (!s.datasets.source) {
-        this.frame.clear();
-        main.grid.showEmpty(main._emptyMessage('chart-column', '① 元データを読み込むとグラフを作れます',
-          '② を使わずに ① だけでも作れます。抽出したあとは、その抽出結果でも作れます。比較（棒）・推移（折れ線）・構成（ドーナツ）・分布（ヒストグラム・箱ひげ・バイオリン）・関係（散布図）を描けます。'));
-        return;
-      }
-      const chart = this.chart();
-      this._renderChips();
-      if (!Settings.isConfigured(chart)) {
-        this.frame.clear();
-        main.grid.showEmpty(main._emptyMessage('chart-column', chart ? 'まだ項目を置いていません' : 'まだグラフがありません',
-          '「グラフの設定」で列を押すと、列の組み合わせに合うグラフを選んですぐ描きます（数値 1 つ → ヒストグラム、数値 2 つ → 散布図、文字＋数値 → 横棒、日付＋数値 → 折れ線）。' +
-          '種類を先に選んでから列を入れることもできます。', this._setupButton('グラフを設定する')));
-        return;
-      }
-      const view = this.view(chart);
-      const spec = this.computed();
-      this._renderSummary(chart, view, spec);
-      if (this.target(chart) === 'result') {
-        main._renderFilterBar(view);
-        if (s.isStale()) {
-          main.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
-            'グラフは変更前の抽出結果から描いています。右上のボタンで再抽出すると反映されます。'])));
-        }
-      }
-      if (spec.error) {
-        this.frame.clear();
-        main.grid.showEmpty(main._emptyMessage('triangle-exclamation', spec.error === 'fit' ? 'あと少しで描けます' : '描けませんでした', spec.message, this._setupButton('グラフの設定を開く')));
-        return;
-      }
-      if (spec.missing && spec.missing.length) main.info.appendChild(UI.note('warn', '次の項目は今の対象にないため外しました：' + spec.missing.join('、') + '。'));
-      if (spec.notes.length) main.info.appendChild(UI.note('info', h('div', {}, spec.notes.map((n) => h('div', { text: n })))));
-      this.frame.setTools(this._typeButtons(chart));
-      this.frame.fileBase = (s.datasets.source ? Util.baseName(s.datasets.source.name) + '_' : '') + Settings.title(chart);
-      main.grid.showNode(this.frame.el);
-      main.gridwrap.classList.add('is-chart');
-      main.gridwrap.classList.toggle('is-stale', this.target(chart) === 'result' && s.isStale());
-      const scope = main.scopeText(view);
-      this.frame.draw(JSON.stringify([this._key, Settings.title(chart), scope]), () => Object.assign({}, spec, { title: Settings.title(chart), subtitle: this._subtitle(spec, scope) }), {
-        pick: (d, i) => {
-          const entry = spec.pick(d, i);
-          if (entry) main.drillView().open(entry, view, scope, null, { label: 'グラフの設定', text: Settings.describe(chart) });
-        }
-      });
-    }
-
-    _subtitle(spec, scope) {
-      let text = '対象：' + scope + '・' + fmt(spec.rowCount) + ' 行';
-      if (spec.kind === 'scatter' && spec.regression) {
-        const r = spec.regression;
-        text += '／相関係数 r = ' + r.r.toFixed(3) + '（' + LQ.ChartStats.correlationWord(r.r) + '）・R² = ' + r.r2.toFixed(3);
-      }
-      if (spec.kind === 'hist') text += '／区間の幅 ' + LQ.ChartStats.fullNumber(spec.bins.width) + '・' + spec.bins.count + ' 区間';
-      return text;
-    }
-
-    /** 操作バーの種類のボタン：目的ごとに区切って並べる */
-    _typeButtons(chart) {
-      const kinds = Settings.placed(chart).map((p) => (p.item.key ? kindOf(this.state)(p.item.key) : 'count'));
-      const rec = Advisor.recommendFor(chart, kindOf(this.state));
-      const groups = Types.GROUPS.map((g) => h('div', { class: 'lq-chtypes__group', title: g.label + '：' + g.desc },
-        Types.inGroup(g.id).map((t) => {
-          const fit = Types.fitKinds(t, kinds);
-          return typeButton(t, { active: chart.type === t.id, unfit: fit.ok ? '' : fit.reason, rec: !chart.typeLocked && rec === t.id && chart.type !== t.id,
-            onClick: () => this.actions.setType(t.id) });
-        })));
-      return [h('div', { class: 'lq-chtypes', role: 'toolbar', 'aria-label': 'グラフの種類' }, groups)];
-    }
-
-    /** グラフが複数あれば、切り替えのボタンを並べる */
-    _renderChips() {
-      const all = this.state.charts;
-      if (all.items.length < 2) return;
-      const chips = all.items.map((c) => h('button', {
-        class: 'lq-fchip' + (c.id === all.activeId ? ' is-active' : ''), type: 'button', title: Settings.describe(c),
-        'aria-pressed': c.id === all.activeId ? 'true' : 'false', dataset: { focusKey: 'chart:' + c.id }, onclick: () => this.actions.select(c.id)
-      }, [Dom.icon(Types.get(c.type).icon, Types.get(c.type).iconClass || ''), h('span', { class: 'lq-fchip__label', text: Settings.title(c) })]));
-      this.main.info.appendChild(h('div', { class: 'lq-filterbar', role: 'toolbar', 'aria-label': '表示するグラフ' },
-        [h('span', { class: 'lq-filterbar__label' }, [Dom.icon('images'), '表示するグラフ'])].concat(chips)));
-    }
-
-    _renderSummary(chart, view, spec) {
-      const t = Types.get(chart.type);
-      const items = [h('span', { class: 'lq-summary__main' }, [Dom.icon(t.icon, t.iconClass || ''), Settings.title(chart)]),
-        h('span', { class: 'lq-summary__item', text: Settings.describe(chart) })];
-      if (spec && !spec.error) {
-        items.push(h('span', { class: 'lq-summary__item lq-num', text: '対象：' + this.main.scopeText(view) + ' ' + fmt(spec.rowCount) + ' 行' }));
-        items.push(h('span', { class: 'lq-summary__item lq-summary__hint' }, [Dom.icon('hand-pointer'), '棒・点を押すと内訳を表示']));
-      }
-      this.main.info.appendChild(h('div', { class: 'lq-summary' }, items));
-    }
-
-    /** 主要動作の「画像で保存」 */
-    save() {
-      this.frame.save();
-    }
-
-    drawn() {
-      const spec = this.computed();
-      return !!spec && !spec.error && !!this.frame.canvas.chart;
-    }
-  }
-
-  /* ---------------------------------------------------------------------
    * PivotChart：ピボットタブのグラフ（ピボットの結果をそのまま描く。総計は描かない）
    * ------------------------------------------------------------------- */
-  const PIVOT_TYPES = ['hbar', 'bar', 'line', 'donut'];
+  const PIVOT_TYPES = ['hbar', 'bar', 'pareto', 'line', 'donut'];
   const ARRANGE = [
     { value: 'group', label: '並べる', icon: 'chart-column', title: '系列を横に並べて比べる' },
     { value: 'stack', label: '積み上げ', icon: 'layer-group', title: '系列を積み上げて合計も見る' },
@@ -468,9 +318,10 @@
       const o = this.opts;
       const r = this.resolve(model);
       const t = Types.get(r.type);
-      const timeLike = this._timeLike();
+      const pareto = t.mode === 'pareto';
+      const timeLike = !pareto && this._timeLike();
       return LQ.ChartData.fromModel(model, r.vi, { mode: t.mode, orient: t.orient, arrange: o.arrange, area: false, swap: o.swap,
-        top: t.mode === 'line' ? 0 : o.top, sort: 'keep', timeLike: timeLike, showValues: true });
+        top: t.mode === 'line' ? 0 : o.top, sort: pareto ? 'value' : 'keep', timeLike: timeLike, showValues: true });
     }
 
     /** 操作バー：種類（おすすめ＋4 種類）・並べ方・行と列の入れ替え・値・上位 N 件・グラフタブで編集 */
@@ -483,7 +334,7 @@
         [Dom.icon('wand-magic-sparkles'), h('span', { class: 'lq-chtype__label', text: 'おすすめ（' + Types.get(r.rec.type).label + '）' })])
       ].concat(PIVOT_TYPES.map((id) => typeButton(Types.get(id), { active: o.type === id, onClick: () => this.actions.setPivot({ type: id }) }))));
       const tools = [h('div', { class: 'lq-chtypes', role: 'toolbar', 'aria-label': 'グラフの種類' }, types)];
-      if (spec.series.length > 1 && spec.mode !== 'donut') {
+      if (spec.series.length > 1 && spec.mode !== 'donut' && spec.mode !== 'pareto') {
         const current = spec.mode === 'line' ? null : (o.arrange === 'auto' ? spec.arrange : o.arrange);
         if (current) tools.push(new LQ.Segmented(ARRANGE, current, (v) => this.actions.setPivot({ arrange: v })).el);
       }
@@ -579,7 +430,7 @@
 
   LQ.ChartActions = ChartActions;
   LQ.ChartFrame = ChartFrame;
-  LQ.ChartTab = ChartTab;
   LQ.PivotChart = PivotChart;
   LQ.chartTypeButton = typeButton;
+  LQ.chartKindOf = kindOf;
 })(window);

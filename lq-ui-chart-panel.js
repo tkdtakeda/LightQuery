@@ -5,6 +5,8 @@
  *     （数値 1 つ → ヒストグラム、数値 2 つ → 散布図、文字＋数値 → 横棒、日付＋数値 → 折れ線）
  *   ・種類を先に選ぶと、空いている置き場所に入れる列の種類を示す。今の列で描けない種類は薄くして理由を添える
  *   ・置いた項目（タグ）はドラッグで置き場所を移せる（入っていた項目は元の場所へ入れ替わる）。▾ で集計のしかた・日付のまとめ方
+ *   ・種類を切り替えて置けなくなった項目は「一時的に外している項目」として預かり、種類を戻すと元の置き場所へ戻す。
+ *     集計のしかた（平均など）もグラフごとに覚え、値の置き場所に戻ったときに使う
  *   ・変更はすぐグラフタブに反映し、ブラウザ（作業セット）に記憶する
  *   見た目はピボットの設定パネル（lq-pvfield・lq-pvzone・lq-pvtag）と同じ部品を使う
  * ========================================================================= */
@@ -23,7 +25,7 @@
 
   const TYPE_ICON = { number: 'hashtag', date: 'calendar-days', text: 'font', count: 'list-ol' };
   const TYPE_TITLE = { number: '数値の列', date: '日付の列', text: '文字の列', count: '行の数' };
-  const SLOT_ICON = { x: 'arrows-left-right', y: 'arrows-up-down', color: 'palette' };
+  const SLOT_ICON = { x: 'arrows-left-right', y: 'arrows-up-down', size: 'circle', color: 'palette' };
   const COUNT_KEY = '#count';
   const GROUPABLE_META = ['m:profile'];
   const DRAG_TYPE = 'application/x-lq-chart';
@@ -232,11 +234,18 @@
           message: accepts.length ? '置いている項目を × で外すか、ドラッグで入れ替えてください。' : '「種類」で合う種類を選ぶと置けます（薄い種類は、足りない列を添えています）。' });
         return;
       }
-      this._update((c) => Object.assign(c, r.chart), 'slot:' + r.slot);
+      /* 種類が変わったときは、変わった種類のボタンを光らせて知らせる（通知は外した項目があるときだけ） */
+      this._update((c) => Object.assign(c, r.chart), r.retyped ? 'type:' + r.chart.type : 'slot:' + r.slot);
       if (r.retyped) {
-        const t = Types.get(r.chart.type);
-        this.ctx.toasts.show({ type: 'info', title: '列の組み合わせに合わせて「' + t.label + '」にしました', message: '別の種類にするときは「種類」で選んでください。' +
-          (r.dropped.length ? '置けない項目（' + r.dropped.join('、') + '）は外しました。' : ''), duration: 4000 });
+        /* グラフタブは次の描画で作り直すので、描き終わってから光らせる */
+        global.requestAnimationFrame(() => global.requestAnimationFrame(() => {
+          const tb = this.ctx.app.main && this.ctx.app.main.chart.frame.left.querySelector('.lq-chtype.is-active');
+          if (tb) Flash.el(tb);
+        }));
+        if (r.dropped.length) {
+          this.ctx.toasts.show({ type: 'info', title: '列の組み合わせに合わせて「' + Types.get(r.chart.type).label + '」にしました',
+            message: '置けない項目（' + r.dropped.join('、') + '）は外しました。別の種類にするときは「種類」で選んでください。', duration: 5000 });
+        }
       }
     }
 
@@ -252,7 +261,21 @@
 
     _slotSection() {
       const type = Types.get(this.chart.type);
-      return UI.section('置き場所', type.slots.map((s) => this._slot(type, s)));
+      return UI.section('置き場所', type.slots.map((s) => this._slot(type, s)).concat([this._parked()]));
+    }
+
+    /** 種類を切り替えて置けなくなった項目（種類を戻すと元の置き場所へ戻る） */
+    _parked() {
+      const parked = this.chart.memo ? this.chart.memo.parked : [];
+      if (!parked.length) return null;
+      const names = parked.map((it) => (it.key ? LQ.ResultView.nameOf(it.key) + (it.grain ? '（' + LQ.PivotSettings.grainLabel(it.grain) + '）' : '') : '件数'));
+      return h('div', { class: 'lq-chparked', dataset: { flashKey: 'parked' } }, [
+        Dom.icon('box-archive'),
+        h('span', { class: 'lq-chparked__text' }, [h('strong', { text: '一時的に外している項目：' }), names.join('、'),
+          h('span', { class: 'lq-field__hint', text: '（この種類には置けません。前の種類に戻すと元の置き場所に戻ります）' })]),
+        h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '預かっている項目を捨てる（種類を戻しても戻りません）', onclick: () => this.actions.clearParked() },
+          [Dom.icon('xmark'), '捨てる'])
+      ]);
     }
 
     _slot(type, slot) {
@@ -284,7 +307,10 @@
         onclick: (e) => this._openMenu(e.currentTarget, slot, item) }, Dom.icon('caret-down')) : null;
       const remove = UI.iconButton('xmark', 'この項目を外す', () => this._update((c) => {
         c.slots[slot.id] = [];
-        if (!Settings.isConfigured(c)) c.typeLocked = false;
+        if (!Settings.isConfigured(c)) {
+          c.typeLocked = false;
+          c.memo.parked = [];
+        }
       }), 'lq-btn--xs');
       const tag = h('div', { class: 'lq-pvtag lq-pvtag--' + kind, draggable: 'true', title: label + '（ドラッグで置き場所を移せます）' }, [
         Dom.icon(TYPE_ICON[kind], 'lq-pvtag__icon'),
@@ -363,8 +389,9 @@
         this.ctx.toasts.show({ type: 'info', title: '「' + slot.label + '」には' + ChartTypes_accepts(slot) + 'の列を置けます', message: '' });
         return;
       }
+      const memoFn = chart.memo ? chart.memo.valueFn : 'sum';
       const make = (s, key, k, old) => {
-        if (s.value) return k === 'count' ? { key: null, grain: null, fn: 'count' } : { key: key, grain: null, fn: old && old.fn && old.fn !== 'count' ? old.fn : 'sum' };
+        if (s.value) return k === 'count' ? { key: null, grain: null, fn: 'count' } : { key: key, grain: null, fn: old && old.fn && old.fn !== 'count' && old.key ? old.fn : memoFn };
         return { key: key, grain: k === 'date' ? (old && old.grain) || 'month' : null, fn: null };
       };
       this._update((c) => {
@@ -417,7 +444,9 @@
       if (has('top')) {
         const sel = LQ.PivotChart.topSelect(o.top, (v) => set({ top: v }, 'opt:top'));
         sel.dataset.flashKey = 'opt:top';
-        out.push(UI.field('項目の数', sel, '項目が多いと読み取れないため、自動では 16 件以上のとき上位 10 件＋その他にします' + (type.mode === 'donut' ? '（ドーナツは 8 色までのため上位 7 件＋その他）' : '')));
+        const hint = type.mode === 'pareto' ? '自動では 31 件以上のとき上位 30 件＋その他にします（その他は右端）'
+          : '項目が多いと読み取れないため、自動では 16 件以上のとき上位 10 件＋その他にします' + (type.mode === 'donut' ? '（ドーナツは 8 色までのため上位 7 件＋その他）' : '');
+        out.push(UI.field('項目の数', sel, hint));
       }
       if (has('labels')) {
         const sw = UI.switchToggle(type.mode === 'donut' ? '凡例に割合を表示' : '棒の先に値を表示（項目が少ないとき）', o.labels, (on) => set({ labels: on }, 'opt:labels'));
@@ -426,7 +455,7 @@
       }
       if (has('bins')) out.push(this._binsField(o, set));
       if (has('lines')) {
-        const sw = UI.switchToggle('平均（実線）・中央値（破線）の線', o.lines, (on) => set({ lines: on }, 'opt:lines'));
+        const sw = UI.switchToggle(type.id === 'ecdf' ? '50%（中央値）の横線' : '平均（実線）・中央値（破線）の線', o.lines, (on) => set({ lines: on }, 'opt:lines'));
         sw.el.dataset.flashKey = 'opt:lines';
         out.push(sw.el);
       }
@@ -462,7 +491,10 @@
         out.push(h('div', { class: 'lq-row' }, [lx.el, ly.el]));
         out.push(h('p', { class: 'lq-field__hint', text: '値の桁が大きく違う（10 と 10,000 が混じる）ときに使います。0 以下の値は描けません。' }));
       }
-      out.push(h('p', { class: 'lq-field__hint' }, [Dom.icon('hand-pointer'), ' グラフの棒・点を押すと、そこに入った行（内訳）を表示します。']));
+      if (type.id === 'pareto') out.push(h('p', { class: 'lq-field__hint', text: '棒は全体に対する %、線は累積の % です（目盛りは 1 本）。累積 80% までの項目を A、95% までを B、残りを C として色分けします。' }));
+      out.push(h('p', { class: 'lq-field__hint' }, [Dom.icon('hand-pointer'), type.id === 'scatter' || type.id === 'bubble'
+        ? ' 点を押すとその行、グラフの中をドラッグして範囲を囲むと、その中の行（内訳）を表示します。'
+        : ' グラフの棒・点を押すと、そこに入った行（内訳）を表示します。']));
       return UI.section('表示', out);
     }
 

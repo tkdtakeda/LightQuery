@@ -1,7 +1,8 @@
 @charset "UTF-8";
 /* =========================================================================
  * LightQuery - lq-chart.css
- * グラフ：描画領域と操作バー（種類のボタン・画像の保存）、ピボットの「並べて」表示、設定パネル（種類の一覧・題名・区間の数）
+ * グラフ：描画領域と操作バー（種類のボタン・画像の保存）・範囲選択の枠・一覧（カード）、ピボットの「並べて」表示、
+ *   設定パネル（種類の一覧・題名・区間の数・一時的に外している項目）
  * 値はすべて lq-tokens.css のトークンを参照する。
  * ========================================================================= */
 
@@ -298,4 +299,90 @@
   min-width: var(--w-progress);
   color: var(--color-text-sub);
   font-size: var(--fs-sm);
+}
+
+/* ---------- 操作バーの種類のボタン（種類が多いので詰める） ---------- */
+.lq-chtype--compact {
+  padding: 0 var(--space-3);
+}
+
+/* ---------- 散布図・バブル図の範囲選択（ドラッグで囲む） ---------- */
+.lq-chart__plot.is-brushable .lq-chart__canvas {
+  cursor: crosshair;
+}
+
+.lq-chart__brush {
+  position: absolute;
+  border: var(--border-width) solid var(--color-primary);
+  border-radius: var(--radius-xs);
+  background: var(--color-brush);
+  pointer-events: none;
+}
+
+.lq-chart__brush[hidden] {
+  display: none;
+}
+
+/* ---------- 一覧（ダッシュボード）：グラフをカードで並べる ---------- */
+.lq-chgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--w-chcard-min), 1fr));
+  gap: var(--space-6);
+  padding: var(--space-6);
+  background: var(--color-bg);
+}
+
+.lq-chcard {
+  height: var(--h-chcard);
+  min-width: 0;
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--chart-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.lq-chcard.is-active {
+  border-color: var(--color-primary-line);
+  box-shadow: 0 0 0 var(--border-width-strong) var(--color-primary-soft);
+}
+
+.lq-chart--card .lq-chart__bar {
+  min-height: var(--h-control-lg);
+  padding: var(--space-2) var(--space-4);
+}
+
+.lq-chart--card .lq-chart__body {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.lq-chcard__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-sub);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* ---------- 一時的に外している項目（種類を戻すと元の置き場所へ戻る） ---------- */
+.lq-chparked {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) dashed var(--color-accent-line);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-faint);
+  color: var(--color-accent-strong);
+  font-size: var(--fs-sm);
+}
+
+.lq-chparked__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lq-chparked__text .lq-field__hint {
+  display: block;
 }

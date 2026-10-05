@@ -412,9 +412,9 @@
     {
       id: 'chart-trend',
       icon: 'chart-line',
-      title: 'グラフ：月ごとの売上の推移と、商品ごとの売上（2 枚）',
-      desc: '① 元データの全行から、受注日（月）× 地域の金額の合計を折れ線に、商品ごとの金額の合計を横棒（上位 10 件＋その他）にします。グラフタブ上の「表示するグラフ」で 2 枚を切り替えられます。左の「グラフ」で列を押したり、種類を選んだりして変えられます。',
-      tags: ['グラフ', '折れ線', '横棒', '上位 N 件'],
+      title: 'グラフ：月ごとの売上の推移・商品ごとの売上・パレート図（3 枚）',
+      desc: '① 元データの全行から、受注日（月）× 地域の金額の合計を折れ線に、商品ごとの金額の合計を横棒（上位 10 件＋その他）に、顧客ごとの金額をパレート図（上位 30 件＋その他。累積 80% までを A）にします。グラフタブ上の「表示するグラフ」で切り替え、右上の「一覧」で並べて見られます。',
+      tags: ['グラフ', '折れ線', '横棒', 'パレート図'],
       build() {
         return {
           source: { name: ORDERS_NAME, grid: orders(1616) },
@@ -425,7 +425,9 @@
               { id: 'smp-chart-trend', name: '月ごとの売上（地域別）', target: 'source', type: 'line', typeLocked: true,
                 slots: { x: [{ key: 's:受注日', grain: 'month' }], y: [{ key: 's:金額', fn: 'sum' }], color: [{ key: 's:地域' }] } },
               { id: 'smp-chart-top', name: '商品ごとの売上（上位 10 件）', target: 'source', type: 'hbar', typeLocked: true,
-                slots: { x: [{ key: 's:商品名' }], y: [{ key: 's:金額', fn: 'sum' }] }, opts: { top: 10 } }
+                slots: { x: [{ key: 's:商品名' }], y: [{ key: 's:金額', fn: 'sum' }] }, opts: { top: 10 } },
+              { id: 'smp-chart-pareto', name: '顧客ごとの売上（パレート図）', target: 'source', type: 'pareto', typeLocked: true,
+                slots: { x: [{ key: 's:顧客名' }], y: [{ key: 's:金額', fn: 'sum' }] } }
             ],
             activeId: 'smp-chart-trend'
           },
@@ -436,9 +438,9 @@
     {
       id: 'chart-dist',
       icon: 'chart-simple',
-      title: 'グラフ：金額の分布（ヒストグラム）とカテゴリごとのばらつき（箱ひげ・バイオリン）',
-      desc: '金額をきりのよい幅の区間に分けて件数を数え、平均と中央値の線を引きます。2 枚目はカテゴリごとの金額を、バイオリン（分布の形）の中に箱ひげ（中央値・四分位・外れ値）を描いて比べます。棒や箱を押すと、そこに入った受注が出ます。',
-      tags: ['グラフ', 'ヒストグラム', '箱ひげ', 'バイオリン'],
+      title: 'グラフ：金額の分布を 3 つの見方で（ヒストグラム・箱ひげ／バイオリン・累積分布を一覧で）',
+      desc: '金額をきりのよい幅の区間に分けて件数を数え、平均と中央値の線を引きます。2 枚目はカテゴリごとの金額を、バイオリン（分布の形）の中に箱ひげ（中央値・四分位・外れ値）を描いて比べます。3 枚目は地域ごとの累積分布で、線が右にあるほど金額が大きい側に寄っています。3 枚を「一覧」で並べて開きます。棒や箱を押すと、そこに入った受注が出ます。',
+      tags: ['グラフ', 'ヒストグラム', '箱ひげ', '累積分布', '一覧'],
       build() {
         return {
           source: { name: ORDERS_NAME, grid: orders(1717) },
@@ -448,9 +450,12 @@
             items: [
               { id: 'smp-chart-hist', name: '', target: 'source', type: 'hist', typeLocked: true, slots: { x: [{ key: 's:金額' }] }, opts: { lines: true } },
               { id: 'smp-chart-box', name: '', target: 'source', type: 'box', typeLocked: true,
-                slots: { y: [{ key: 's:金額' }], x: [{ key: 's:カテゴリ' }] }, opts: { shape: 'both', groupSort: 'median' } }
+                slots: { y: [{ key: 's:金額' }], x: [{ key: 's:カテゴリ' }] }, opts: { shape: 'both', groupSort: 'median' } },
+              { id: 'smp-chart-ecdf', name: '', target: 'source', type: 'ecdf', typeLocked: true,
+                slots: { x: [{ key: 's:金額' }], color: [{ key: 's:地域' }] }, opts: { lines: true } }
             ],
-            activeId: 'smp-chart-hist'
+            activeId: 'smp-chart-hist',
+            view: 'grid'
           },
           tab: 'chart'
         };
@@ -459,9 +464,9 @@
     {
       id: 'chart-scatter',
       icon: 'braille',
-      title: 'グラフ：数量と金額の関係（散布図・回帰直線・相関係数）',
-      desc: '1 受注＝1 点で、横軸に数量、縦軸に金額を置き、カテゴリで色分けします（4 つ目以降は「その他」）。回帰直線を引き、相関係数 r と R² を題名の下に出します。点を押すと、その受注が出ます。金額の桁が大きく違うときは「縦軸を対数に」が便利です。',
-      tags: ['グラフ', '散布図', '相関', '色分け'],
+      title: 'グラフ：数量と金額の関係（散布図・回帰直線・相関係数／バブル図・範囲選択）',
+      desc: '1 受注＝1 点で、横軸に数量、縦軸に金額を置き、カテゴリで色分けします（4 つ目以降は「その他」）。回帰直線を引き、相関係数 r と R² を題名の下に出します。2 枚目のバブル図は、単価を円の大きさにします。点を押すとその受注、グラフの中をドラッグして範囲を囲むと、その中の受注が出ます（外れ値の確認に便利です）。',
+      tags: ['グラフ', '散布図', 'バブル図', '範囲選択'],
       build() {
         return {
           source: { name: ORDERS_NAME, grid: orders(1818) },
@@ -470,7 +475,9 @@
           charts: {
             items: [
               { id: 'smp-chart-scatter', name: '', target: 'source', type: 'scatter', typeLocked: true,
-                slots: { x: [{ key: 's:数量' }], y: [{ key: 's:金額' }], color: [{ key: 's:カテゴリ' }] }, opts: { trend: true } }
+                slots: { x: [{ key: 's:数量' }], y: [{ key: 's:金額' }], color: [{ key: 's:カテゴリ' }] }, opts: { trend: true } },
+              { id: 'smp-chart-bubble', name: '', target: 'source', type: 'bubble', typeLocked: true,
+                slots: { x: [{ key: 's:数量' }], y: [{ key: 's:金額' }], size: [{ key: 's:単価' }], color: [{ key: 's:カテゴリ' }] }, opts: { logy: true } }
             ],
             activeId: 'smp-chart-scatter'
           },
