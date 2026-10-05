@@ -782,7 +782,7 @@
       if (!op) out.push({ field: 'op', code: 'op', message: '比較方法を選んでください' });
       if (op && op.pair) return out.concat(this._checkPair(c, condition));
       if (c.right.type === 'column') {
-        if (!condition) out.push({ field: 'right', code: 'noConditionData', message: '② 条件データが読み込まれていません（固定値にすることもできます）' });
+        if (!condition) out.push({ field: 'right', code: 'noConditionData', message: '② 照合表が読み込まれていません（固定値にすることもできます）' });
         else if (!c.right.col) out.push({ field: 'right', code: 'right', message: '② の列を選ぶか、固定値を入力してください' });
         else if (condition.findColumn(c.right.col) < 0) out.push({ field: 'right', code: 'rightMissing', message: '② に列「' + c.right.col + '」がありません' });
       } else if (Normalizer.isBlank(c.right.value)) {
@@ -797,7 +797,7 @@
     _checkPair(c, condition) {
       const r = c.right;
       if (r.type === 'column') {
-        if (!condition) return [{ field: 'right', code: 'noConditionData', message: '② 条件データが読み込まれていません（固定値にすることもできます）' }];
+        if (!condition) return [{ field: 'right', code: 'noConditionData', message: '② 照合表が読み込まれていません（固定値にすることもできます）' }];
         if (!r.col && !r.col2) return [{ field: 'right', code: 'right', message: '② の開始の列・終了の列の少なくとも一方を選んでください' }];
         const missing = [r.col, r.col2].filter((name) => name && condition.findColumn(name) < 0);
         return missing.length ? [{ field: 'right', code: 'rightMissing', message: '② に列「' + missing[0] + '」がありません' }] : [];

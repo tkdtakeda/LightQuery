@@ -41,6 +41,16 @@
   white-space: nowrap;
 }
 
+/* 入力（① ②）と結果（抽出結果・ピボット・グラフ）の区切り */
+.lq-tabs__sep {
+  flex: none;
+  align-self: center;
+  width: var(--border-width);
+  height: var(--h-control-sm);
+  margin: 0 var(--space-3);
+  background: var(--color-border-strong);
+}
+
 .lq-tab:hover {
   background: var(--color-surface-hover);
   color: var(--color-primary);
@@ -110,6 +120,39 @@
   /* 狭いときはサンプルの印をアイコンだけにする（文字はポインタを合わせると表示） */
   .lq-tab__sample-text {
     display: none;
+  }
+}
+
+/* さらに狭いとき（1366px の画面でパネルを開いたときなど）は、右の道具のボタンをアイコンだけにして 1 行に収める
+   （ボタンの名前はポインタを合わせると表示。切り替えの帯（データ／読み込み範囲など）は文字を残す） */
+@container (max-width: 1000px) {
+  .lq-tab__sample {
+    display: none;
+  }
+
+  .lq-tabbar__tools > .lq-btn {
+    gap: 0;
+    font-size: 0;
+  }
+
+  .lq-tabbar__tools > .lq-btn > .fa-solid {
+    font-size: var(--icon-md);
+  }
+}
+
+/* 大きいパネル（抽出条件）を 1366px の画面で開いたときも 1 行に収める（件数は右上のボタンと要約に出ている） */
+@container (max-width: 760px) {
+  .lq-tab .lq-tab__count {
+    display: none;
+  }
+
+  .lq-tab {
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+  }
+
+  .lq-tabs__sep {
+    margin: 0 var(--space-1);
   }
 }
 

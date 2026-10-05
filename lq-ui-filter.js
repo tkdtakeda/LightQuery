@@ -100,7 +100,7 @@
       const key = (role === 'source' ? 's:' : 'c:') + colName;
       const col = this.state.output.columns.find((c) => c.key === key);
       const on = col ? col.visible : role === 'source';
-      const sw = UI.switchToggle('この列を出力する（表示する）', on, (checked) => this.state.setColumnVisible(key, checked));
+      const sw = UI.switchToggle('この列を出力する', on, (checked) => this.state.setColumnVisible(key, checked));
       sw.el.classList.add('lq-colmenu__visible');
       return sw.el;
     }
@@ -332,7 +332,7 @@
         }
       }, [Dom.icon(icon), label, sort === dir ? h('span', { class: 'lq-colmenu__current', text: '（今の並び）' }) : null]);
       const col = s.output.columns.find((c) => c.key === key);
-      const sw = UI.switchToggle('この列を出力する（表示する）', col ? col.visible : true, (checked) => {
+      const sw = UI.switchToggle('この列を出力する', col ? col.visible : true, (checked) => {
         s.setColumnVisible(key, checked);
         pop.close();
       });

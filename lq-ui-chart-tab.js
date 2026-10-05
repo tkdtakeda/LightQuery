@@ -228,16 +228,41 @@
       return [h('div', { class: 'lq-chtypes', role: 'toolbar', 'aria-label': 'グラフの種類' }, groups)];
     }
 
-    /** グラフが複数あれば、切り替えのボタンを並べる */
+    /** グラフの切り替えボタン・このグラフの操作（⋮：複製・削除）・グラフを追加（② タブの切替ボタンと同じ並び） */
     _renderChips() {
       const all = this.state.charts;
-      if (all.items.length < 2) return;
+      if (!all.items.length) return;
       const chips = all.items.map((c) => h('button', {
         class: 'lq-fchip' + (c.id === all.activeId ? ' is-active' : ''), type: 'button', title: Settings.describe(c),
         'aria-pressed': c.id === all.activeId ? 'true' : 'false', dataset: { focusKey: 'chart:' + c.id }, onclick: () => this.actions.select(c.id)
       }, [Dom.icon(Types.get(c.type).icon, Types.get(c.type).iconClass || ''), h('span', { class: 'lq-fchip__label', text: Settings.title(c) })]));
+      const menu = UI.iconButton('ellipsis-vertical', '選んでいるグラフの操作（複製・削除）', (e) => this._openMenu(e.currentTarget), 'lq-btn--sm');
+      menu.dataset.focusKey = 'chart:menu';
+      const add = h('button', {
+        class: 'lq-fchip lq-fchip--add', type: 'button', title: '新しいグラフを加える（今のグラフは残ります）', dataset: { focusKey: 'chart:add' },
+        onclick: () => {
+          this.actions.add();
+          this.state.openPanel('chart');
+        }
+      }, [Dom.icon('plus'), h('span', { class: 'lq-fchip__label', text: 'グラフを追加' })]);
       this.main.info.appendChild(h('div', { class: 'lq-filterbar', role: 'toolbar', 'aria-label': '表示するグラフ' },
-        [h('span', { class: 'lq-filterbar__label' }, [Dom.icon('images'), '表示するグラフ'])].concat(chips)));
+        [h('span', { class: 'lq-filterbar__label' }, [Dom.icon('images'), '表示するグラフ'])].concat(chips, [menu, add])));
+    }
+
+    _openMenu(anchor) {
+      const pop = this.ctx.popovers;
+      const chart = this.chart();
+      if (!chart) return;
+      if (pop.isOpen('chart-menu')) {
+        pop.close();
+        return;
+      }
+      const full = this.state.charts.items.length >= Settings.MAX;
+      pop.open(anchor, h('div', { class: 'lq-menu' }, [
+        UI.menuItem(pop, 'clone', 'このグラフを複製', full ? 'グラフは ' + Settings.MAX + ' 枚までです' : '「' + Settings.title(chart) + '」の設定を写した新しいグラフ',
+          () => this.actions.duplicate(chart.id), { disabled: full }),
+        UI.menuItem(pop, 'trash-can', 'このグラフを削除', '元に戻せます', () => this.actions.remove(chart.id), { danger: true })
+      ]), { key: 'chart-menu' });
     }
 
     _renderSummary(chart, view, spec) {

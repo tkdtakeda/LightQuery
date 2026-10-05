@@ -785,6 +785,13 @@ input[type="radio"] {
   border-top: var(--border-width) solid var(--color-border);
 }
 
+/* 前の区画が隠れているときは区切りを付けない（先頭に空きと線だけが残らないように） */
+.lq-section[hidden] + .lq-section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .lq-section__title {
   display: flex;
   align-items: center;

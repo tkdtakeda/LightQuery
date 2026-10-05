@@ -30,7 +30,7 @@
 
   const SCOPES = [
     { value: 'global', label: '全体の設定', icon: 'globe', title: '個別の設定がない抽出条件すべてに使う照合ルールで比べます' },
-    { value: 'own', label: 'この抽出条件だけ', icon: 'filter', title: '選択中の抽出条件だけ、別の照合ルールで比べます' }
+    { value: 'own', label: 'この抽出条件だけ', icon: 'code-compare', title: '選択中の抽出条件だけ、別の照合ルールで比べます' }
   ];
 
   class RulesPanel {
@@ -45,8 +45,8 @@
       this.scope = this._buildScope();
       this.editing = h('div', { class: 'lq-rulescope__editing' });
       this.cards = h('div', { class: 'lq-rules' }, RULES.map((rule) => this._card(rule)));
-      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '編集中の照合ルールを初期値に戻す', onclick: () => this._reset() },
-        [Dom.icon('rotate-left'), '初期値に戻す']);
+      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '編集中の照合ルールを初期設定に戻す', onclick: () => this._reset() },
+        [Dom.icon('rotate-left'), '初期設定に戻す']);
       this.el = h('div', {}, [
         this.scope.el,
         UI.section('値をそろえてから比べます', [
@@ -159,7 +159,7 @@
       Dom.clear(sc.who);
       Dom.append(sc.who, [
         h('span', { class: 'lq-rulescope__label', text: '選択中の抽出条件' }),
-        h('span', { class: 'lq-badge lq-badge--rank', text: s.profiles.rank(p.id) + ' 位' }),
+        UI.rank(s.profiles.rank(p.id)),
         h('strong', { class: 'lq-rulescope__name', text: p.name, title: p.name })
       ]);
       sc.seg.set(p.rules ? 'own' : 'global');
@@ -169,7 +169,7 @@
       this._renderOthers(p);
       Dom.clear(this.editing);
       Dom.append(this.editing, t.profile
-        ? [Dom.icon('filter'), h('span', { text: '編集中：「' + t.profile.name + '」だけの設定' })]
+        ? [Dom.icon('code-compare'), h('span', { text: '編集中：「' + t.profile.name + '」だけの設定' })]
         : [Dom.icon('globe'), h('span', { text: '編集中：全体の設定（' + inherit + ' 件の抽出条件に使います）' })]);
       this.editing.classList.toggle('is-own', !!t.profile);
     }

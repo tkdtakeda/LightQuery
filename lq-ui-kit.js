@@ -356,10 +356,15 @@
       return h('span', { class: 'lq-badge lq-badge--' + kind, text: text });
     },
 
+    /** 優先順位の印（画面のどこでも同じ見た目・同じ書き方「N 位」にする） */
+    rank(n, title) {
+      return h('span', { class: 'lq-badge lq-badge--rank', text: n + ' 位', title: title || null });
+    },
+
     sourceBadge(prefix) {
       if (prefix === 's:') return UI.badge('src', '①');
       if (prefix === 'c:') return UI.badge('cond', '②');
-      return UI.badge('meta', '根拠');
+      return UI.badge('meta', '情報');
     }
   };
 

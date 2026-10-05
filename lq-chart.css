@@ -209,24 +209,6 @@
 }
 
 /* ---------- 設定パネル ---------- */
-.lq-chlist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.lq-chlist__chip {
-  max-width: var(--w-chart-name-max);
-}
-
-.lq-chname {
-  align-items: flex-end;
-}
-
-.lq-chname__field {
-  flex: 1 1 auto;
-}
-
 /* 種類の一覧：目的ごとに 1 行（左に目的、右に種類） */
 .lq-chgallery {
   display: flex;

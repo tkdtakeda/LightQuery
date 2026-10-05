@@ -89,6 +89,7 @@
   --color-cond-strong: var(--c-teal-800);
   --color-cond-soft: var(--c-teal-100);
   --color-cond-faint: var(--c-teal-50);
+  --color-cond-line: var(--c-teal-300);
   --color-meta: var(--c-gray-600);
   --color-meta-soft: var(--c-gray-150);
 
@@ -286,7 +287,6 @@
   --chart-title-size: 15px;
   --h-chartbar: 40px;
   --w-chart-type: 64px;
-  --w-chart-name-max: 220px;
   --w-chart-split-min: 360px;
   --w-chcard-min: 520px;
   --h-chcard: 400px;

@@ -18,7 +18,7 @@
   const UI = LQ.UI;
   const h = Dom.h;
 
-  const ROLE_LABEL = { source: '① 元データ', condition: '② 条件データ' };
+  const ROLE_LABEL = { source: '① 元データ', condition: '② 照合表' };
 
   class Dialogs {
     constructor(ctx) {
@@ -71,7 +71,8 @@
       }
       const s = this.state;
       const hasSample = s.hasSample();
-      const list = h('div', { class: 'lq-samples' }, LQ.Samples.list().map((sm) => h('button', {
+      /* 21 件を一度に見比べなくて済むよう、目的ごとの見出しで区切る */
+      const card = (sm) => h('button', {
         class: 'lq-sample', type: 'button',
         onclick: () => {
           this.pop.close();
@@ -82,7 +83,10 @@
         h('span', { class: 'lq-sample__title', text: sm.title }),
         h('span', { class: 'lq-sample__desc', text: sm.desc }),
         h('span', { class: 'lq-sample__tags' }, sm.tags.map((t) => h('span', { class: 'lq-tag', text: t })))
-      ])));
+      ]);
+      const list = h('div', { class: 'lq-samples' }, LQ.Samples.groups().reduce((acc, g) => acc.concat(
+        [h('h3', { class: 'lq-samples__group' }, [Dom.icon(g.icon), h('span', { text: g.label }), h('span', { class: 'lq-badge lq-badge--count', text: g.items.length + ' 件' })])],
+        g.items.map(card)), []));
       const clearBtn = h('button', { class: 'lq-btn lq-btn--sm', type: 'button', disabled: !hasSample,
         onclick: () => {
           this.pop.close();
@@ -109,7 +113,7 @@
       const s = this.state;
       const target = s.profiles.length > 1 ? '（抽出条件「' + s.activeProfile.name + '」）' : '';
       const btn = (role) => h('button', { class: 'lq-btn lq-btn--block' + (role === 'source' ? ' lq-btn--primary' : ''), type: 'button', onclick: () => choose(role) },
-        [UI.badge(role === 'source' ? 'src' : 'cond', role === 'source' ? '①' : '②'), (role === 'source' ? '元データ' : '条件データ' + target) + 'として読み込む',
+        [UI.badge(role === 'source' ? 'src' : 'cond', role === 'source' ? '①' : '②'), (role === 'source' ? '元データ' : '照合表' + target) + 'として読み込む',
           h('span', { class: 'lq-kbd', text: role === 'source' ? '1' : '2' })]);
       this.pop.open(null, [
         this._head('paste', '読み込む先を選んでください'),
@@ -400,11 +404,11 @@
       }));
       const headline = info.multi
         ? h('div', { class: 'lq-explain__profile' }, part
-          ? [Dom.icon('filter'), '抽出条件：', h('strong', { text: part.priority + ' 位「' + info.partName + '」' })]
+          ? [Dom.icon('code-compare'), '抽出条件：', h('strong', { text: part.priority + ' 位「' + info.partName + '」' })]
           : [Dom.icon('minus'), h('strong', { text: '該当なし' })])
         : null;
       this.pop.open(anchor, [
-        this._head('circle-info', '結果 ' + fmt(index + 1) + ' 行目の根拠'),
+        this._head('circle-info', '結果 ' + fmt(index + 1) + ' 行目の判定の根拠'),
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
           headline,
           h('div', { class: 'lq-row lq-sub lq-num', text: where.join('・') })
@@ -413,7 +417,7 @@
       ], { key: 'row', size: 'lg', placement: 'bottom-start' });
     }
 
-    /* ---------------- 結果の根拠（要約の「根拠を見る」） ---------------- */
+    /* ---------------- 結果の根拠（要約の「抽出の内容」） ---------------- */
 
     openResultDetails(anchor) {
       const res = this.state.result;
@@ -433,7 +437,7 @@
       ].filter(Boolean);
       const blocks = res.parts.map((part, i) => this._partBlock(part, view.partName(i), multi, st.mode));
       this.pop.open(anchor, [
-        this._head('magnifying-glass', 'この結果の根拠'),
+        this._head('magnifying-glass', '抽出の内容'),
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, blocks.concat([
           h('table', { class: 'lq-grid lq-grid--kv' }, h('tbody', {}, rows.map((r) => h('tr', {}, [h('th', { text: r[0] }), h('td', { text: r[1] })]))))
         ]))])
@@ -464,7 +468,7 @@
         if (p.incomparable) notes.push('条件 ' + p.label + '：数値と文字など比較できない組み合わせが ' + fmt(p.incomparable) + ' 件あり、不一致として扱いました。');
       });
       return h('div', { class: 'lq-resultpart' }, [
-        multi ? h('div', { class: 'lq-resultpart__head' }, [h('span', { class: 'lq-badge lq-badge--rank', text: part.priority + ' 位' }), h('strong', { text: name }),
+        multi ? h('div', { class: 'lq-resultpart__head' }, [UI.rank(part.priority), h('strong', { text: name }),
           h('span', { class: 'lq-resultpart__count lq-num', text: count })]) : h('div', { class: 'lq-resultpart__count lq-num', text: count }),
         h('ul', { class: 'lq-explain' }, snap.conditions.map((text) => h('li', { class: 'lq-explain__item' }, [UI.badge('label', text.charAt(0)), h('span', { text: text.slice(2) })]))),
         h('div', { class: 'lq-resultpart__facts' }, facts.map((f) => h('div', { text: f }))),
@@ -541,7 +545,7 @@
         h('div', { class: 'lq-menu__sep' }),
         item('trash-can', '削除', '通知の「元に戻す」で戻せます', () => this.app.profiles.remove(id), { danger: true })
       ]);
-      this.pop.open(anchor, [h('div', { class: 'lq-popover__head' }, [Dom.icon('filter'), h('span', { text: rank + ' 位「' + p.name + '」' })])].concat(menu),
+      this.pop.open(anchor, [h('div', { class: 'lq-popover__head' }, [Dom.icon('code-compare'), h('span', { text: rank + ' 位「' + p.name + '」' })])].concat(menu),
         { key: key, placement: 'bottom-end' });
     }
 
@@ -559,7 +563,7 @@
       let nameEdited = false;
       const choices = new Map();
       const list = h('div', { class: 'lq-choice-list', role: 'radiogroup' });
-      const withData = UI.switchToggle('② 条件データの中身も含める（読み込むだけですぐ使えます）', true, () => {});
+      const withData = UI.switchToggle('② 照合表の中身も含める（読み込むだけですぐ使えます）', true, () => {});
       const nameInput = h('input', { class: 'lq-input', type: 'text', title: 'ファイル名（拡張子 .json は自動で付きます）' });
       nameInput.addEventListener('input', () => {
         nameEdited = true;
@@ -599,12 +603,12 @@
       const body = h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
         UI.field('書き出す範囲', list),
         withData.el,
-        h('p', { class: 'lq-field__hint', text: '② の中身を含めると、顧客 ID などのデータもファイルに入ります。含めない場合は、読み込んだあとで ② を読み込み直します。' }),
+        h('p', { class: 'lq-field__hint', text: '② の中身を含めると、顧客 ID などのデータもファイルに入ります。含めない場合は、読み込んだあとで ② を読み込み直します。抽出条件を固定して毎月のデータだけを差し替える使い方では、この .json を残しておき、毎月 ① を読み込むだけで同じ抽出ができます（読み込み範囲・絞り込みは同じ列の構成なら自動で当てはめます）。' }),
         UI.field('ファイル名', h('div', { class: 'lq-export-name' }, [nameInput, h('span', { class: 'lq-muted', text: '＋.json' })]))
       ])]);
       LQ.FormNav.attach(body);
       this.pop.open(anchor, [this._head('file-export', '抽出条件を JSON に書き出す'), body, h('div', { class: 'lq-popover__foot' }, [runBtn,
-        h('span', { class: 'lq-field__hint', text: '読み込みは「読込」またはファイルのドラッグ＆ドロップ' })])], { key: 'json', size: 'lg' });
+        h('span', { class: 'lq-field__hint', text: '読み込みは「読み込み」またはファイルのドラッグ＆ドロップ' })])], { key: 'json', size: 'lg' });
       refresh();
       runBtn.focus();
     }
@@ -649,7 +653,7 @@
 
     /**
      * @param {Array<{dataset:LQ.Dataset, name:string, label:string}>} tables
-     * @param {'active'|'new'|'append'} mode append：一覧の最後に加える（② のタブ・パネルの「条件データを追加」）
+     * @param {'active'|'new'|'append'} mode append：一覧の最後に加える（② タブの「表から作成」）
      * @param {Function} onConfirm (selectedTables, intoActive)
      */
     openTableChooser(tables, mode, onConfirm) {
@@ -675,7 +679,7 @@
         const intoActive = mode === 'active' && n === 1;
         const append = mode === 'append';
         confirmBtn.disabled = n === 0;
-        confirmBtn.lastChild.textContent = intoActive ? '「' + active.name + '」の ② に読み込む' : (append ? '条件データを ' + n + ' 件追加する' : '抽出条件を ' + n + ' 件作る');
+        confirmBtn.lastChild.textContent = intoActive ? '「' + active.name + '」の ② に読み込む' : (append ? '照合表を ' + n + ' 件追加する' : '抽出条件を ' + n + ' 件作る');
         if (intoActive) note.textContent = '選択中の抽出条件「' + active.name + '」の ② を、選んだ表に差し替えます（元に戻せます）。';
         else note.textContent = (active.isBlank() ? '1 件目は空の抽出条件「' + active.name + '」に入れ、残りは' + (append ? '一覧の最後' : 'その下') + 'に並べます。'
           : (append ? '一覧の最後（優先順位が最も低い位置）に並べます。' : '選択中の抽出条件の下に並べます。')) +
@@ -695,7 +699,7 @@
         onConfirm(list, mode === 'active' && list.length === 1);
       });
       this.pop.open(null, [
-        this._head('table-list', '② 条件データとして読み込む表を選んでください'),
+        this._head('table-list', '② 照合表として読み込む表を選んでください'),
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
           h('div', { class: 'lq-row' }, [
             h('span', { class: 'lq-sub', text: tables.length + ' 個の表があります。' }),
@@ -723,7 +727,7 @@
         this._head('triangle-exclamation', 'すべてクリアしますか？'),
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
           h('p', { text: '① 元データ・結果に加え、抽出条件 ' + count + ' 件と出力列の並び（ブラウザに保存した分も）を消去します。' }),
-          UI.note('tip', '残しておきたいときは、先に JSON に書き出してください（あとで「読込」で戻せます）。'),
+          UI.note('tip', '残しておきたいときは、先に JSON に書き出してください（あとで「読み込み」で戻せます）。'),
           h('p', { class: 'lq-field__hint', text: '消去のあと、通知の「元に戻す」でも戻せます。' })
         ])]),
         h('div', { class: 'lq-popover__foot' }, [
