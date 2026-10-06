@@ -72,10 +72,32 @@
       const s = this.state;
       const snap = s.snapshot();
       const next = new LQ.Dataset('source', cur.members[0], {
-        settings: Util.clone(cur.settings), members: cur.members.slice(1), filters: cur.filters, dedup: cur.dedup
+        settings: Util.clone(cur.settings), members: cur.members.slice(1), filters: cur.filters, dedup: cur.dedup, unpivot: cur.unpivot
       });
       s.setDataset('source', next);
       this._announce(snap, '「' + cur.name + '」を ① から外しました', next);
+    }
+
+    /**
+     * 縦持ちを設定する（null で外す。元に戻せる）
+     * @param {'source'|'condition'} role
+     * @param {{cols:string[], name:string, value:string, keepBlank:boolean}|null} def
+     * @param {boolean} [quiet] 列を 1 つずつ選んでいるときは通知を出さない（表の見出しと処理の流れで分かる）
+     */
+    setUnpivot(role, def, quiet) {
+      const s = this.state;
+      const ds = s.datasets[role];
+      if (!ds || this.app._blockedByBusy()) return;
+      const before = ds.unpivot ? Util.clone(ds.unpivot) : null;
+      s.setUnpivot(role, def);
+      if (quiet) return;
+      const info = s.datasets[role].unpivotInfo;
+      const undo = [{ label: '元に戻す', icon: 'rotate-left', onClick: () => s.setUnpivot(role, before) }];
+      this.toasts.show(def
+        ? { type: info && info.ok ? 'success' : 'warn', title: '縦持ちにしました',
+          message: info && info.ok ? LQ.Unpivot.describe(def) + 'しました。' + fmt(info.base) + ' 行 → ' + fmt(info.kept) + ' 行です。' : (info ? info.message : ''),
+          actions: undo }
+        : { type: 'success', title: '縦持ちを外しました', message: '元の列の並びに戻しました。', actions: before ? undo : [] });
     }
 
     /**

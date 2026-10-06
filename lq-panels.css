@@ -473,6 +473,13 @@
   color: var(--color-text-muted);
 }
 
+.lq-rule__group {
+  margin-top: var(--space-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--color-text-sub);
+}
+
 .lq-rule__example b {
   color: var(--color-text-sub);
   font-weight: var(--fw-medium);

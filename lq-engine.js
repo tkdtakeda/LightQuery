@@ -132,11 +132,12 @@
 /* =========================================================================
  * ── 比較方法の登録簿 ──
  * 比較方法（演算子）の登録簿。新しい比較方法は register() で追加するだけでよい。
- *   prep：値の下ごしらえ方法（key＝同値判定用 / text＝文字列比較用 / typed＝大小比較用）
+ *   prep：値の下ごしらえ方法（key＝同値判定用 / text＝文字列比較用 / typed＝大小比較用 / plain＝正規表現用）
  *   test(left, right)：true / false / null（比較できない）を返す
  *   wildcard：② の値・固定値の「*」（ワイルドカード）と先頭の比較演算子（>=0.1・<>アヒル など。Excel の COUNTIF と同じ書き方）を
  *             判定の書き方として扱う（Normalizer.criteria。照合ルールが ON のとき。negative なら当てはまらない行が真）
- *   rightPrep：② の値・固定値の下ごしらえが ① と違うとき（期間 = period）
+ *   rightPrep：② の値・固定値の下ごしらえが ① と違うとき（期間 = period／正規表現 = regex）
+ *   validate(value)：固定値の書き方の誤り（文章。正しければ null）／example：固定値の入力欄の例
  *   pair：② の値を 2 つ使う（範囲：開始〜終了。test(left, right, right2)）
  *   date：① が日付の列のときの呼び方 {name, phrase}（以降・以前など）
  *   日付どうしの「以下・超え・範囲の終わり」は、時刻のない日付を「その日の終わり」までとして比べる
@@ -186,7 +187,8 @@
 
   const Operators = {
     register(def) {
-      registry.set(def.id, Object.freeze(Object.assign({ negative: false, positive: null, wildcard: false, rightPrep: null, pair: false, date: null }, def)));
+      registry.set(def.id, Object.freeze(Object.assign({ negative: false, positive: null, wildcard: false, rightPrep: null, pair: false, date: null,
+        validate: null, example: null }, def)));
     },
 
     get(id) {
@@ -281,6 +283,18 @@
     id: 'lt', name: '未満', phrase: '未満', group: 'compare', order: 100, prep: 'typed',
     date: { name: 'より前', phrase: 'より前（前日まで）' },
     test: comparator((d) => d < 0)
+  });
+  /* 正規表現：② の値・固定値を正規表現として ① の値に当てはめる（全角半角・空白だけそろえ、表記ゆれのそろえ方は使わない）。書き方の誤りは比較できない */
+  const regexError = (v) => LQ.Normalizer.regexError(v);
+  Operators.register({
+    id: 'regex', name: '正規表現に一致', phrase: 'の正規表現に一致', group: 'partial', order: 64, prep: 'plain', rightPrep: 'regex',
+    validate: regexError, example: '^A-\\d{3}$',
+    test: (l, r) => (r ? r.re.test(l) : null)
+  });
+  Operators.register({
+    id: 'notRegex', name: '正規表現に一致しない', phrase: 'の正規表現に一致しない', group: 'partial', order: 66, prep: 'plain', rightPrep: 'regex',
+    negative: true, positive: 'regex', validate: regexError, example: '^A-\\d{3}$',
+    test: (l, r) => (r ? !r.re.test(l) : null)
   });
   /* 範囲：開始・終了のどちらかが空欄ならその側は無制限。両端を含む */
   Operators.register({
@@ -789,6 +803,8 @@
         out.push({ field: 'right', code: 'value', message: '固定値を入力してください' });
       } else if (op && op.rightPrep === 'period' && !LQ.Period.parse(c.right.value)) {
         out.push({ field: 'right', code: 'period', message: '「' + c.right.value + '」は期間として読めません（例：2024・2024/05・2024年度・今月・直近30日）' });
+      } else if (op && op.validate && op.validate(c.right.value)) {
+        out.push({ field: 'right', code: 'value', message: op.validate(c.right.value) });
       }
       return out;
     }

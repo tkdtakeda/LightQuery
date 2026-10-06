@@ -655,7 +655,18 @@
    *   key()   … 完全一致・一致しない用（数値・日付・文字列で同値を判定）
    *   typed() … 以上・未満などの大小比較や並べ替え用
    * ------------------------------------------------------------------- */
-  const DEFAULT_RULES = Object.freeze({ space: 'trim', width: true, caseless: true, numeric: true, date: true, wildcard: true, compare: true });
+  const DEFAULT_RULES = Object.freeze({ space: 'trim', width: true, caseless: true, numeric: true, date: true, wildcard: true, compare: true,
+    kana: false, corp: false, symbol: false });
+  /*
+   * 表記ゆれのそろえ方（初期値はすべて OFF。そろえた結果は文字の比較・同値の判定に使う）
+   *   kana：ひらがなをカタカナにする（やまだ＝ヤマダ）
+   *   corp：法人格の書き方を除く（株式会社・(株)・㈱・有限会社・一般社団法人 など。前株・後株の違いもなくなる）
+   *   symbol：記号を除く（ハイフン・ダッシュ・中黒・スラッシュ・ピリオド・カンマ・括弧・引用符・アンダーバー）。長音「ー」は残す
+   */
+  const CORP_PATTERN = new RegExp('(株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|一般財団法人|公益社団法人|公益財団法人|' +
+    '特定非営利活動法人|NPO法人|社会福祉法人|医療法人社団|医療法人財団|医療法人|学校法人|宗教法人|' +
+    '[(（](?:株|有|同|資|名|社|財|医|学|福|宗)[)）]|[㈱㈲])', 'g');
+  const SYMBOL_PATTERN = /[-‐‑‒–—―−﹣－・･\/／.．,，、。'"＂‘’“”()（）\[\]［］{}｛｝「」『』【】_＿]/g;
   /* 比較演算子の書き方（Excel の COUNTIF と同じ）。全角・≧≦≠ も読む */
   const CMP_CHARS = { '>': '>', '<': '<', '=': '=', '＞': '>', '＜': '<', '＝': '=', '≧': '>=', '≦': '<=', '≠': '<>' };
   const CMP_OPS = ['>=', '<=', '<>', '>', '<', '='];
@@ -710,7 +721,8 @@
     /** ルールの組み合わせを表す文字列（計算結果の再利用・結果が最新かの判定に使う。欠けている項目は初期値） */
     static signatureOf(rules) {
       const r = Object.assign({}, DEFAULT_RULES, rules || {});
-      return [r.space, r.width ? 1 : 0, r.caseless ? 1 : 0, r.numeric ? 1 : 0, r.date ? 1 : 0, r.wildcard ? 1 : 0, r.compare ? 1 : 0].join('|');
+      return [r.space, r.width ? 1 : 0, r.caseless ? 1 : 0, r.numeric ? 1 : 0, r.date ? 1 : 0, r.wildcard ? 1 : 0, r.compare ? 1 : 0,
+        r.kana ? 1 : 0, r.corp ? 1 : 0, r.symbol ? 1 : 0].join('|');
     }
 
     get signature() {
@@ -723,6 +735,9 @@
       if (cached !== undefined) return cached;
       let out = raw;
       if (this.rules.width) out = out.normalize('NFKC');
+      if (this.rules.kana) out = out.replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+      if (this.rules.corp) out = out.replace(CORP_PATTERN, '');
+      if (this.rules.symbol) out = out.replace(SYMBOL_PATTERN, '');
       if (this.rules.space === 'trim') out = out.trim();
       else if (this.rules.space === 'all') out = out.replace(/\s+/g, '');
       if (this.rules.caseless) out = out.toLowerCase();
@@ -816,7 +831,47 @@
         return (v) => LQ.Period.parse(v, now);
       }
       if (prep === 'typed') return (v) => this.typed(v);
+      if (prep === 'regex') return (v) => this.regex(v);
+      if (prep === 'plain') return (v) => this.plain(v);
       return (v) => this.text(v);
+    }
+
+    /**
+     * 正規表現を当てはめる側の文字：全角半角と空白だけをそろえる（表記ゆれのそろえ方は使わない。書いたパターンのとおりに当てはめるため。
+     * 大文字小文字は正規表現の i で扱う）
+     */
+    plain(value) {
+      let out = value === null || value === undefined ? '' : String(value);
+      if (this.rules.width) out = out.normalize('NFKC');
+      if (this.rules.space === 'trim') out = out.trim();
+      else if (this.rules.space === 'all') out = out.replace(/\s+/g, '');
+      return out;
+    }
+
+    /**
+     * 正規表現として読む（① の値は text() でそろえて比べるため、パターンも全角半角をそろえ、大文字小文字を区別しないなら i を付ける）。
+     * 空欄・書き方の誤りは null
+     * @returns {{re:RegExp}|null}
+     */
+    regex(value) {
+      if (Normalizer.isBlank(value)) return null;
+      const src = this.rules.width ? String(value).normalize('NFKC') : String(value);
+      try {
+        return { re: new RegExp(src, this.rules.caseless ? 'i' : '') };
+      } catch (err) {
+        return null;
+      }
+    }
+
+    /** 正規表現の書き方の誤り（正しければ null） */
+    static regexError(value) {
+      if (Normalizer.isBlank(value)) return null;
+      try {
+        new RegExp(String(value).normalize('NFKC'));
+        return null;
+      } catch (err) {
+        return '「' + value + '」は正規表現として読めません（例：^A-\\d{3}$ ＝ A- と数字 3 桁、東京|大阪 ＝ どちらか）';
+      }
     }
 
     /** 現在のルールを人が読める文に（根拠表示用） */
@@ -830,8 +885,11 @@
         r.numeric ? '数値は数値で比較' : '数値も文字で比較',
         r.date ? '日付は日付で比較' : '日付も文字で比較',
         r.wildcard ? '完全一致で * はワイルドカード' : '* も文字として比較',
-        r.compare ? '完全一致で >= などは比較演算子' : '>= なども文字として比較'
-      ].join('・');
+        r.compare ? '完全一致で >= などは比較演算子' : '>= なども文字として比較',
+        r.kana ? 'ひらがな・カタカナを区別しない' : null,
+        r.corp ? '法人格（株式会社・(株) など）を無視' : null,
+        r.symbol ? 'ハイフン・中黒などの記号を無視' : null
+      ].filter(Boolean).join('・');
     }
   }
 

@@ -630,6 +630,57 @@
       }
     },
     {
+      id: 'unpivot',
+      icon: 'arrows-turn-to-dots',
+      title: '前処理：月が横に並んだ表を縦持ちにして月ごとに集計',
+      desc: '① は「顧客・地域・4月〜3月」の 12 か月が横に並んだ売上表です。「縦持ちにする」で 4月〜3月の列を「月」「売上」の行にし（空欄の月は行にしません）、ピボットで月ごとの売上を出します。① の読み込みパネルの「縦持ちにする」で、行にする列や列の名前を変えられます。',
+      tags: ['縦持ち', 'ピボット解除', '月別', '① だけ'],
+      build() {
+        const rand = createRandom(2468);
+        const months = ['4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月', '1月', '2月', '3月'];
+        const grid = [['顧客', '地域'].concat(months)];
+        makeCustomers(40, 4, rand).forEach((c) => grid.push([c.name, c.region].concat(months.map(() => (rand.next() < 0.15 ? '' : String(rand.int(1, 60) * 1000))))));
+        return {
+          source: { name: 'サンプル_月別売上表.xlsx', grid: grid, unpivot: { cols: months, name: '月', value: '売上', keepBlank: false } },
+          profiles: [],
+          output: ['s:顧客', 's:地域', 's:月', 's:売上'],
+          aggregate: { target: 'source', rows: [{ key: 's:月' }], cols: [], values: [{ key: 's:売上', fn: 'sum' }, { fn: 'count' }], sort: { by: 'label', dir: 'asc', value: 0 } },
+          tab: 'source'
+        };
+      }
+    },
+    {
+      id: 'variants',
+      icon: 'spell-check',
+      title: '表記ゆれ（法人格・かな・記号）と正規表現で照合',
+      desc: '① の取引先名は「株式会社」「(株)」「㈱」の有無、ひらがな・カタカナ、中黒などの書き方がばらばらです。この抽出条件だけの照合ルールで表記ゆれをそろえ、② の取引先マスタと完全一致で照合します。あわせて、伝票番号が「英字 2 文字-数字 4 桁」の形の行だけを、正規表現（^[A-Z]{2}-\\d{4}$）で選びます。',
+      tags: ['表記ゆれ', '法人格', '正規表現', '照合ルール（個別）'],
+      build() {
+        const rand = createRandom(1357);
+        const firms = [['やまだ商事', ['株式会社ヤマダ商事', '(株)やまだ商事', '㈱ヤマダ商事', 'ヤマダ商事株式会社']],
+          ['スズキ・電機', ['スズキ電機株式会社', 'スズキ電機(有)', '有限会社スズキ・電機', 'すずき電機']],
+          ['サトウ物産', ['サトウ物産(株)', '株式会社サトウ物産', 'サトウ物産㈱', 'さとう物産']],
+          ['アオキ食品', ['アオキ食品㈱', '合同会社アオキ食品', 'あおき食品', 'アオキ・食品']]];
+        const grid = [['伝票番号', '日付', '取引先名', '金額']];
+        for (let i = 0; i < 48; i++) {
+          const f = firms[i % firms.length];
+          const name = f[1][rand.int(0, f[1].length - 1)];
+          const no = i % 11 === 5 ? 'XX' + rand.int(100, 999) : (i % 13 === 7 ? 'TR' + rand.int(1000, 9999) : 'TR-' + String(rand.int(1000, 9999)));
+          grid.push([no, '2025/0' + rand.int(4, 9) + '/' + pad2(rand.int(1, 28)), name, String(rand.int(1, 90) * 1000)]);
+        }
+        const master = [['取引先名', '担当']].concat(firms.map((f, i) => [f[0], ['佐藤', '鈴木', '高橋', '田中'][i]]));
+        return {
+          source: { name: 'サンプル_取引データ.csv', grid: grid },
+          profiles: [{
+            name: '取引先マスタで照合', condition: { name: 'サンプル_取引先マスタ.csv', grid: master },
+            query: Q([C('取引先名', 'eq', col('取引先名')), C('伝票番号', 'regex', fixed('^[A-Z]{2}-\\d{4}$'))]),
+            rules: { kana: true, corp: true, symbol: true }
+          }],
+          output: ['s:伝票番号', 's:日付', 's:取引先名', 'c:取引先名', 'c:担当', 's:金額']
+        };
+      }
+    },
+    {
       id: 'criteria',
       icon: 'greater-than-equal',
       title: '② の値に >= や <> を書いて比べる（Excel の COUNTIF と同じ書き方）',
@@ -702,12 +753,12 @@
   /* サンプルの一覧の見出し（目的ごと）。ここにない id は「その他」に入る */
   const GROUPS = [
     { label: '基本の抽出', icon: 'play', ids: ['idlist', 'threshold', 'exclude', 'logic', 'report', 'ngword'] },
-    { label: '比べ方の書き方（ワイルドカード・比較演算子・日付）', icon: 'equals', ids: ['wildcard', 'criteria', 'dates'] },
+    { label: '比べ方の書き方（ワイルドカード・比較演算子・日付・表記ゆれ・正規表現）', icon: 'equals', ids: ['wildcard', 'criteria', 'dates', 'variants'] },
     { label: '複数の抽出条件', icon: 'arrow-down-1-9', ids: ['priority', 'independent', 'rules'] },
     { label: 'ピボット', icon: 'table-cells', ids: ['aggregate', 'condagg', 'pivot'] },
     { label: '結果を確かめる（一致しなかった ② の行・前回との違い）', icon: 'not-equal', ids: ['review'] },
     { label: 'グラフ', icon: 'chart-column', ids: ['chart-trend', 'chart-dist', 'chart-scatter', 'chart-pivot'] },
-    { label: '前処理（縦に結合・列の追加・関数・重複の削除）', icon: 'layer-group', ids: ['union', 'derive', 'functions'] },
+    { label: '前処理（縦に結合・縦持ち・列の追加・関数・重複の削除）', icon: 'layer-group', ids: ['union', 'unpivot', 'derive', 'functions'] },
     { label: 'その他（速度の確認）', icon: 'ellipsis', ids: ['perf'] }
   ];
 
@@ -734,7 +785,7 @@
       return SAMPLES.find((s) => s.id === id) || null;
     },
 
-    /** @returns {{id, title, source:{name,grid,settings?,members?:Array<{name,grid}>,dedup?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[], compare?:{name, grid, key}}} */
+    /** @returns {{id, title, source:{name,grid,settings?,members?:Array<{name,grid}>,dedup?,unpivot?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[], compare?:{name, grid, key}}} */
     build(id) {
       const sample = Samples.get(id);
       if (!sample) throw new Error('サンプルが見つかりません');

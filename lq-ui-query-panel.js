@@ -235,7 +235,7 @@
       if (c.right.type === 'value') {
         if (document.activeElement !== this.value) this.value.value = c.right.value || '';
         if (document.activeElement !== this.value2) this.value2.value = c.right.value2 || '';
-        this._placeholders(pair, period, isDate);
+        this._placeholders(pair, period, isDate, op);
       } else {
         const key = [colsChanged, pair, c.right.col, c.right.col2, this._visibilityKey('c:')].join('|');
         if (colsChanged || this._rightKey !== key) {
@@ -255,7 +255,13 @@
       this._renderHint(c, period);
     }
 
-    _placeholders(pair, period, isDate) {
+    _placeholders(pair, period, isDate, op) {
+      if (op && op.example) {
+        this.value.removeAttribute('list');
+        this.value.placeholder = op.name.replace(/に一致.*$/, '') + '（例：' + op.example + '）';
+        this.value.title = '正規表現：^＝先頭、$＝末尾、\\d＝数字、.＝任意の 1 文字、*＝直前の 0 回以上、|＝または（例：^A-\\d{3}$、東京|大阪）。① の値は全角半角・空白だけそろえて当てはめます（表記ゆれのそろえ方は使いません）';
+        return;
+      }
       if (period) {
         ensurePeriodList();
         this.value.setAttribute('list', PERIOD_LIST_ID);

@@ -98,7 +98,7 @@
  * ── 読み込みパネル ──
  * ① 元データ / ② 照合表の読み込みパネル：
  *   ファイル（選択・シート・① は縦に結合したファイルの一覧・文字コード・区切り文字と判定の根拠）、
- *   読み込み範囲（ヘッダー・開始行・開始列・終了行）、列の追加、絞り込み、重複の削除、読み込み結果（行数・列数・列名）の順
+ *   読み込み範囲（ヘッダー・開始行・開始列・終了行）、縦持ち、列の追加、絞り込み、重複の削除、読み込み結果（行数・列数・列名）の順
  *   （処理の順）に並べる。入力欄は作り直さず値だけ更新し、フォーカスを保つ。
  *   「読み方」（文字コード・区切り文字）と「読み込み範囲」は、見出しに要約を出して畳んでおく（開閉は ① / ② ごとに記憶。
  *   判定が不確かなときは読み方を開く）。範囲は右の表の行番号・列記号でも指定できるため、畳んでいても操作できる。
@@ -269,6 +269,7 @@
       this.derived = new LQ.DerivedSection(ctx, role, ctx.app.derivedEditor);
       this.filterSection = new LQ.FilterSection(ctx, role);
       this.dedupSection = new LQ.DedupSection(ctx, role);
+      this.unpivotSection = new LQ.UnpivotSection(ctx, role);
       this.files = this.isSource ? new LQ.SourceFilesSection(ctx) : null;
       this._builtKey = undefined;
       ctx.bus.on('datasets', () => this.refresh());
@@ -309,11 +310,12 @@
         this.body.appendChild(this._emptySection());
         return;
       }
-      /* 処理の順（ファイル → 読み込み範囲 → 列の追加 → 絞り込み → 重複の削除）に並べ、その結果の列を最後に出す */
+      /* 処理の順（ファイル → 読み込み範囲 → 縦持ち → 列の追加 → 絞り込み → 重複の削除）に並べ、その結果の列を最後に出す */
       this.body.appendChild(this._fileSection(ds));
       const read = this._readSection(ds);
       if (read) this.body.appendChild(read);
       this.body.appendChild(this._rangeSection());
+      this.body.appendChild(this.unpivotSection.el);
       this.body.appendChild(this.derived.el);
       this.body.appendChild(this.filterSection.el);
       this.body.appendChild(this.dedupSection.el);
@@ -650,6 +652,7 @@
       this.chips.setDataset(ds);
       this.filterSection.render(ds);
       this.dedupSection.render(ds);
+      this.unpivotSection.render(ds);
       if (this.files) this.files.render(ds);
       this.derived.render(ds);
     }

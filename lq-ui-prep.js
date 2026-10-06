@@ -1,7 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-ui-prep.js
- * 前処理の画面部品（処理の順：縦に結合 → 列の追加 → 絞り込み → 重複の削除）
+ * 前処理の画面部品（処理の順：縦に結合 → 縦持ち → 列の追加 → 絞り込み → 重複の削除）
  *   SourceFilesSection … ① の読み込みパネル「ファイル」の下：縦に結合したファイルの一覧・追加・外す
+ *   UnpivotSection     … 読み込みパネルの区画「縦持ちにする」（読み込み範囲の下）
  *   DedupSection       … 読み込みパネルの区画「重複の削除」（絞り込みの下）
  *   PrepFlowBar        … メインの ① / ② タブと抽出結果の上：処理の流れ（各段の行数）。除いた行数を押すと内訳
  * ========================================================================= */
@@ -80,6 +81,113 @@
         h('span', { class: 'lq-filelist__rows lq-num', text: fmt(f.rows) + ' 行' }),
         UI.iconButton('xmark', 'このファイルを外す（元に戻せます）', remove, 'lq-btn--xs')
       ]);
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * UnpivotSection：縦持ちにする（横に並んだ列を「項目」「値」の行に）
+   *   使う／使わない・行にする列（おすすめを最初から選ぶ）・2 つの列の名前・空欄の扱い・行数の変化
+   * ------------------------------------------------------------------- */
+  class UnpivotSection {
+    constructor(ctx, role) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.app = ctx.app;
+      this.role = role;
+      this.ds = null;
+      this.toggle = UI.switchToggle('横に並んだ列（4月・5月… など）を行にする', false, (on) => this._setOn(on));
+      this.chips = h('div', { class: 'lq-colchips lq-colchips--toggle lq-dedup__cols' });
+      this.chips.addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-col]');
+        if (chip) this._toggleCol(chip.dataset.col);
+      });
+      this.nameInput = h('input', { class: 'lq-input', type: 'text', title: '行にした列の名前を入れる列（例：月）。Enter で反映' });
+      this.valueInput = h('input', { class: 'lq-input', type: 'text', title: 'その列の値を入れる列（例：売上）。Enter で反映' });
+      [this.nameInput, this.valueInput].forEach((input) => input.addEventListener('change', () => this._rename()));
+      this.blank = UI.switchToggle('空欄の値も行にする', false, (on) => this._update({ keepBlank: on }));
+      this.status = h('div', { class: 'lq-dedup__status' });
+      this.body = h('div', { class: 'lq-stack' }, [
+        UI.field('行にする列（押して選ぶ。月・日付・数の見出しの列は最初から選んでいます）', this.chips),
+        h('div', { class: 'lq-rangegrid' }, [UI.field('列の名前を入れる列', this.nameInput), UI.field('値を入れる列', this.valueInput)]),
+        this.blank.el,
+        this.status
+      ]);
+      this.el = UI.section('縦持ちにする（横に並んだ列を行に）', [this.toggle.el, this.body,
+        h('p', { class: 'lq-field__hint', text: '例：顧客・4月・5月・6月 の表 → 顧客・月・売上 の表。月ごとの集計・グラフ・照合がしやすくなります。' })]);
+      this.el.title = 'Power Query の「列のピボット解除」と同じです。選んだ列 1 つにつき 1 行を作り、選ばなかった列（顧客名など）はそのまま残します。読み込みのすぐあとに当てはめるので、列の追加・絞り込み・重複の削除は縦持ちにした表に掛かります。列の名前で記憶し、次に同じ列のある表を読み込んだときも掛け直します。';
+      LQ.FormNav.attach(this.body);
+    }
+
+    render(ds) {
+      this.ds = ds;
+      const def = ds.unpivot;
+      this.toggle.input.checked = !!def;
+      this.body.hidden = !def;
+      if (!def) return;
+      if (document.activeElement !== this.nameInput) this.nameInput.value = def.name;
+      if (document.activeElement !== this.valueInput) this.valueInput.value = def.value;
+      this.blank.input.checked = !!def.keepBlank;
+      Dom.clear(this.chips);
+      const on = new Set(def.cols);
+      const frag = document.createDocumentFragment();
+      (ds.preUnpivotColumns || []).filter((c) => !c.fileCol).forEach((c) => {
+        const sel = on.has(c.name);
+        frag.appendChild(h('button', {
+          class: 'lq-colchip' + (sel ? ' is-on' : ' is-off'), type: 'button', dataset: { col: c.name }, 'aria-pressed': sel ? 'true' : 'false',
+          title: c.letter + ' 列：' + c.name + (sel ? '（行にする・押すと列のまま）' : '（列のまま・押すと行にする）')
+        }, [Dom.icon(sel ? 'square-check' : 'square'), h('span', { class: 'lq-colchip__letter', text: c.letter }), h('span', { class: 'lq-colchip__name', text: c.name })]));
+      });
+      this.chips.appendChild(frag);
+      Dom.clear(this.status);
+      const info = ds.unpivotInfo;
+      if (!info || !info.ok) {
+        this.status.appendChild(UI.status('warn', info && info.message ? info.message : '行にする列を選んでください'));
+        return;
+      }
+      this.status.appendChild(UI.status('ok', info.cols.length + ' 列を行にして、' + fmt(info.base) + ' 行 → ' + fmt(info.kept) + ' 行にしました'));
+      if (info.message) this.status.appendChild(UI.status('warn', info.message));
+    }
+
+    _setOn(on) {
+      const ds = this.ds;
+      if (!ds) return;
+      this.app.prep.setUnpivot(this.role, on ? {
+        cols: LQ.Unpivot.suggest(ds.preUnpivotColumns || []), name: LQ.Unpivot.DEFAULT_NAME, value: LQ.Unpivot.DEFAULT_VALUE, keepBlank: false
+      } : null);
+      Flash.el(this.toggle.el);
+    }
+
+    _update(patch, quiet) {
+      const ds = this.ds;
+      if (!ds || !ds.unpivot) return;
+      this.app.prep.setUnpivot(this.role, Object.assign({}, ds.unpivot, patch), quiet);
+    }
+
+    _toggleCol(name) {
+      const ds = this.ds;
+      if (!ds || !ds.unpivot) return;
+      const cols = ds.unpivot.cols.slice();
+      const at = cols.indexOf(name);
+      if (at >= 0) cols.splice(at, 1);
+      else cols.push(name);
+      const order = new Map((ds.preUnpivotColumns || []).map((c, i) => [c.name, i]));
+      cols.sort((a, b) => order.get(a) - order.get(b));
+      this._update({ cols: cols }, true);
+      const again = this.chips.querySelector('[data-col="' + CSS.escape(name) + '"]');
+      if (again) {
+        again.focus();
+        Flash.el(again);
+      }
+    }
+
+    _rename() {
+      const name = this.nameInput.value.trim() || LQ.Unpivot.DEFAULT_NAME;
+      const value = this.valueInput.value.trim() || LQ.Unpivot.DEFAULT_VALUE;
+      const def = this.ds && this.ds.unpivot;
+      if (!def || (def.name === name && def.value === value)) return;
+      this._update({ name: name, value: value }, true);
+      Flash.input(this.nameInput);
+      Flash.input(this.valueInput);
     }
   }
 
@@ -243,7 +351,7 @@
 
     _step(ctx, ds, st, first) {
       const children = [Dom.icon(st.ok === false ? 'triangle-exclamation' : st.icon), h('span', { text: st.label })];
-      if (first) {
+      if (first || st.reshape) {
         children.push(h('span', { class: 'lq-num lq-flow__rows', text: fmt(st.rows) + ' 行' }));
         return h('span', { class: 'lq-flow__step', title: st.title }, children);
       }
@@ -260,6 +368,7 @@
   };
 
   LQ.SourceFilesSection = SourceFilesSection;
+  LQ.UnpivotSection = UnpivotSection;
   LQ.DedupSection = DedupSection;
   LQ.PrepFlowBar = PrepFlowBar;
 })(window);

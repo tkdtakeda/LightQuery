@@ -366,6 +366,16 @@
       this._afterDatasetChange(role);
     }
 
+    /** ① / ②（選択中の抽出条件）の縦持ちを置き換える（null で外す）。列が変わるため出力列もそろえ直す */
+    setUnpivot(role, def) {
+      const ds = this.datasets[role];
+      if (!ds) return;
+      ds.setUnpivot(def);
+      if (this.keepsUserSettings) LQ.LoadMemory.rememberUnpivot(LQ.LoadMemory.keyOf(role, this.activeId), ds);
+      this.view.pages[role] = 0;
+      this._afterDatasetChange(role);
+    }
+
     /** ① / ②（選択中の抽出条件）の重複の削除を置き換える（null で外す）。結果は未反映になる */
     setDedup(role, def) {
       const ds = this.datasets[role];

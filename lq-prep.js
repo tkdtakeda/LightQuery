@@ -1,8 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-prep.js
  * 前処理：照合・集計の前に表を整える処理（処理の順は固定）
- *   読み込み（縦に結合）→ 列の追加 → 絞り込み → 重複の削除
- *   列の追加・絞り込みは lq-dataset.js。ここには縦の結合と重複の削除、処理の流れ（各段の行数）を置く。
+ *   読み込み（縦に結合）→ 縦持ちにする → 列の追加 → 絞り込み → 重複の削除
+ *   列の追加・絞り込みは lq-dataset.js。ここには縦の結合・縦持ち・重複の削除、処理の流れ（各段の行数）を置く。
  * ========================================================================= */
 
 /* =========================================================================
@@ -156,6 +156,111 @@
 })(window);
 
 /* =========================================================================
+ * ── 縦持ちにする（ピボット解除） ──
+ * Unpivot：横に並んだ列（4月・5月・6月 など）を、「項目」と「値」の 2 列の行に並べ替える（Power Query の「列のピボット解除」）。
+ *   選んだ列以外（顧客名など）はそのまま残し、選んだ列 1 つにつき 1 行を作る。値が空欄のセルは行にしない（選べる）。
+ *   読み込み（縦に結合）のすぐあとに当てはめるため、列の追加・絞り込み・重複の削除は縦持ちにした表に掛かる。
+ *   定義：{cols:string[], name:string, value:string, keepBlank:boolean}
+ * ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const LQ = global.LQ;
+  const DEFAULT_NAME = '項目';
+  const DEFAULT_VALUE = '値';
+  /* 横に並べがちな見出し：月（4月・2024/04・2024年4月）・年度・四半期・日付・数 */
+  const SERIES_NAME = /^(\d{1,2}月|\d{4}[\/\-年.]\d{1,2}月?|\d{4}年度?|FY\d{2,4}|Q[1-4]|第?[1-4]四半期|\d+)$/i;
+
+  /** 列の名前が、ほかの列と重ならないようにする */
+  function uniqueName(name, used) {
+    let out = name;
+    for (let k = 2; used.has(out); k++) out = name + ' (' + k + ')';
+    used.add(out);
+    return out;
+  }
+
+  const Unpivot = {
+    DEFAULT_NAME: DEFAULT_NAME,
+    DEFAULT_VALUE: DEFAULT_VALUE,
+
+    /** 保存・JSON から読んだ定義をそろえる（使えなければ null） */
+    clean(raw) {
+      if (!raw || typeof raw !== 'object' || !Array.isArray(raw.cols)) return null;
+      const cols = raw.cols.filter((c) => typeof c === 'string' && c);
+      return {
+        cols: Array.from(new Set(cols)),
+        name: String(raw.name || '').trim() || DEFAULT_NAME,
+        value: String(raw.value || '').trim() || DEFAULT_VALUE,
+        keepBlank: !!raw.keepBlank
+      };
+    },
+
+    /** 縦持ちにする列のおすすめ（月・年度・日付・数の見出しの列。2 列以上あるときだけ） */
+    suggest(columns) {
+      const names = columns.filter((c) => !c.fileCol && (SERIES_NAME.test(c.name) || !Number.isNaN(LQ.ValueParser.parseDate(c.name)))).map((c) => c.name);
+      return names.length >= 2 ? names : [];
+    },
+
+    /**
+     * 列と行を縦持ちにする
+     * @param {Array} columns 今の列（{name, index, src, letter, fileCol?}）
+     * @param {number[]} rows 今の行（table の行番号）
+     * @param {Array[]} table 今の表
+     * @param {function(number):number} rowNo table の行番号 → 元の行番号
+     * @param {object} def
+     * @returns {{columns?:Array, rows?:number[], table?:Array[], rowNo?:Int32Array, info:object}} 縦持ちにする列がなければ info だけ
+     */
+    build(columns, rows, table, rowNo, def) {
+      const picked = new Set(def.cols);
+      const melt = columns.filter((c) => picked.has(c.name));
+      const keep = columns.filter((c) => !picked.has(c.name));
+      const missing = def.cols.filter((n) => !columns.some((c) => c.name === n));
+      const info = { base: rows.length, kept: rows.length, cols: melt.map((c) => c.name), missing: missing, ok: melt.length > 0, message: '' };
+      if (missing.length) info.message = '列「' + missing.join('」「') + '」がないため、残りの列で縦持ちにしています';
+      if (!melt.length) {
+        info.message = '縦持ちにする列がないため、使っていません';
+        return { info: info };
+      }
+      const used = new Set(keep.map((c) => c.name));
+      const nameCol = uniqueName(def.name || DEFAULT_NAME, used);
+      const valueCol = uniqueName(def.value || DEFAULT_VALUE, used);
+      const width = keep.length + 2;
+      const outCols = keep.map((c, i) => Object.assign({}, c, { index: i, src: i }))
+        .concat([{ name: nameCol, index: keep.length, src: keep.length, letter: '項', unpivot: 'name' },
+          { name: valueCol, index: keep.length + 1, src: keep.length + 1, letter: '値', unpivot: 'value' }]);
+      const out = [];
+      const nums = [];
+      rows.forEach((r) => {
+        const row = table[r] || [];
+        const head = keep.map((c) => row[c.src]);
+        melt.forEach((m) => {
+          const v = row[m.src];
+          if (!def.keepBlank && (v === undefined || v === null || String(v).trim() === '')) return;
+          const line = new Array(width);
+          for (let i = 0; i < head.length; i++) line[i] = head[i];
+          line[keep.length] = m.name;
+          line[keep.length + 1] = v;
+          out.push(line);
+          nums.push(rowNo(r));
+        });
+      });
+      info.kept = out.length;
+      info.nameCol = nameCol;
+      info.valueCol = valueCol;
+      return { columns: outCols, rows: out.map((_, i) => i), table: out, rowNo: Int32Array.from(nums), info: info };
+    },
+
+    /** 設定の文章（タグ・根拠用） */
+    describe(def) {
+      const cols = def.cols;
+      return '列「' + cols.slice(0, 3).join('」「') + '」' + (cols.length > 3 ? 'ほか ' + (cols.length - 3) + ' 列' : '') + 'を「' + def.name + '」「' + def.value + '」の行に';
+    }
+  };
+
+  LQ.Unpivot = Unpivot;
+})(window);
+
+/* =========================================================================
  * ── 重複の削除 ──
  * Dedup：選んだ列（空ならすべての列。「元ファイル」列と追加した列は除く）の値がすべて同じ行を重複とみなし、
  *   最初の行だけを残す（Excel の「重複の削除」と同じ）。値は絞り込みと同じく、前後の空白・全角半角・大文字小文字をそろえて比べる。
@@ -255,7 +360,7 @@
   const PrepFlow = {
     /** 前処理を使っているか（流れを見せる必要があるか） */
     active(ds) {
-      return !!ds && (ds.members.length > 0 || !!ds.filterInfo || !!ds.dedupInfo);
+      return !!ds && (ds.members.length > 0 || !!ds.unpivotInfo || !!ds.filterInfo || !!ds.dedupInfo);
     },
 
     /**
@@ -265,8 +370,11 @@
     steps(ds) {
       const out = [];
       const files = ds.fileCount;
+      const up = ds.unpivotInfo;
       out.push({ id: 'read', icon: files > 1 ? 'layer-group' : 'file-lines', label: files > 1 ? '読み込み ' + files + ' ファイル' : '読み込み',
-        rows: ds.baseRowCount, title: files > 1 ? '縦に結合した ' + files + ' ファイルの合計' : ds.name });
+        rows: up ? up.base : ds.baseRowCount, title: files > 1 ? '縦に結合した ' + files + ' ファイルの合計' : ds.name });
+      if (up) out.push({ id: 'unpivot', icon: 'arrows-turn-to-dots', label: '縦持ち', rows: up.kept, reshape: true, ok: up.ok,
+        title: LQ.Unpivot.describe(ds.unpivot) + '（' + up.cols.length + ' 列 → 1 列ずつの行）' + (up.message ? '。' + up.message : '') });
       const fi = ds.filterInfo;
       if (fi) out.push({ id: 'filter', icon: 'filter', label: '絞り込み', rows: fi.kept, removed: fi.base - fi.kept,
         title: '列ごとの絞り込み ' + ds.filters.length + ' 件（すべてを満たす行だけ残す）' });
@@ -315,7 +423,7 @@
 
     /** 流れを 1 行の文章にする（出力の記録・根拠用）：「読み込み 3 ファイル 36,000 行 → 絞り込み −1,200 → …」 */
     text(ds) {
-      return PrepFlow.steps(ds).map((s, i) => (i === 0 ? s.label + ' ' + Util.formatInt(s.rows) + ' 行' : s.label + ' −' + Util.formatInt(s.removed))).join(' → ') +
+      return PrepFlow.steps(ds).map((s, i) => (i === 0 || s.reshape ? s.label + ' ' + Util.formatInt(s.rows) + ' 行' : s.label + ' −' + Util.formatInt(s.removed))).join(' → ') +
         ' → 使う行 ' + Util.formatInt(ds.rowCount) + ' 行';
     }
   };

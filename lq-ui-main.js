@@ -224,13 +224,15 @@
             count = tables + ' 件';
             title = '照合表 ' + tables + ' 件（表示中：' + s.activeProfile.name + '）';
           }
-          /* サンプル表示中・縦に結合・絞り込み・重複の削除をしているときは、タブにも印を出す（ファイル名と行数はタブの中の要約に出す） */
+          /* サンプル表示中・縦に結合・縦持ち・絞り込み・重複の削除をしているときは、タブにも印を出す（ファイル名と行数はタブの中の要約に出す） */
           if (ds) {
             title = (title ? title + '\n' : '') + ds.name + '（' + ds.source.kindLabel + '・' + Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列）';
             marks = [
               ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample lq-tab__sample', title: 'サンプルデータを表示中' },
                 [Dom.icon('flask'), h('span', { class: 'lq-tab__sample-text', text: 'サンプル' })]) : null,
               ds.fileCount > 1 ? h('span', { class: 'lq-tab__filter', title: ds.fileCount + ' ファイルを縦に結合' }, Dom.icon('layer-group')) : null,
+              ds.unpivotInfo && ds.unpivotInfo.ok ? h('span', { class: 'lq-tab__filter', title: '縦持ち：' + Util.formatInt(ds.unpivotInfo.base) + ' 行 → ' + Util.formatInt(ds.unpivotInfo.kept) + ' 行' },
+                Dom.icon('arrows-turn-to-dots')) : null,
               ds.filterInfo ? h('span', { class: 'lq-tab__filter', title: '絞り込み中：' + Util.formatInt(ds.filterInfo.base) + ' 行中 ' + Util.formatInt(ds.filterInfo.kept) + ' 行' },
                 Dom.icon('filter')) : null,
               ds.dedupInfo ? h('span', { class: 'lq-tab__filter', title: '重複の削除：' + Util.formatInt(ds.dedupInfo.removed.length) + ' 行を除外' },

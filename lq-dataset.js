@@ -33,8 +33,8 @@
     /**
      * @param {'source'|'condition'} role
      * @param {LQ.SourceFile} source
-     * @param {{isSample?:boolean, settings?:object, members?:LQ.SourceFile[], filters?:Array, dedup?:object}} options
-     *        members：縦に結合する 2 つ目以降のファイル（① のみ）。filters・dedup：絞り込み・重複の削除を引き継ぐとき
+     * @param {{isSample?:boolean, settings?:object, members?:LQ.SourceFile[], filters?:Array, dedup?:object, unpivot?:object}} options
+     *        members：縦に結合する 2 つ目以降のファイル（① のみ）。filters・dedup・unpivot：絞り込み・重複の削除・縦持ちを引き継ぐとき
      */
     constructor(role, source, options) {
       const opts = options || {};
@@ -44,6 +44,7 @@
       this.members = (opts.members || []).slice();
       this.filters = (opts.filters || []).slice();
       this.dedup = opts.dedup ? Util.clone(opts.dedup) : null;
+      this.unpivot = opts.unpivot ? Util.clone(opts.unpivot) : null;
       this.isSample = !!opts.isSample;
       this.version = 0;
       this.grid = [];
@@ -106,7 +107,8 @@
       return new Dataset(this.role, this.source.clone(), {
         isSample: o.isSample === undefined ? this.isSample : !!o.isSample,
         settings: Util.clone(this.settings),
-        members: this.members.map((m) => m.clone())
+        members: this.members.map((m) => m.clone()),
+        unpivot: this.unpivot
       });
     }
 
@@ -117,7 +119,7 @@
      */
     withMembers(members) {
       return new Dataset(this.role, this.source, {
-        isSample: this.isSample, settings: Util.clone(this.settings), members: members, filters: this.filters, dedup: this.dedup
+        isSample: this.isSample, settings: Util.clone(this.settings), members: members, filters: this.filters, dedup: this.dedup, unpivot: this.unpivot
       });
     }
 
@@ -140,7 +142,7 @@
       return { adjusted: adjusted };
     }
 
-    /** 設定から列と行を作り直す（縦に結合するファイルがあれば、列の名前でそろえて 1 つの表にする） */
+    /** 設定から列と行を作り直す（縦に結合するファイルがあれば列の名前でそろえて 1 つの表にし、縦持ちの設定があれば縦持ちにする） */
     derive() {
       const part = Dataset.extract(this.grid, this.settings);
       let columns = part.columns;
@@ -155,6 +157,20 @@
         rows = u.rows;
         this._rowNo = u.rowNo;
         this.union = u.info;
+      }
+      this.unpivotInfo = null;
+      /* 縦持ちにする前の列（縦持ちにする列を選ぶ画面に使う） */
+      this.preUnpivotColumns = columns.map((c) => ({ name: c.name, letter: c.letter, fileCol: !!c.fileCol }));
+      if (this.unpivot) {
+        const rn = this._rowNo;
+        const up = LQ.Unpivot.build(columns, rows, this.table, (r) => (rn ? rn[r] : r + 1), this.unpivot);
+        this.unpivotInfo = up.info;
+        if (up.table) {
+          this.table = up.table;
+          columns = up.columns;
+          rows = up.rows;
+          this._rowNo = up.rowNo;
+        }
       }
       this.columns = columns;
       this._colIndex = new Map(columns.map((col) => [col.name, col.index]));
@@ -271,6 +287,12 @@
       this._applyFilters();
       this._applyDedup();
       this.version++;
+    }
+
+    /** 縦持ちを置き換える（null で外す）。列が変わるため、表を作り直す */
+    setUnpivot(def) {
+      this.unpivot = def ? Util.clone(def) : null;
+      this.derive();
     }
 
     /** 重複の削除を置き換える（null で外す）。def：{cols:string[]}（空ならすべての列で比べる） */
@@ -713,6 +735,7 @@
           return pattern.test(norm.key(v), norm.text(v), norm.typed(v)) !== op.negative;
         } };
       }
+      if (op.validate && op.validate(f.value)) return { test: null, message: op.validate(f.value) };
       const right = norm.converter(op.rightPrep || op.prep)(f.value);
       if (op.rightPrep === 'period' && !right) return { test: null, message: '「' + f.value + '」は期間として読めません（例：2024/05・今月・直近30日）' };
       const left = norm.converter(op.prep);
