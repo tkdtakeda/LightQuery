@@ -872,6 +872,53 @@
   font-weight: var(--fw-medium);
 }
 
+.lq-manual__toc a[hidden],
+.lq-manual__group[hidden] {
+  display: none;
+}
+
+.lq-manual__toc > .lq-input {
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+
+/* 目次のまとまり（画面の処理の順）の見出し */
+.lq-manual__group + .lq-manual__group {
+  margin-top: var(--space-5);
+}
+
+.lq-manual__grouphead {
+  padding: 0 var(--space-4) var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--color-text-muted);
+  letter-spacing: var(--ls-wide);
+}
+
+/* 今どこを読んでいるか（まとまり › 章・何章目か） */
+.lq-manual__crumb {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}
+
+.lq-manual__pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-9);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.lq-manual__lead {
+  font-size: var(--fs-md);
+}
+
+.lq-manual__steps li {
+  padding: var(--space-1) 0;
+}
+
 .lq-manual__content {
   flex: 1 1 auto;
   min-width: 0;

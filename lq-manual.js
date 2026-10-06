@@ -1,6 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-manual.js
  * 取扱説明書（モーダル）。「使い方」ボタンで表示／非表示を切り替え、起動時に表示するかを選べる。
+ *   読む量を減らすため、最初は「3 分で使う」を出し、目次はまとまり（画面の処理の順）ごとに並べて、一度に 1 章だけを表示する。
+ *   目次の上の欄で、題名・本文の言葉から章を探せる。前回見ていた章を覚える。
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -20,16 +22,23 @@
   }
 
   const SECTIONS = [
-    { id: 'start', icon: 'flag-checkered', title: 'はじめに', html: `
+    { id: 'quick', icon: 'bolt', title: '3 分で使う', html: `
+      <p class="lq-manual__lead">LightQuery は、<strong>① 元データ</strong>の行を <strong>② 照合表</strong>と照らし合わせ、一致した行を取り出して集計・出力するツールです。次の 5 つだけで使えます。</p>
+      <ol class="lq-manual__steps">
+        <li><strong>① 元データ</strong>を読み込む：ファイルを画面にドラッグ（Excel・CSV。Excel からコピーして Ctrl+V でも可）</li>
+        <li><strong>② 照合表</strong>を読み込む：照らし合わせる相手（顧客 ID の一覧など）。① だけで集計するなら不要</li>
+        <li>左の「<strong>抽出条件</strong>」で、① のどの列を ② のどの列と比べるかを選ぶ</li>
+        <li>右上の<strong>青いボタン</strong>（「○ 行から抽出する」）を押す</li>
+        <li>結果を確かめ、同じ青いボタン（「○ 行を出力する」）で Excel・CSV に出力する</li>
+      </ol>
+      <div class="lq-note lq-note--tip">${I('lightbulb')}<div class="lq-note__body"><strong>迷ったら、右上の青いボタン</strong>を見てください。次にすることを、いつも 1 つだけ示します。</div></div>
+      <p><button class="lq-btn lq-btn--primary" type="button" data-manual-action="samples">${I('flask')}サンプルで試す</button>
+        <span class="lq-muted">　26 種類の例で、読み込みから出力までをすぐに試せます（自分のデータは退避され、あとで戻ります）。</span></p>
+      <p class="lq-muted">ほかの章は、必要になったときに左の目次から開いてください。目次の上の欄に言葉を入れると、その言葉が出てくる章だけに絞れます。</p>` },
+    { id: 'start', icon: 'flag-checkered', title: '全体のしくみと画面の見方', html: `
       <p>LightQuery は、<strong>① 元データ</strong>の各行を <strong>② 照合表</strong>（照らし合わせる相手の表）の各行と照らし合わせ、条件に一致した行を取り出す簡易クエリです。Excel の VLOOKUP や Power Query の「結合」に近い動きをします。</p>
       <p>「① のどの列を ② のどの列と、どう比べるか」をまとめたものを<strong>抽出条件</strong>と呼びます。抽出条件には名前と優先順位を付けて、いくつでも（最大 30 件）持てます。② は抽出条件ごとに持つので、<strong>列の構成が違う表</strong>（顧客 ID の一覧・地域と金額の表・NG ワードの一覧など）を使い分けられます。</p>
-      <ol>
-        <li><strong>① 元データ</strong>を読み込む（抽出される側）</li>
-        <li><strong>② 照合表</strong>を読み込む（左の「抽出条件」で選んでいる抽出条件に入ります。1 行＝1 セットの条件）</li>
-        <li>左の「抽出条件」で、① のどの列を ② のどの列と、どの比較方法で比べるかを決める（抽出条件を増やすときは「空で追加」または「表から作成」）</li>
-        <li>画面右上の青いボタン（例：「12,345 行から抽出する」）を押す。有効な抽出条件をまとめて実行します</li>
-        <li>結果を確認し、同じボタン（「1,234 行を出力する」）で Excel・CSV に出力する</li>
-      </ol>
+      <p>処理は左のアイコン・メインのタブと同じ順に進みます：<strong>読み込み（①・②）→ 前処理（縦に結合・縦持ち・列の追加・絞り込み・重複の削除）→ 抽出 → 結果を確かめる → ピボット・グラフ → 出力</strong>。この説明書の目次も同じ順に並べています。</p>
       <div class="lq-note lq-note--tip">${I('lightbulb')}<div class="lq-note__body">次にすることは、いつも<strong>画面右上のボタン</strong>が示します。迷ったらそこを見てください。まずは左下の「サンプル」で動きを確かめるのがおすすめです（「列の違う 3 つの抽出条件を優先順位で振り分け」で、複数の抽出条件の動きが分かります）。</div></div>
       <h3>画面の見方</h3>
       <table>
@@ -465,11 +474,32 @@
       </table>` }
   ];
 
+  /* 目次のまとまり（画面の処理の順）。章はまとまりごとに並べ、一度に 1 章だけを表示する */
+  const GROUPS = [
+    { label: 'はじめる', ids: ['quick', 'start'] },
+    { label: '読み込みと前処理', ids: ['load', 'union', 'unpivot', 'derive', 'functions', 'filter', 'dedup'] },
+    { label: '抽出', ids: ['profiles', 'condition', 'logic', 'extract', 'combine', 'rules'] },
+    { label: '結果と分析', ids: ['result', 'review', 'aggregate', 'chart'] },
+    { label: '出力と保存', ids: ['export', 'save'] },
+    { label: '困ったとき・その他', ids: ['faq', 'sample', 'keys'] }
+  ];
+  const ORDER = GROUPS.flatMap((g) => g.ids).filter((id) => SECTIONS.some((s) => s.id === id))
+    .concat(SECTIONS.map((s) => s.id).filter((id) => !GROUPS.some((g) => g.ids.indexOf(id) >= 0)));
+  const sectionOf = (id) => SECTIONS.find((s) => s.id === id);
+  const groupOf = (id) => GROUPS.find((g) => g.ids.indexOf(id) >= 0) || GROUPS[GROUPS.length - 1];
+  const PREF_SECTION = 'manualSection';
+
+  /** 章の本文の文字（目次の絞り込み用。タグを除き、全角半角・大文字小文字をそろえる） */
+  function plain(text) {
+    return String(text).replace(/<[^>]+>/g, ' ').normalize('NFKC').toLowerCase();
+  }
+
   class ManualModal {
     constructor(ctx) {
       this.ctx = ctx;
       this.el = null;
       this._returnFocus = null;
+      this._index = null;
     }
 
     shouldAutoOpen() {
@@ -485,37 +515,52 @@
       else this.open();
     }
 
+    /** @param {string} [sectionId] 開く章（省略時は前回見ていた章。初めてなら「3 分で使う」） */
     open(sectionId) {
       if (this.el) return;
       this.ctx.popovers.close();
       this._returnFocus = document.activeElement;
-      const links = new Map();
-      const content = h('div', { class: 'lq-manual__content' });
-      SECTIONS.forEach((sec) => {
-        content.appendChild(h('section', { id: 'lq-manual-' + sec.id, dataset: { section: sec.id } }, [
-          h('h2', { html: Dom.iconHtml(sec.icon) + LQ.Util.escapeHtml(sec.title) }),
-          h('div', { html: sec.html })
-        ]));
-      });
-      const toc = h('nav', { class: 'lq-manual__toc', 'aria-label': '目次' }, SECTIONS.map((sec) => {
-        const a = h('a', {
-          href: '#lq-manual-' + sec.id,
-          onclick: (e) => {
+      if (!this._index) this._index = new Map(SECTIONS.map((sec) => [sec.id, plain(sec.title + ' ' + sec.html)]));
+      this.links = new Map();
+      this.find = h('input', { class: 'lq-input lq-input--sm', type: 'search', placeholder: '言葉で章を探す（例：年度・重複）', title: '章の題名と本文から探し、当てはまる章だけを目次に出します' });
+      this.find.addEventListener('input', () => this._filter());
+      this.empty = h('p', { class: 'lq-field__hint', text: '当てはまる章はありません', hidden: true });
+      const groups = GROUPS.map((g) => {
+        const links = g.ids.filter((id) => sectionOf(id)).map((id) => {
+          const sec = sectionOf(id);
+          const a = h('a', { href: '#lq-manual-' + id, onclick: (e) => {
             e.preventDefault();
-            this._scrollTo(content, sec.id);
-          }
-        }, [Dom.icon(sec.icon), sec.title]);
-        links.set(sec.id, a);
-        return a;
-      }));
-      content.addEventListener('scroll', () => this._spy(content, links));
+            this.show(id);
+          } }, [Dom.icon(sec.icon), sec.title]);
+          this.links.set(id, a);
+          return a;
+        });
+        return h('div', { class: 'lq-manual__group' }, [h('div', { class: 'lq-manual__grouphead', text: g.label })].concat(links));
+      });
+      this.groupEls = groups;
+      const toc = h('nav', { class: 'lq-manual__toc', 'aria-label': '目次' }, [this.find, this.empty].concat(groups));
+      this.crumb = h('div', { class: 'lq-manual__crumb' });
+      this.page = h('div', { class: 'lq-manual__page' });
+      this.prevBtn = h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => this._step(-1) });
+      this.nextBtn = h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => this._step(1) });
+      this.content = h('div', { class: 'lq-manual__content' }, [this.crumb, this.page,
+        h('div', { class: 'lq-manual__pager' }, [this.prevBtn, h('span', { class: 'lq-topbar__spacer' }), this.nextBtn])]);
+      /* 本文のボタン（サンプルで試す など） */
+      this.content.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-manual-action]');
+        if (!btn) return;
+        if (btn.dataset.manualAction === 'samples') {
+          this.close();
+          this.ctx.app.dialogs.openSamples(null, 'bottom-end');
+        }
+      });
       const auto = h('input', { type: 'checkbox', checked: this.shouldAutoOpen() });
       auto.addEventListener('change', () => LQ.Prefs.set('manualAutoOpen', auto.checked));
       const closeBtn = h('button', { class: 'lq-btn lq-btn--primary', type: 'button', onclick: () => this.close() }, [Dom.icon('check'), '閉じて使い始める']);
       const modal = h('div', { class: 'lq-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': '使い方' }, [
         h('div', { class: 'lq-modal__head' }, [Dom.icon('book-open', 'lq-panel__icon'), h('h2', { class: 'lq-modal__title', text: '使い方（取扱説明書）' }),
           LQ.UI.iconButton('xmark', '閉じる（Esc）', () => this.close())]),
-        h('div', { class: 'lq-modal__body' }, [toc, content]),
+        h('div', { class: 'lq-modal__body' }, [toc, this.content]),
         h('div', { class: 'lq-modal__foot' }, [
           h('label', { class: 'lq-switch' }, [auto, h('span', { class: 'lq-switch__track' }), h('span', { text: '起動時にこの説明を表示する' })]),
           h('span', { class: 'lq-muted', text: '右上の「使い方」でいつでも表示／非表示を切り替えられます' }),
@@ -529,10 +574,69 @@
           if (e.target === this.el) this.close();
         }
       }, modal);
+      this.el.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.close();
+        }
+      });
       Dom.qs('#lqOverlay').appendChild(this.el);
-      this._spy(content, links);
-      if (sectionId) this._scrollTo(content, sectionId);
+      const last = LQ.Prefs.get(PREF_SECTION, 'quick');
+      this.show(sectionId && sectionOf(sectionId) ? sectionId : (sectionOf(last) ? last : 'quick'));
       closeBtn.focus();
+    }
+
+    /** 1 章を表示する（目次の強調・場所の表示・前へ／次へも合わせる） */
+    show(id) {
+      const sec = sectionOf(id);
+      if (!sec || !this.el) return;
+      this.current = id;
+      LQ.Prefs.set(PREF_SECTION, id);
+      Dom.clear(this.page);
+      this.page.appendChild(h('section', { id: 'lq-manual-' + id, dataset: { section: id } }, [
+        h('h2', { html: Dom.iconHtml(sec.icon) + LQ.Util.escapeHtml(sec.title) }),
+        h('div', { html: sec.html })
+      ]));
+      this.crumb.textContent = groupOf(id).label + ' › ' + sec.title + '（' + (ORDER.indexOf(id) + 1) + ' / ' + ORDER.length + '）';
+      this.links.forEach((a, key) => {
+        a.classList.toggle('is-active', key === id);
+        if (key === id) a.setAttribute('aria-current', 'page');
+        else a.removeAttribute('aria-current');
+      });
+      const at = ORDER.indexOf(id);
+      this._pagerButton(this.prevBtn, ORDER[at - 1], 'angle-left', '前へ：', false);
+      this._pagerButton(this.nextBtn, ORDER[at + 1], 'angle-right', '次へ：', true);
+      this.content.scrollTop = 0;
+    }
+
+    _pagerButton(btn, id, icon, prefix, after) {
+      Dom.clear(btn);
+      btn.hidden = !id;
+      if (!id) return;
+      const title = sectionOf(id).title;
+      Dom.append(btn, after ? [h('span', { text: prefix + title }), Dom.icon(icon)] : [Dom.icon(icon), h('span', { text: prefix + title })]);
+      btn.title = prefix + title;
+    }
+
+    _step(delta) {
+      const at = ORDER.indexOf(this.current);
+      const next = ORDER[at + delta];
+      if (next) this.show(next);
+    }
+
+    /** 目次を言葉で絞る（題名・本文のどちらかに含む章だけを出す。まとまりの見出しも章がなければ隠す） */
+    _filter() {
+      const words = plain(this.find.value).split(/\s+/).filter(Boolean);
+      let shown = 0;
+      this.links.forEach((a, id) => {
+        const hit = !words.length || words.every((w) => this._index.get(id).indexOf(w) >= 0);
+        a.hidden = !hit;
+        if (hit) shown++;
+      });
+      this.groupEls.forEach((g) => {
+        g.hidden = !Array.from(g.querySelectorAll('a')).some((a) => !a.hidden);
+      });
+      this.empty.hidden = shown > 0;
     }
 
     close() {
@@ -540,20 +644,6 @@
       this.el.remove();
       this.el = null;
       if (this._returnFocus && this._returnFocus.focus) this._returnFocus.focus();
-    }
-
-    _scrollTo(content, id) {
-      const target = content.querySelector('[data-section="' + id + '"]');
-      if (target) content.scrollTop = target.offsetTop - content.offsetTop;
-    }
-
-    _spy(content, links) {
-      let current = null;
-      Dom.qsa('section[data-section]', content).forEach((sec) => {
-        if (sec.offsetTop - content.offsetTop <= content.scrollTop + 24) current = sec.dataset.section;
-      });
-      if (!current) current = SECTIONS[0].id;
-      links.forEach((a, id) => a.classList.toggle('is-active', id === current));
     }
   }
 

@@ -1,0 +1,11 @@
+{
+  "name": "lightquery-tests",
+  "private": true,
+  "description": "LightQuery の動作確認（ブラウザで index.html を動かして確かめる）。ツール本体には不要です",
+  "scripts": {
+    "test": "node run-tests.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
