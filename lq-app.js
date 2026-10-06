@@ -147,7 +147,13 @@
       parts.push(ds.settings.hasHeader ? 'ヘッダー ' + ds.settings.headerRow + ' 行目' : 'ヘッダーなし');
       parts.push('範囲 ' + ds.stats.rangeText);
       parts.push(fmt(ds.rowCount) + ' 行');
-      return ds.name + '（' + parts.join('・') + '）';
+      const others = ds.fileCount > 1 ? ' ほか ' + (ds.fileCount - 1) + ' ファイルを縦に結合' : '';
+      return ds.name + others + '（' + parts.join('・') + '）';
+    }
+
+    /** 前処理（縦に結合・絞り込み・重複の削除）を使っていれば、その流れの行 */
+    _prepLine(ds, label) {
+      return LQ.PrepFlow.active(ds) ? [label, LQ.PrepFlow.text(ds)] : null;
     }
 
     /** 抽出条件 1 件分の根拠の行 */
@@ -158,7 +164,11 @@
       const match = LQ.QueryEngine.MATCH_MODES.find((m) => m.id === st.matchMode);
       const lines = [];
       if (head) lines.push(['抽出条件', head]);
-      if (part.condition) lines.push(['② 照合表', this._describeDataset(part.condition)]);
+      if (part.condition) {
+        lines.push(['② 照合表', this._describeDataset(part.condition)]);
+        const prep = this._prepLine(part.condition, '② の前処理');
+        if (prep) lines.push(prep);
+      }
       snap.conditions.forEach((text, i) => lines.push([i === 0 ? '条件' : '', text]));
       lines.push(['組み合わせ', snap.exprJa]);
       lines.push(['出力する行', join.label + '（' + join.note + '）']);
@@ -178,6 +188,8 @@
       const st = res.stats;
       const multi = view.parts.length > 1;
       const lines = [['項目', '内容'], ['出力日時', Util.dateTimeText(new Date())], ['① 元データ', this._describeDataset(s.datasets.source)]];
+      const prep = this._prepLine(s.datasets.source, '① の前処理');
+      if (prep) lines.push(prep);
       if (multi) {
         const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
         lines.push(['重複の扱い', mode.label + '：' + mode.desc]);
@@ -209,7 +221,8 @@
       const src = s.datasets.source;
       const agg = prepared.aggregate;
       const lines = [['項目', '内容'], ['出力日時', Util.dateTimeText(new Date())], ['① 元データ', this._describeDataset(src)]];
-      if (src.filters && src.filters.length) lines.push(['① の絞り込み', fmt(src.baseRowCount) + ' 行中 ' + fmt(src.rowCount) + ' 行（列ごとの絞り込み ' + src.filters.length + ' 件）']);
+      const prep = this._prepLine(src, '① の前処理');
+      if (prep) lines.push(prep);
       lines.push(['ピボットの対象', '① 元データの全行（② は使わず、抽出なし）']);
       lines.push(['照合ルール', prepared.view.result.snapshot.rules]);
       lines.push(['ピボット', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(agg.rowCount) + ' 行・表 ' + fmt(agg.groupCount) + ' 行）']);
@@ -630,7 +643,10 @@
       let built = null;
       try {
         built = LQ.Samples.build(id);
-        const make = (role, spec) => new LQ.Dataset(role, LQ.SourceFile.fromGrid(spec.grid, spec.name, 'sample'), { isSample: true, settings: spec.settings || null });
+        const file = (spec) => LQ.SourceFile.fromGrid(spec.grid, spec.name, 'sample');
+        const make = (role, spec) => new LQ.Dataset(role, file(spec), {
+          isSample: true, settings: spec.settings || null, members: (spec.members || []).map(file), dedup: spec.dedup || null
+        });
         const profiles = built.profiles.map((spec) => {
           const p = new LQ.Profile({ name: spec.name, origin: 'sample', query: LQ.QueryOps.fromPlain(spec.query), rules: spec.rules || null });
           if (spec.condition) p.setCondition(make('condition', spec.condition));
@@ -713,6 +729,7 @@
       this.store = new LQ.ProfileStore(this.state, this.bus);
       this.profiles = new LQ.ProfileActions(this);
       this.exporter = new LQ.ExportActions(this);
+      this.prep = new LQ.PrepActions(this);
       this._token = null;
       this._validations = new Map();
       this._tabBeforePanel = null;
@@ -722,9 +739,11 @@
     start() {
       const ctx = this.ctx;
       const restored = this.store.restore();
-      /* 保存してある ② には、記憶した絞り込みを掛け直す（タグと「絞り込み中」の表示で分かる） */
+      /* 保存してある ② には、記憶した絞り込み・重複の削除を掛け直す（タグと処理の流れの表示で分かる） */
       this.state.profiles.items.forEach((p) => {
-        if (p.condition && !p.condition.isSample) LQ.LoadMemory.applyFilters(LQ.LoadMemory.keyOf('condition', p.id), p.condition);
+        if (!p.condition || p.condition.isSample) return;
+        LQ.LoadMemory.applyFilters(LQ.LoadMemory.keyOf('condition', p.id), p.condition);
+        LQ.LoadMemory.applyDedup(LQ.LoadMemory.keyOf('condition', p.id), p.condition);
       });
       this.dialogs = new LQ.Dialogs(ctx);
       this.resultDialogs = new LQ.ResultDialogs(ctx);
@@ -1002,23 +1021,25 @@
      * ================================================================= */
 
     /**
-     * role：'source'（①）/ 'condition'（選択中の抽出条件の ②・複数可）/ 'tables'（表ごとに抽出条件を作る）/
+     * role：'source'（①・複数なら縦に結合）/ 'sourceAppend'（① の下に縦に結合して足す）/
+     *       'condition'（選択中の抽出条件の ②・複数可）/ 'tables'（表ごとに抽出条件を作る）/
      *       'append'（照合表を一覧の最後に追加する）/ 'settings'（JSON）
      */
     pickFile(role) {
       const isJson = role === 'settings';
       const TABLE_MODE = { condition: 'active', tables: 'new', append: 'append' };
+      const SOURCE_MODE = { source: 'replace', sourceAppend: 'append' };
       Dom.qsa('input.lq-filepick').forEach((el) => el.remove());
       const input = Dom.h('input', {
         type: 'file', class: 'lq-filepick lq-offscreen', tabindex: '-1', 'aria-hidden': 'true',
-        accept: isJson ? '.json' : FILE_ACCEPT, multiple: !!TABLE_MODE[role]
+        accept: isJson ? '.json' : FILE_ACCEPT, multiple: !!(TABLE_MODE[role] || SOURCE_MODE[role])
       });
       input.addEventListener('change', () => {
         const files = Array.from(input.files || []);
         input.remove();
         if (!files.length) return;
         if (isJson) this.profiles.importJsonFile(files[0]);
-        else if (role === 'source') this.loadFile('source', files[0]);
+        else if (SOURCE_MODE[role]) this.prep.loadSourceFiles(files, SOURCE_MODE[role]);
         else this.loadTables(files, TABLE_MODE[role]);
       });
       input.addEventListener('cancel', () => input.remove());
@@ -1174,6 +1195,7 @@
       const memKey = LQ.LoadMemory.keyOf(role, target ? target.id : null);
       const readNote = sameFile || dataset.isSample ? null : LQ.LoadMemory.applyRead(memKey, dataset);
       const filtered = dataset.isSample ? null : LQ.LoadMemory.applyFilters(memKey, dataset);
+      const dedupNote = dataset.isSample ? null : LQ.LoadMemory.applyDedup(memKey, dataset);
       s.setDataset(role, dataset);
       let renamed = null;
       if (target && LQ.Profile.isDefaultName(target.name)) {
@@ -1183,11 +1205,13 @@
       s.setTab(role);
       const src = dataset.source;
       const parts = [fmt(dataset.rowCount) + ' 行 × ' + dataset.colCount + ' 列'];
+      if (dataset.fileCount > 1) parts.unshift(dataset.fileCount + ' ファイルを縦に結合');
       if (src.encoding) parts.push('文字コード ' + LQ.EncodingDetector.label(src.encoding.value));
       if (src.hasSheets) parts.push('シート「' + src.sheetName + '」');
       const notes = [];
       if (sameFile) notes.push('前回と同じ読み込み範囲を適用しました');
       if (readNote) notes.push(readNote);
+      if (dedupNote) notes.push(dedupNote);
       if (renamed) notes.push('抽出条件の名前を「' + renamed + '」にしました');
       if (!dataset.rowCount) notes.push('データ行がありません。読み込み範囲を確認してください');
       const who = target && s.profiles.length > 1 ? '（抽出条件「' + target.name + '」）' : '';

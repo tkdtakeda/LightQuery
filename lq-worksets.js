@@ -135,7 +135,8 @@
         const plain = { name: p.name, enabled: p.enabled, createdAt: p.createdAt, query: LQ.QueryOps.toPlain(p.query), condition: p.currentRef() };
         if (p.rules) plain.rules = Util.clone(p.rules);
         if (p.condition && !p.condition.isSample) grids.set(p.id, p.condition.grid);
-        return { id: p.id, plain: plain, filters: p.condition ? Util.clone(p.condition.filters || []) : [] };
+        return { id: p.id, plain: plain, filters: p.condition ? Util.clone(p.condition.filters || []) : [],
+          dedup: p.condition && p.condition.dedup ? Util.clone(p.condition.dedup) : null };
       });
       const src = state.datasets.source;
       const read = src && !src.isSample
@@ -190,6 +191,7 @@
       const list = (c.profiles || []).map((item) => {
         const p = LQ.Profile.fromPlain(item.plain, { id: item.id, grid: grids.get(item.id) || null });
         if (p.condition && item.filters && item.filters.length) p.condition.setFilters(item.filters);
+        if (p.condition && item.dedup) p.condition.setDedup(item.dedup);
         if (!p.condition && p.conditionRef && p.conditionRef.fileName) missing++;
         return p;
       });

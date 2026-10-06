@@ -97,8 +97,9 @@
 /* =========================================================================
  * ── 読み込みパネル ──
  * ① 元データ / ② 照合表の読み込みパネル：
- *   ファイル（選択・シート・文字コード・区切り文字と判定の根拠）、読み込み範囲（ヘッダー・開始行・開始列・終了行）、
- *   列の追加、絞り込み、読み込み結果（行数・列数・列名）の順（処理の順）に並べる。入力欄は作り直さず値だけ更新し、フォーカスを保つ。
+ *   ファイル（選択・シート・① は縦に結合したファイルの一覧・文字コード・区切り文字と判定の根拠）、
+ *   読み込み範囲（ヘッダー・開始行・開始列・終了行）、列の追加、絞り込み、重複の削除、読み込み結果（行数・列数・列名）の順
+ *   （処理の順）に並べる。入力欄は作り直さず値だけ更新し、フォーカスを保つ。
  *   「読み方」（文字コード・区切り文字）と「読み込み範囲」は、見出しに要約を出して畳んでおく（開閉は ① / ② ごとに記憶。
  *   判定が不確かなときは読み方を開く）。範囲は右の表の行番号・列記号でも指定できるため、畳んでいても操作できる。
  *   ② は選択中の抽出条件のもの（抽出条件を切り替えると、このパネルもその ② に切り替わる）。
@@ -267,6 +268,8 @@
       if (!ctx.app.derivedEditor) ctx.app.derivedEditor = new LQ.DerivedEditor(ctx);
       this.derived = new LQ.DerivedSection(ctx, role, ctx.app.derivedEditor);
       this.filterSection = new LQ.FilterSection(ctx, role);
+      this.dedupSection = new LQ.DedupSection(ctx, role);
+      this.files = this.isSource ? new LQ.SourceFilesSection(ctx) : null;
       this._builtKey = undefined;
       ctx.bus.on('datasets', () => this.refresh());
       ctx.bus.on('change', (e) => {
@@ -306,13 +309,14 @@
         this.body.appendChild(this._emptySection());
         return;
       }
-      /* 処理の順（読み込み範囲 → 列の追加 → 絞り込み）に並べ、その結果の列を最後に出す */
+      /* 処理の順（ファイル → 読み込み範囲 → 列の追加 → 絞り込み → 重複の削除）に並べ、その結果の列を最後に出す */
       this.body.appendChild(this._fileSection(ds));
       const read = this._readSection(ds);
       if (read) this.body.appendChild(read);
       this.body.appendChild(this._rangeSection());
       this.body.appendChild(this.derived.el);
       this.body.appendChild(this.filterSection.el);
+      this.body.appendChild(this.dedupSection.el);
       this.body.appendChild(this._resultSection());
     }
 
@@ -380,6 +384,7 @@
         this.f.extentReason = h('div', { class: 'lq-reason' });
         children.push(this.f.extentReason);
       }
+      if (this.files) children.push(this.files.el);
       return UI.section('ファイル', children);
     }
 
@@ -421,6 +426,7 @@
       this.f.startCol.addEventListener('change', () => this._changeStartCol());
       this.f.endRow = this._numberInput('endRow', '最後まで');
       this.f.autoReason = h('div', { class: 'lq-reason' });
+      this.f.unionNote = UI.note('info', '縦に結合しているときは、基準（1 つ目）のファイルで設定し、ほかのファイルにも当てはめます。列名が合わないファイルだけ、読み込み範囲を自動で判定します。');
       const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '読み込み範囲を自動判定の結果に戻す', onclick: () => this.app.resetReadSettings(this.role) },
         [Dom.icon('wand-magic-sparkles'), '自動判定に戻す']);
       const key = 'rangeOpen:' + this.role;
@@ -432,7 +438,8 @@
           UI.field(FIELD_LABEL.startCol, this.f.startCol, '列記号（B）または番号（2）'),
           UI.field(FIELD_LABEL.endRow, this.f.endRow, '空欄＝最後の行まで（合計行を除くときに指定）')
         ]),
-        h('div', { class: 'lq-row lq-row--between' }, [this.f.autoReason, reset])
+        h('div', { class: 'lq-row lq-row--between' }, [this.f.autoReason, reset]),
+        this.f.unionNote
       ], { open: LQ.Prefs.get(key, false), onToggle: (open) => LQ.Prefs.set(key, open) });
       this.f.rangeFold.el.title = '右の表（読み込み範囲）の行番号や列記号をクリックしても指定できます';
       return this.f.rangeFold.el;
@@ -585,8 +592,9 @@
       Dom.clear(this.f.autoReason);
       Dom.append(this.f.autoReason, [Dom.icon('wand-magic-sparkles'),
         h('span', { text: (isAuto ? '自動判定のまま：' : '自動判定の結果（現在は変更済み）：') + ds.auto.reasons.join('／') })]);
+      this.f.unionNote.hidden = ds.fileCount < 2;
       this._setSummary(this.f.rangeFold, (isAuto ? '自動判定：' : '変更済み：') + (set.hasHeader ? 'ヘッダー ' + set.headerRow + ' 行目' : 'ヘッダーなし') +
-        '・範囲 ' + ds.stats.rangeText);
+        '・範囲 ' + ds.stats.rangeText + (ds.fileCount > 1 ? '（基準のファイル）' : ''));
       this._updateResult(ds);
     }
 
@@ -632,13 +640,17 @@
     _updateResult(ds) {
       /* 行数と範囲を 1 行にまとめる（範囲は読み込み範囲の要約にも出している） */
       Dom.clear(this.f.status);
-      const detail = '（範囲 ' + ds.stats.rangeText + (ds.stats.skippedEmpty ? '・空行 ' + Util.formatInt(ds.stats.skippedEmpty) + ' 行を除外' : '') +
-        '・元の表は ' + Util.formatInt(ds.rawRowCount) + ' 行）';
+      const empty = ds.stats.skippedEmpty ? '・空行 ' + Util.formatInt(ds.stats.skippedEmpty) + ' 行を除外' : '';
+      const detail = ds.fileCount > 1
+        ? '（' + ds.fileCount + ' ファイルを縦に結合・合計 ' + Util.formatInt(ds.baseRowCount) + ' 行' + empty + '）'
+        : '（範囲 ' + ds.stats.rangeText + empty + '・元の表は ' + Util.formatInt(ds.rawRowCount) + ' 行）';
       this.f.status.appendChild(ds.rowCount
         ? UI.status('ok', Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列を読み込みます' + detail)
         : UI.status('warn', 'データ行がありません。読み込み範囲のヘッダー行・データ開始行を確認してください' + detail));
       this.chips.setDataset(ds);
       this.filterSection.render(ds);
+      this.dedupSection.render(ds);
+      if (this.files) this.files.render(ds);
       this.derived.render(ds);
     }
   }

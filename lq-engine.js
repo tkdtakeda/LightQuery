@@ -1045,6 +1045,7 @@
           rules: norm.describe(),
           sourceName: source.name,
           conditionName: needsCond ? condition.name : '',
+          conditionPrep: needsCond && LQ.PrepFlow && LQ.PrepFlow.active(condition) ? LQ.PrepFlow.text(condition) : '',
           finishedAt: new Date()
         }
       };

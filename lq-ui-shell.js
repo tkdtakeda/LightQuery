@@ -324,7 +324,8 @@
         if (!files.length) return;
         const json = files.find((f) => Util.extName(f.name) === 'json');
         if (json) this.app.profiles.importJsonFile(json);
-        else if (zone && zone.dataset.dropRole === 'source') this.app.loadFile('source', files[0]);
+        else if (zone && zone.dataset.dropRole === 'source') this.app.prep.loadSourceFiles(files, 'replace');
+        else if (zone && zone.dataset.dropRole === 'sourceAppend') this.app.prep.loadSourceFiles(files, 'append');
         else if (zone) this.app.loadTables(files, 'active');
       });
     }
@@ -337,10 +338,17 @@
         class: 'lq-dropoverlay__zone' + (role === 'condition' ? ' lq-dropoverlay__zone--cond' : ''),
         dataset: { dropRole: role }
       }, [Dom.icon(icon), h('div', { class: 'lq-dropoverlay__title', text: title }), h('div', { class: 'lq-dropoverlay__sub', text: sub })]);
-      this.el = h('div', { class: 'lq-dropoverlay' }, [
-        zone('source', 'table', '① 元データとして読み込む', '抽出される側のデータ（Excel・CSV）'),
+      const src = s.datasets.source;
+      /* ① を読み込み済みなら、置き換えと「下に足す（縦に結合）」を並べる（処理の順：① → ②） */
+      const sourceZones = src
+        ? [h('div', { class: 'lq-dropoverlay__pair' }, [
+          zone('source', 'table', '① 元データを置き換える', '複数のファイルは縦に結合します（今の ①「' + src.name + '」は外します。元に戻せます）'),
+          zone('sourceAppend', 'layer-group', '① の下に足す（縦に結合）', '今の ① ' + src.fileCount + ' ファイルの下に行を足します。列は名前でそろえます')
+        ])]
+        : [zone('source', 'table', '① 元データとして読み込む', '抽出される側のデータ（Excel・CSV）。複数のファイルは縦に結合します')];
+      this.el = h('div', { class: 'lq-dropoverlay' }, sourceZones.concat([
         zone('condition', 'list-check', '② 照合表として読み込む', owner + '複数のファイル・シートは、表ごとに抽出条件にできます（抽出条件の .json はどちらでも可）')
-      ]);
+      ]));
       this.root.appendChild(this.el);
     }
 

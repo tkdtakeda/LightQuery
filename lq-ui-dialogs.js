@@ -430,6 +430,7 @@
       const rows = [
         ['実行日時', Util.dateTimeText(res.snapshot.finishedAt) + '（' + Util.formatSeconds(st.elapsedMs) + '）'],
         ['① 元データ', res.snapshot.sourceName + '（' + fmt(st.sourceRows) + ' 行）'],
+        res.snapshot.sourcePrep ? ['① の前処理', res.snapshot.sourcePrep] : null,
         multi ? ['重複の扱い', mode.label + '：' + mode.desc] : null,
         st.includeUnmatched ? ['該当なしの行', '出力する（' + fmt(st.unmatchedRows) + ' 行）'] : null,
         own < res.parts.length ? [own ? '照合ルール（全体の設定）' : '照合ルール', res.snapshot.rules] : null,
@@ -452,6 +453,7 @@
       const match = LQ.QueryEngine.MATCH_MODES.find((m) => m.id === st.matchMode);
       const facts = [
         st.needsCondition ? '② ' + snap.conditionName + '（' + fmt(st.conditionRows) + ' 行）' : '② は使っていません（固定値の条件のみ）',
+        snap.conditionPrep ? '② の前処理：' + snap.conditionPrep : null,
         '組み合わせ：' + snap.exprJa,
         '出力する行：' + join.label + (st.needsCondition && st.joinKind !== 'anti' ? '・' + match.label : ''),
         part.ownRules ? '照合ルール（個別）：' + snap.rules : null,

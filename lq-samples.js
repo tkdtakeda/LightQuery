@@ -101,6 +101,41 @@
   };
   const ORDERS_NAME = 'サンプル_受注データ.xlsx';
 
+  /**
+   * 月ごとの受注ファイル（縦に結合のサンプル用）。
+   *   4 月：見出しが 1 行目／5 月：上に表題と空行があり見出しが 3 行目、4 月の終わりの 12 行を再送（重複）／
+   *   6 月：列の並びが違い「担当者」列が増えた、5 月の終わりの 8 行を再送（重複）
+   */
+  function monthlyOrders() {
+    const rand = createRandom(2025);
+    const customers = makeCustomers(120, 4, rand);
+    const staff = ['佐藤', '鈴木', '高橋', '田中'];
+    const base = ['受注番号', '受注日', '顧客ID', '顧客名', '地域', '商品名', '数量', '金額'];
+    let no = 250001;
+    const month = (m, count) => {
+      const rows = [];
+      for (let i = 0; i < count; i++) {
+        const cust = rand.pick(customers);
+        const prod = rand.pick(PRODUCTS);
+        const qty = rand.int(1, 20);
+        rows.push({ 受注番号: 'OD-' + (no++), 受注日: '2025/' + pad2(m) + '/' + pad2(rand.int(1, 28)), 顧客ID: cust.id, 顧客名: cust.name, 地域: cust.region,
+          商品名: prod.name, 数量: String(qty), 金額: String(qty * prod.price), 担当者: rand.pick(staff) });
+      }
+      return rows;
+    };
+    const apr = month(4, 300);
+    const may = apr.slice(-12).concat(month(5, 320));
+    const jun = may.slice(-8).concat(month(6, 340));
+    const juneCols = ['受注日', '受注番号', '地域', '顧客ID', '顧客名', '商品名', '金額', '数量', '担当者'];
+    const toGrid = (header, rows) => [header.slice()].concat(rows.map((r) => header.map((h) => r[h])));
+    return {
+      apr: toGrid(base, apr),
+      may: [['2025年5月 受注一覧'], []].concat(toGrid(base, may)),
+      jun: toGrid(juneCols, jun),
+      columns: base.concat(['担当者'])
+    };
+  }
+
   const SAMPLES = [
     {
       id: 'idlist',
@@ -549,6 +584,32 @@
       }
     },
     {
+      id: 'union',
+      icon: 'layer-group',
+      title: '前処理：毎月のファイルを縦に結合して重複を除く',
+      desc: '4 月・5 月・6 月の受注ファイルを 1 つの表にまとめます。5 月は見出しが 3 行目（上に表題）、6 月は列の並びが違い「担当者」列が増えていますが、列は名前でそろえ、見出しの位置は自動で判定します。月をまたいで再送された受注（20 行）は「受注番号」での重複の削除で除きます。メインの ① タブの「処理の流れ」で各段の行数を、除いた行数を押すとその行を確かめられます。ピボットは元ファイルごとの件数と金額です。',
+      tags: ['縦に結合', '重複の削除', '処理の流れ', '① だけ'],
+      build() {
+        const m = monthlyOrders();
+        return {
+          source: {
+            name: 'サンプル_受注_2025年4月.csv', grid: m.apr,
+            members: [{ name: 'サンプル_受注_2025年5月.csv', grid: m.may }, { name: 'サンプル_受注_2025年6月.csv', grid: m.jun }],
+            dedup: { cols: ['受注番号'] }
+          },
+          profiles: [],
+          output: m.columns.map((h) => 's:' + h).concat(['s:元ファイル']),
+          aggregate: {
+            target: 'source',
+            rows: [{ key: 's:元ファイル' }],
+            values: [{ fn: 'count' }, { key: 's:金額', fn: 'sum' }],
+            sort: { by: 'label', dir: 'asc' }
+          },
+          tab: 'source'
+        };
+      }
+    },
+    {
       id: 'perf',
       icon: 'gauge-high',
       title: '10 万行で速度を確認',
@@ -582,7 +643,8 @@
     { label: '複数の抽出条件', icon: 'arrow-down-1-9', ids: ['priority', 'independent', 'rules'] },
     { label: 'ピボット', icon: 'table-cells', ids: ['aggregate', 'condagg', 'pivot'] },
     { label: 'グラフ', icon: 'chart-column', ids: ['chart-trend', 'chart-dist', 'chart-scatter', 'chart-pivot'] },
-    { label: 'その他（列の追加・速度の確認）', icon: 'ellipsis', ids: ['derive', 'perf'] }
+    { label: '前処理（縦に結合・列の追加・重複の削除）', icon: 'layer-group', ids: ['union', 'derive'] },
+    { label: 'その他（速度の確認）', icon: 'ellipsis', ids: ['perf'] }
   ];
 
   const Samples = {
@@ -608,7 +670,7 @@
       return SAMPLES.find((s) => s.id === id) || null;
     },
 
-    /** @returns {{id, title, source:{name,grid,settings?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[]}} */
+    /** @returns {{id, title, source:{name,grid,settings?,members?:Array<{name,grid}>,dedup?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[]}} */
     build(id) {
       const sample = Samples.get(id);
       if (!sample) throw new Error('サンプルが見つかりません');

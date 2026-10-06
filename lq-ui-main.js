@@ -141,7 +141,7 @@
     /** 見せ方の対象の言い表し（① 元データの全行／抽出結果すべて／「○○」の行） */
     scopeText(view) {
       const src = this.state.datasets.source;
-      return view.result.allRows ? '① 元データの全行' + (src && src.filters && src.filters.length ? '（絞り込み後）' : '')
+      return view.result.allRows ? '① 元データの全行' + (src && (src.filterInfo || src.dedupInfo) ? '（' + LQ.PrepFlow.steps(src).slice(1).map((st) => st.label).join('・') + 'の後）' : '')
         : (view.filter === null ? '抽出結果すべて' : (view.filter < 0 ? '該当なしの行' : '「' + view.partName(view.filter) + '」の行'));
     }
 
@@ -224,14 +224,17 @@
             count = tables + ' 件';
             title = '照合表 ' + tables + ' 件（表示中：' + s.activeProfile.name + '）';
           }
-          /* サンプル表示中・絞り込み中は、タブにも印を出す（ファイル名と行数はタブの中の要約に出す） */
+          /* サンプル表示中・縦に結合・絞り込み・重複の削除をしているときは、タブにも印を出す（ファイル名と行数はタブの中の要約に出す） */
           if (ds) {
             title = (title ? title + '\n' : '') + ds.name + '（' + ds.source.kindLabel + '・' + Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列）';
             marks = [
               ds.isSample ? h('span', { class: 'lq-tag lq-tag--sample lq-tab__sample', title: 'サンプルデータを表示中' },
                 [Dom.icon('flask'), h('span', { class: 'lq-tab__sample-text', text: 'サンプル' })]) : null,
-              ds.filterInfo ? h('span', { class: 'lq-tab__filter', title: '絞り込み中：' + Util.formatInt(ds.baseRowCount) + ' 行中 ' + Util.formatInt(ds.rowCount) + ' 行' },
-                Dom.icon('filter')) : null
+              ds.fileCount > 1 ? h('span', { class: 'lq-tab__filter', title: ds.fileCount + ' ファイルを縦に結合' }, Dom.icon('layer-group')) : null,
+              ds.filterInfo ? h('span', { class: 'lq-tab__filter', title: '絞り込み中：' + Util.formatInt(ds.filterInfo.base) + ' 行中 ' + Util.formatInt(ds.filterInfo.kept) + ' 行' },
+                Dom.icon('filter')) : null,
+              ds.dedupInfo ? h('span', { class: 'lq-tab__filter', title: '重複の削除：' + Util.formatInt(ds.dedupInfo.removed.length) + ' 行を除外' },
+                Dom.icon('clone')) : null
             ];
           }
         } else {
@@ -265,6 +268,7 @@
       const unavailable = all.filter((d) => !d.available && !d.silent);
       this._renderResultTools(defs);
       this._renderSummary(view, defs);
+      this._renderSourceFlow(view);
       this._renderFilterBar(view);
       if (s.isStale()) {
         this.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
@@ -365,6 +369,16 @@
         ];
       }
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
+    }
+
+    /** ① の前処理（縦に結合・絞り込み・重複の削除）を使っているときは、抽出に使った行までの流れを出す */
+    _renderSourceFlow(view) {
+      const src = this.state.datasets.source;
+      if (!src || view.result.allRows) return;
+      const st = view.result.stats;
+      const bar = LQ.PrepFlowBar.render(this.ctx, src, { tail: { icon: 'code-compare', label: '抽出で該当', rows: st.matchedSources,
+        title: '使う行のうち、抽出条件に該当した ① の行' } });
+      if (bar) this.info.appendChild(bar);
     }
 
     /** 抽出条件ごとの絞り込み（件数付き）。抽出条件が複数か「該当なし」があるときだけ出す */
@@ -557,6 +571,8 @@
       /* そのパネルを開いているときは押しても閉じるだけなので出さない（狭い画面でタブの行が折り返さないようにする） */
       if (s.panel !== role) this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '読み込みの設定（ファイル・読み込み範囲・列の追加・絞り込み）を開く', onclick: () => s.togglePanel(role) }, [Dom.icon('sliders'), '読み込みの設定']));
       this._renderDatasetSummary(ds, raw);
+      const flow = LQ.PrepFlowBar.render(this.ctx, ds);
+      if (flow) this.info.appendChild(flow);
       const filterBar = LQ.FilterBar.render(this.ctx, ds, role);
       if (filterBar) {
         this.info.appendChild(filterBar);
@@ -582,7 +598,8 @@
         ? '保存データ（元：' + (stored.kindLabel || '不明') + (stored.sheetName ? '・シート「' + stored.sheetName + '」' : '') + '）'
         : src.kindLabel + (src.hasSheets ? '・シート「' + src.sheetName + '」' : '') + (src.encoding ? '・' + LQ.EncodingDetector.label(src.encoding.value) : '');
       const items = [
-        h('span', { class: 'lq-summary__main' }, [Dom.icon('circle-check'), ds.name]),
+        h('span', { class: 'lq-summary__main' }, [Dom.icon(ds.fileCount > 1 ? 'layer-group' : 'circle-check'),
+          ds.name + (ds.fileCount > 1 ? ' ほか ' + (ds.fileCount - 1) + ' ファイル' : '')]),
         h('span', { class: 'lq-summary__item', text: kind }),
         h('span', { class: 'lq-summary__item lq-num', text: Util.formatInt(ds.rowCount) + ' 行 × ' + ds.colCount + ' 列' }),
         h('span', { class: 'lq-summary__item', text: (set.hasHeader ? 'ヘッダー ' + set.headerRow + ' 行目' : 'ヘッダーなし') + '・範囲 ' + ds.stats.rangeText }),
@@ -593,6 +610,7 @@
         this.info.appendChild(UI.note('tip', h('span', { title: '行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列の一覧（値で絞り込む・出力する）が開きます（出力しない列は薄く表示）。' },
           '元のシートのまま表示中。行番号・列記号で範囲を、列名で絞り込み・出力を指定できます。' +
           (this.state.panel === ds.role ? '（パネルを閉じると元の表示に戻ります）' : ''))));
+        if (ds.fileCount > 1) this.info.appendChild(UI.note('info', '縦に結合しているため、基準（1 つ目）のファイル「' + ds.name + '」を表示しています。ここで決めた読み込み範囲を、ほかのファイルにも当てはめます。'));
       }
       if (!ds.rowCount) this.info.appendChild(UI.note('warn', 'データ行がありません。「読み込み範囲」でヘッダー行・データ開始行を確認してください。'));
     }

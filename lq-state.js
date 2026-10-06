@@ -366,6 +366,15 @@
       this._afterDatasetChange(role);
     }
 
+    /** ① / ②（選択中の抽出条件）の重複の削除を置き換える（null で外す）。結果は未反映になる */
+    setDedup(role, def) {
+      const ds = this.datasets[role];
+      if (!ds) return;
+      ds.setDedup(def);
+      if (this.keepsUserSettings) LQ.LoadMemory.rememberDedup(LQ.LoadMemory.keyOf(role, this.activeId), ds);
+      this._afterDatasetChange(role);
+    }
+
     /** ① と各抽出条件の ② の読み込み範囲を記憶する（次に同じ構成の表を読み込んだときに使う） */
     _rememberReads() {
       if (!this.keepsUserSettings) return;

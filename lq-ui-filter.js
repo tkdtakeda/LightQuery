@@ -387,7 +387,7 @@
       } }, [Dom.icon('filter-circle-xmark'), 'すべて外す']);
       return h('div', { class: 'lq-filterbar lq-filterbar--rows' }, [
         h('span', { class: 'lq-filterbar__label' }, [Dom.icon('filter'),
-          '絞り込み中：' + fmt(ds.baseRowCount) + ' 行中 ' + fmt(ds.rowCount) + ' 行（すべてを満たす行）']),
+          '絞り込み中：' + fmt(info.base || ds.baseRowCount) + ' 行中 ' + fmt(info.kept === undefined ? ds.rowCount : info.kept) + ' 行（すべてを満たす行）']),
         tags, clear
       ].flat());
     }

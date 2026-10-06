@@ -33,16 +33,22 @@
     /**
      * @param {'source'|'condition'} role
      * @param {LQ.SourceFile} source
-     * @param {{isSample?:boolean, settings?:object}} options
+     * @param {{isSample?:boolean, settings?:object, members?:LQ.SourceFile[], filters?:Array, dedup?:object}} options
+     *        members：縦に結合する 2 つ目以降のファイル（① のみ）。filters・dedup：絞り込み・重複の削除を引き継ぐとき
      */
     constructor(role, source, options) {
       const opts = options || {};
       this.id = Util.uid('ds');
       this.role = role;
       this.source = source;
+      this.members = (opts.members || []).slice();
+      this.filters = (opts.filters || []).slice();
+      this.dedup = opts.dedup ? Util.clone(opts.dedup) : null;
       this.isSample = !!opts.isSample;
       this.version = 0;
       this.grid = [];
+      this.table = [];
+      this.union = null;
       this.columns = [];
       this.rowIdx = new Int32Array(0);
       this.auto = null;
@@ -54,6 +60,11 @@
 
     get name() {
       return this.source.name;
+    }
+
+    /** 縦に結合しているファイルの数（1 つなら 1） */
+    get fileCount() {
+      return this.members.length + 1;
     }
 
     get roleLabel() {
@@ -94,7 +105,19 @@
       const o = options || {};
       return new Dataset(this.role, this.source.clone(), {
         isSample: o.isSample === undefined ? this.isSample : !!o.isSample,
-        settings: Util.clone(this.settings)
+        settings: Util.clone(this.settings),
+        members: this.members.map((m) => m.clone())
+      });
+    }
+
+    /**
+     * 縦に結合するファイルを入れ替えた新しいデータセット（読み込み範囲・絞り込み・重複の削除は引き継ぐ）。
+     * 元のデータセットは変えないため、取り消し（スナップショット）で元に戻せる。
+     * @param {LQ.SourceFile[]} members
+     */
+    withMembers(members) {
+      return new Dataset(this.role, this.source, {
+        isSample: this.isSample, settings: Util.clone(this.settings), members: members, filters: this.filters, dedup: this.dedup
       });
     }
 
@@ -117,10 +140,48 @@
       return { adjusted: adjusted };
     }
 
-    /** 設定から列と行を作り直す */
+    /** 設定から列と行を作り直す（縦に結合するファイルがあれば、列の名前でそろえて 1 つの表にする） */
     derive() {
-      const g = this.grid;
-      const s = this.settings;
+      const part = Dataset.extract(this.grid, this.settings);
+      let columns = part.columns;
+      let rows = part.rows;
+      this.table = this.grid;
+      this._rowNo = null;
+      this.union = null;
+      if (this.members.length) {
+        const u = LQ.SourceUnion.build(this, part);
+        this.table = u.table;
+        columns = u.columns;
+        rows = u.rows;
+        this._rowNo = u.rowNo;
+        this.union = u.info;
+      }
+      this.columns = columns;
+      this._colIndex = new Map(columns.map((col) => [col.name, col.index]));
+      this.rowIdx = Int32Array.from(rows);
+      this._baseRowIdx = this.rowIdx;
+      this._appendDerived();
+      this._applyFilters();
+      this._applyDedup();
+      this.stats = {
+        rows: rows.length,
+        cols: columns.length,
+        skippedEmpty: this.union ? this.union.skippedEmpty : part.skippedEmpty,
+        firstRow: part.rows.length ? part.rows[0] + 1 : null,
+        lastRow: part.rows.length ? part.rows[part.rows.length - 1] + 1 : null,
+        rangeText: part.columns.length && part.rows.length
+          ? part.columns[0].letter + (part.rows[0] + 1) + ':' + part.columns[part.columns.length - 1].letter + (part.rows[part.rows.length - 1] + 1)
+          : '—'
+      };
+      this.version++;
+    }
+
+    /**
+     * grid に読み込み範囲を当てはめ、列（名前・元の列番号・列記号）とデータ行（grid の行番号）を取り出す。
+     * 空の行は除き、その数を skippedEmpty に数える。
+     * @returns {{columns:Array<{name:string, index:number, src:number, letter:string}>, rows:number[], skippedEmpty:number}}
+     */
+    static extract(g, s) {
       const c0 = s.startCol - 1;
       const headerIdx = s.hasHeader ? s.headerRow - 1 : -1;
       const first = s.startRow - 1;
@@ -171,38 +232,34 @@
         }
         columns.push({ name: name, index: columns.length, src: c, letter: letter });
       }
-      this.columns = columns;
-      this._colIndex = new Map(columns.map((col) => [col.name, col.index]));
-      this.rowIdx = Int32Array.from(rows);
-      this._baseRowIdx = this.rowIdx;
-      this._appendDerived();
-      this._applyFilters();
-      this.stats = {
-        rows: rows.length,
-        cols: columns.length,
-        skippedEmpty: skippedEmpty,
-        firstRow: rows.length ? rows[0] + 1 : null,
-        lastRow: rows.length ? rows[rows.length - 1] + 1 : null,
-        rangeText: columns.length && rows.length
-          ? columns[0].letter + (rows[0] + 1) + ':' + columns[columns.length - 1].letter + (rows[rows.length - 1] + 1)
-          : '—'
-      };
-      this.version++;
+      return { columns: columns, rows: rows, skippedEmpty: skippedEmpty };
     }
 
     /** データ行 r・列 c の値（文字列）。追加した列（読み替え・計算）は作った値を返す */
     cell(r, c) {
       const col = this.columns[c];
       if (col && col.values) return col.values[r];
-      const row = this.grid[this.rowIdx[r]];
+      const row = this.table[this.rowIdx[r]];
       if (!row || !col) return '';
       const v = row[col.src];
       return v === undefined || v === null ? '' : v;
     }
 
-    /** データ行 r の元の行番号（1 始まり。Excel の行番号と一致） */
+    /** データ行 r の元の行番号（1 始まり。Excel の行番号と一致。縦に結合しているときは、そのファイルでの行番号） */
     rowNumber(r) {
-      return this.rowIdx[r] + 1;
+      const i = this.rowIdx[r];
+      return this._rowNo ? this._rowNo[i] : i + 1;
+    }
+
+    /** 絞り込み前の b 行目の元の行番号（除いた行の内訳に使う） */
+    baseRowNumber(b) {
+      const i = (this._baseRowIdx || this.rowIdx)[b];
+      return this._rowNo ? this._rowNo[i] : i + 1;
+    }
+
+    /** データ行 r が絞り込み前の何行目か（絞り込み・重複の削除で除いた行を指すため） */
+    basePos(r) {
+      return this._basePos ? this._basePos[r] : r;
     }
 
     /** 追加した列（読み替え・計算）を作り直す（定義が変わったとき） */
@@ -212,7 +269,14 @@
       this._colIndex = new Map(this.columns.map((col) => [col.name, col.index]));
       this._appendDerived();
       this._applyFilters();
+      this._applyDedup();
       this.version++;
+    }
+
+    /** 重複の削除を置き換える（null で外す）。def：{cols:string[]}（空ならすべての列で比べる） */
+    setDedup(def) {
+      this.dedup = def ? Util.clone(def) : null;
+      this.refreshDerived();
     }
 
     /** 絞り込みを置き換える（[] で外す）。読み込み範囲を変えても掛けたまま残す */
@@ -232,7 +296,7 @@
       if (!col) return '';
       if (col.values) return (col.baseValues || col.values)[b];
       const base = this._baseRowIdx || this.rowIdx;
-      const row = this.grid[base[b]];
+      const row = this.table[base[b]];
       const v = row ? row[col.src] : undefined;
       return v === undefined || v === null ? '' : v;
     }
@@ -258,6 +322,7 @@
     _applyFilters() {
       const filters = this.filters || [];
       this.filterInfo = null;
+      this._basePos = null;
       if (!filters.length) return;
       const n = this.rowIdx.length;
       const items = [];
@@ -275,12 +340,37 @@
       }
       const base = this.rowIdx;
       this.rowIdx = Int32Array.from(keep, (r) => base[r]);
+      this._basePos = Int32Array.from(keep);
       this.columns.forEach((c) => {
         if (!c.values) return;
         c.baseValues = c.values;
         c.values = keep.map((r) => c.baseValues[r]);
       });
-      this.filterInfo = { base: n, kept: keep.length, items: items };
+      const removed = [];
+      for (let r = 0, k = 0; r < n; r++) {
+        if (k < keep.length && keep[k] === r) k++;
+        else removed.push(r);
+      }
+      this.filterInfo = { base: n, kept: keep.length, items: items, removed: Int32Array.from(removed) };
+    }
+
+    /** 重複の削除を当てはめる（絞り込みのあと。処理は lq-prep.js の Dedup）。結果は dedupInfo に残す */
+    _applyDedup() {
+      this.dedupInfo = this.dedup ? LQ.Dedup.apply(this, this.dedup) : null;
+    }
+
+    /** 列を残した行にそろえる（keep：今の行のうち残す行の位置）。絞り込み前の値は baseValues に残す */
+    keepRows(keep) {
+      const base = this.rowIdx;
+      const pos = this._basePos;
+      this.rowIdx = Int32Array.from(keep, (r) => base[r]);
+      this._basePos = Int32Array.from(keep, (r) => (pos ? pos[r] : r));
+      this.columns.forEach((c) => {
+        if (!c.values) return;
+        if (!c.baseValues) c.baseValues = c.values;
+        const cur = c.values;
+        c.values = keep.map((r) => cur[r]);
+      });
     }
 
     /** 定義の順に列を加える（前に加えた列も式・読み替えの元にできる）。結果は derivedInfo に残す */

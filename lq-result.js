@@ -235,6 +235,7 @@
         },
         snapshot: {
           sourceName: ctx.source.name,
+          sourcePrep: LQ.PrepFlow.active(ctx.source) ? LQ.PrepFlow.text(ctx.source) : '',
           rules: new LQ.Normalizer(ctx.rules).describe(),
           ownRules: parts.filter((p) => p.ownRules).length,
           finishedAt: new Date()
@@ -266,7 +267,7 @@
       length: n,
       members: null,
       stats: { sourceRows: n, mode: 'assign', includeUnmatched: false, matchedSources: n, unmatchedRows: 0, outputRows: n, elapsedMs: 0, truncated: false },
-      snapshot: { sourceName: source.name, rules: new LQ.Normalizer(rules).describe(), ownRules: 0, finishedAt: new Date() }
+      snapshot: { sourceName: source.name, sourcePrep: LQ.PrepFlow.active(source) ? LQ.PrepFlow.text(source) : '', rules: new LQ.Normalizer(rules).describe(), ownRules: 0, finishedAt: new Date() }
     };
   };
 
