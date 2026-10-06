@@ -175,7 +175,7 @@
       const view = this.view();
       if (!view || !Settings.isConfigured(s.aggregate) || this._blockedReason()) return null;
       const names = view.parts.map((p, i) => view.partName(i));
-      const key = JSON.stringify([view.result.id, view.filter, s.rules, s.aggregate, names]);
+      const key = JSON.stringify([view.result.id, view.filter, s.rules, s.aggregate, names, LQ.Fiscal.start()]);
       if (key !== this._key) {
         this._key = key;
         this._error = null;

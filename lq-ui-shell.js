@@ -93,7 +93,7 @@
     ] }
   ];
   const RAIL_SETTINGS = { label: '設定', items: [
-    { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：表記ゆれのそろえ方（空白・全角半角・大文字小文字・数値・日付）。全体の設定／抽出条件ごとの設定' }
+    { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：値のそろえ方（空白・全角半角・大文字小文字・数値・日付・表記ゆれ）。全体の設定／抽出条件ごとの設定。年度の始まり（すべてに共通）もここで設定します' }
   ] };
 
   class Rail {

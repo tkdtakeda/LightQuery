@@ -60,10 +60,36 @@
           this.editing,
           this.cards,
           UI.note('info', '変更すると、表示中の結果は「未反映」になります。右上のボタンで再抽出すると反映されます。設定はこのパソコンのブラウザに記憶されます。')
-        ], [reset])
+        ], [reset]),
+        this._fiscalSection()
       ]);
       ['rules', 'profiles'].forEach((topic) => ctx.bus.on(topic, () => this.sync()));
       this.sync();
+    }
+
+    /**
+     * 年度の始まり（抽出条件ごとには変えられない、すべてに共通の設定。照合ルールの対象の切替とは別の区画にする）
+     */
+    _fiscalSection() {
+      this.fiscal = h('select', { class: 'lq-select', title: '年度が何月から始まるか（初期値 4 月）' });
+      UI.fillSelect(this.fiscal, Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: (i + 1) + ' 月から' + (i === 0 ? '（暦年と同じ）' : (i === 3 ? '（初期値）' : '')) })),
+        String(LQ.Fiscal.start()));
+      this.fiscalSpan = h('div', { class: 'lq-rule__example' });
+      this.fiscal.addEventListener('change', () => {
+        this.state.setFiscalStart(Number(this.fiscal.value));
+        this._syncFiscal();
+        Flash.input(this.fiscal);
+        this.ctx.toasts.show({ type: 'success', title: '年度の始まりを ' + this.fiscal.value + ' 月にしました',
+          message: '年度は' + LQ.Fiscal.span() + 'です。期間の条件は再抽出で、ピボット・グラフはすぐに反映します。' });
+      });
+      this._syncFiscal();
+      const card = h('div', { class: 'lq-rule' }, [UI.field('年度の始まり', this.fiscal), this.fiscalSpan]);
+      return UI.section('年度（すべての抽出条件・ピボット・グラフに共通）', [card]);
+    }
+
+    _syncFiscal() {
+      this.fiscal.value = String(LQ.Fiscal.start());
+      this.fiscalSpan.textContent = '年度＝' + LQ.Fiscal.span() + '。期間の条件（今年度・2024年度）、ピボット・グラフの日付のまとめ方（年度・四半期）、月の名前（4月・10月 など）の項目の並び順に使います。';
     }
 
     /** 編集する対象：選択中の抽出条件に個別の設定があればそれ、なければ全体の設定 */

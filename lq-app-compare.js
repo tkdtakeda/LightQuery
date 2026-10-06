@@ -1,6 +1,7 @@
 /* =========================================================================
  * LightQuery - lq-app-compare.js
- * 前回との比較の操作：抽出のたびに結果を覚える（直前の抽出結果）／基準の表（直前の結果・ファイル）と行を見分ける列を決める／解除
+ * 前回との比較の操作：抽出のたびに結果を覚える（直前の抽出結果。作業セットごとにブラウザにも保存し、次に開いたときも使える）／
+ *   基準の表（直前の結果・ファイル）と行を見分ける列を決める／解除
  *   比べた結果は今の抽出結果から作り直す（再抽出・列の変更でも基準とキーはそのまま）。変わったら 'compare' を知らせる。
  * ========================================================================= */
 (function (global) {
@@ -33,17 +34,41 @@
       return !!this.base;
     }
 
-    /** 抽出が終わったときに呼ぶ：今の結果を覚え、それまでの結果を「直前の抽出結果」にする */
+    /**
+     * 抽出が終わったときに呼ぶ：今の結果を覚え、それまでの結果を「直前の抽出結果」にする。
+     * 今の結果は開いている作業セットに保存する（サンプル表示中は覚えない：自分の「直前」がサンプルにならないように）
+     */
     remember() {
+      if (this.state.hasSample()) return;
       const view = this.app.main.resultView();
       if (!view || view.result.allRows) return;
       const defs = view.resolveColumns(this.state.output.columns).filter((d) => d.available);
       if (!defs.length) return;
       const d = new Date();
-      const table = LQ.CompareTable.fromView(view, defs, '直前の抽出結果（' + Util.pad2(d.getHours()) + ':' + Util.pad2(d.getMinutes()) + '）');
+      const when = (d.getMonth() + 1) + '/' + d.getDate() + ' ' + Util.pad2(d.getHours()) + ':' + Util.pad2(d.getMinutes());
+      const table = LQ.CompareTable.fromView(view, defs, '抽出結果（' + when + '）');
       this.previous = this.latest;
       this.latest = table;
+      if (this.app.worksets) this.app.worksets.saveResult(table);
       this._changed();
+    }
+
+    /** 作業セットを開いたとき：そのセットで最後に抽出した結果を、次の抽出の「直前の抽出結果」にする */
+    useSaved(table) {
+      this.latest = table && Array.isArray(table.rows) ? table : null;
+      this.previous = null;
+      this._changed();
+    }
+
+    /** 「直前の抽出結果」を表で見る（コピー・Excel 出力もできる） */
+    showPrevious(anchor) {
+      const t = this.previous;
+      if (!t) return;
+      const table = LQ.ReviewParts.drillTable(t.header, t.rows.length, (i) => t.rows[i]);
+      const back = anchor && anchor.isConnected ? () => anchor.focus() : null;
+      this.app.main.drillView().open({ by: [], table: table, title: '直前の抽出結果', fileTag: '直前の抽出結果' }, null,
+        t.name + '・' + fmt(t.rows.length) + ' 行 × ' + t.header.length + ' 列。前回と比べるときの基準にできます。', back,
+        { label: '直前の抽出結果', text: t.name });
     }
 
     /** 今の抽出結果の表（すべての行・今の出力列） */

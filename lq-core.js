@@ -896,4 +896,40 @@
   LQ.Wildcard = Wildcard;
   LQ.ValueParser = ValueParser;
   LQ.Normalizer = Normalizer;
+
+  /* ---------------------------------------------------------------------
+   * Fiscal：年度の始まり（月）。すべての抽出条件・ピボット・グラフに共通（ブラウザに記憶。初期値 4 月）
+   *   使うところ：期間の条件（今年度・2024年度）・日付のまとめ方（年度・四半期）・月の名前（4月 など）の項目の並び
+   * ------------------------------------------------------------------- */
+  const FISCAL_KEY = 'fiscalStart';
+  const Fiscal = {
+    DEFAULT: 4,
+
+    /** 年度の始まりの月（1〜12） */
+    start() {
+      const m = Number(LQ.Prefs.get(FISCAL_KEY, Fiscal.DEFAULT));
+      return Number.isInteger(m) && m >= 1 && m <= 12 ? m : Fiscal.DEFAULT;
+    },
+
+    set(month) {
+      LQ.Prefs.set(FISCAL_KEY, month);
+    },
+
+    /** y 年 m 月が入る年度（始まりが 1 月なら暦年と同じ） */
+    yearOf(y, m) {
+      return m >= Fiscal.start() ? y : y - 1;
+    },
+
+    /** 月（1〜12）の年度の中での順（始まりの月が 0） */
+    order(m) {
+      return (m - Fiscal.start() + 12) % 12;
+    },
+
+    /** 「4月〜翌3月」のような年度の範囲の言い方 */
+    span() {
+      const st = Fiscal.start();
+      return st === 1 ? '1月〜12月' : st + '月〜翌' + (st - 1) + '月';
+    }
+  };
+  LQ.Fiscal = Fiscal;
 })(window);

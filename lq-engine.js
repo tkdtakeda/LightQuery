@@ -8,7 +8,7 @@
  * ── 期間の解釈 ──
  * 期間の解釈：「2024」「2024/05」「2024年5月」「2024年度」「2024/05/10」のような年・年月・日と、
  *   今日を基準にした「今日・昨日・今週・先週・今月・先月・今年・昨年・今年度・前年度・直近 N 日・今後 N 日」を
- *   [start, end)（UTC 基準のミリ秒。end は含まない）に読み替える。年度は 4 月始まり、週は月曜始まり。
+ *   [start, end)（UTC 基準のミリ秒。end は含まない）に読み替える。年度の始まりは LQ.Fiscal（初期値 4 月）、週は月曜始まり。
  *   日付の比較値は ValueParser.parseDate と同じ「UTC の 0 時」を 1 日の始まりとする。
  * ========================================================================= */
 (function (global) {
@@ -16,7 +16,6 @@
 
   const LQ = global.LQ;
   const DAY = 86400000;
-  const FY_START_MONTH = 4;
 
   const RE_YEAR = /^(\d{4})年?$/;
   const RE_FISCAL = /^(\d{4})年度$/;
@@ -41,7 +40,8 @@
   }
 
   function fiscalRange(fy, label) {
-    return range(Date.UTC(fy, FY_START_MONTH - 1, 1), Date.UTC(fy + 1, FY_START_MONTH - 1, 1), label);
+    const st = LQ.Fiscal.start();
+    return range(Date.UTC(fy, st - 1, 1), Date.UTC(fy + 1, st - 1, 1), label);
   }
 
   function fmt(ms) {
@@ -54,7 +54,7 @@
     const y = t.getUTCFullYear();
     const m = t.getUTCMonth() + 1;
     const monday = today - ((t.getUTCDay() + 6) % 7) * DAY;
-    const fy = m >= FY_START_MONTH ? y : y - 1;
+    const fy = LQ.Fiscal.yearOf(y, m);
     switch (s) {
       case '今日': case '本日': return range(today, today + DAY, '今日');
       case '昨日': return range(today - DAY, today, '昨日');
@@ -97,7 +97,7 @@
       const rel = relative(s, todayUtc(now));
       if (rel) return rel;
       let r = RE_FISCAL.exec(s);
-      if (r) return fiscalRange(Number(r[1]), r[1] + '年度（4月〜翌3月）');
+      if (r) return fiscalRange(Number(r[1]), r[1] + '年度（' + LQ.Fiscal.span() + '）');
       r = RE_YEAR.exec(s);
       if (r) return range(Date.UTC(Number(r[1]), 0, 1), Date.UTC(Number(r[1]) + 1, 0, 1), r[1] + '年');
       r = RE_MONTH.exec(s);
@@ -121,8 +121,9 @@
     },
 
     /** 今日の日付の文字（計算結果の再利用のキーに使う） */
+    /** 期間の読み替えが変わる目安（今日の日付と年度の始まり。値の準備の再利用に使う） */
     todayKey(now) {
-      return String(todayUtc(now));
+      return String(todayUtc(now)) + '|' + LQ.Fiscal.start();
     }
   };
 

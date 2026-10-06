@@ -180,11 +180,17 @@
         return el;
       };
       const pickBtn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => pickFile() }, [Dom.icon('file-import'), 'ファイルを選ぶ']);
+      const viewBtn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '直前の抽出結果を表で見る（コピー・Excel 出力もできます）',
+        onclick: (e) => {
+          pop.close();
+          cmp.showPrevious(e.currentTarget);
+        } }, [Dom.icon('table-list'), '表で見る']);
       const list = h('div', { class: 'lq-choice-list', role: 'radiogroup' }, [
         choice('previous', 'clock-rotate-left', '直前の抽出結果'),
         choice('file', 'file-excel', '前回出力したファイル（Excel・CSV）')
       ]);
       radios.get('file').el.appendChild(pickBtn);
+      radios.get('previous').el.appendChild(viewBtn);
       const keySelect = h('select', { class: 'lq-select', title: '同じ値の行どうしを比べます（受注番号・顧客 ID など、行ごとに違う値の列）' });
       keySelect.addEventListener('change', () => {
         st.key = keySelect.value || null;
@@ -230,7 +236,9 @@
         const pr = radios.get('previous');
         pr.radio.disabled = !prev;
         pr.el.classList.toggle('is-disabled', !prev);
-        pr.desc.textContent = prev ? prev.name + '・' + fmt(prev.rows.length) + ' 行' : 'まだありません。抽出し直すと、その前の結果と比べられます（① を来月のファイルに差し替えて抽出し直す など）';
+        pr.desc.textContent = prev ? prev.name + '・' + fmt(prev.rows.length) + ' 行（作業セットに保存。ブラウザを閉じても残ります）'
+          : 'まだありません。抽出し直すと、その前の結果と比べられます（① を来月のファイルに差し替えて抽出し直す など）';
+        viewBtn.hidden = !prev;
         radios.get('file').desc.textContent = st.file ? st.file.name + '・' + fmt(st.file.rows.length) + ' 行' : 'LightQuery で前回出力したファイルなら、列の名前がそろいます';
         pickBtn.lastChild.textContent = st.file ? '別のファイルを選ぶ' : 'ファイルを選ぶ';
         const base = baseOf();
@@ -271,6 +279,7 @@
     }
   };
 
+  LQ.ReviewParts = { drillTable: drillTable, countStep: countStep };
   LQ.CondMissBar = CondMissBar;
   LQ.CompareBar = CompareBar;
   LQ.CompareDialog = CompareDialog;

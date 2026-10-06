@@ -1,7 +1,7 @@
 /* =========================================================================
  * LightQuery - lq-pivot.js
  * ピボット：抽出結果（表示中の絞り込みを反映）または ① 元データの全行を、行 × 列 × 値 で集計する。
- *   ・行・列：列の値ごとにまとめる。日付の列は 年・年度（4 月始まり）・四半期・月・日・曜日 でまとめられる
+ *   ・行・列：列の値ごとにまとめる。日付の列は 年・年度・四半期（年度の始まりは LQ.Fiscal）・月・日・曜日 でまとめられる。月の名前の項目は年度の順
  *   ・値：件数・合計・平均・最小・最大・標準偏差（標本 = Excel の STDEV.S）。表示は そのまま／総計・行・列に対する %
  *   ・特別な行「② の行」：② の 1 行＝1 グループ（一致が 0 件の行も出す）。以前の「② の行ごと」の集計
  *   ・結果は「行の項目 × 列の項目 × 値」の形（PivotModel）で持ち、表・出力・内訳・（次の段階の）グラフに使う
@@ -46,8 +46,9 @@
   ];
   const GRAINS = [
     { id: 'year', label: '年' },
-    { id: 'fy', label: '年度（4 月始まり）' },
-    { id: 'quarter', label: '四半期' },
+    /* 年度・四半期は年度の始まり（LQ.Fiscal）に合わせる。呼び方も設定に合わせて変わる */
+    { id: 'fy', get label() { return '年度（' + LQ.Fiscal.start() + ' 月始まり）'; } },
+    { id: 'quarter', get label() { return LQ.Fiscal.start() === 1 ? '四半期' : '四半期（年度）'; } },
     { id: 'month', label: '月' },
     { id: 'day', label: '日' },
     { id: 'weekday', label: '曜日' }
@@ -187,6 +188,14 @@
    * DateGrain：日付 → まとめた項目（表示名と並び順）。日付でない値は「（日付以外）」
    * ------------------------------------------------------------------- */
   const WEEKDAYS = ['月曜', '火曜', '水曜', '木曜', '金曜', '土曜', '日曜'];
+  /** 文字の項目の並び順：月の名前（4月・１０月 など）は年度の順、ほかは文字（五十音・数字は数の順） */
+  const RE_MONTH_NAME = /^(\d{1,2})月$/;
+  function textSort(raw) {
+    const m = RE_MONTH_NAME.exec(String(raw).normalize('NFKC').trim());
+    const month = m ? Number(m[1]) : 0;
+    return month >= 1 && month <= 12 ? -100 + LQ.Fiscal.order(month) : String(raw);
+  }
+
   const DateGrain = {
     /** @returns {{label:string, sort:*}} */
     bucket(raw, grain) {
@@ -200,12 +209,15 @@
       switch (grain) {
         case 'year': return { label: y + '年', sort: y };
         case 'fy': {
-          const fy = m >= 4 ? y : y - 1;
+          const fy = LQ.Fiscal.yearOf(y, m);
           return { label: fy + '年度', sort: fy };
         }
         case 'quarter': {
-          const q = Math.floor((m - 1) / 3) + 1;
-          return { label: y + '年 Q' + q, sort: y * 10 + q };
+          /* 年度の始まりが 1 月なら暦年の四半期、ほかは年度の四半期（4 月始まりなら 4〜6 月が Q1） */
+          const q = Math.floor(LQ.Fiscal.order(m) / 3) + 1;
+          if (LQ.Fiscal.start() === 1) return { label: y + '年 Q' + q, sort: y * 10 + q };
+          const fy = LQ.Fiscal.yearOf(y, m);
+          return { label: fy + '年度 Q' + q, sort: fy * 10 + q };
         }
         case 'month': return { label: y + '/' + pad(m), sort: y * 100 + m };
         case 'weekday': {
@@ -534,7 +546,7 @@
         const raw = view.rawValue(d.def, k);
         if (d.f.grain) return DateGrain.bucket(raw, d.f.grain);
         if (Normalizer.isBlank(raw)) return { label: BLANK_LABEL, sort: Infinity, key: '' };
-        return { label: String(raw), sort: String(raw), key: norm.text(raw) };
+        return { label: String(raw), sort: textSort(raw), key: norm.text(raw) };
       };
       const n = view.length;
       for (let i = 0; i < n; i++) {
@@ -611,7 +623,7 @@
         const raw = source.cell(x, d.idx);
         if (d.f.grain) return DateGrain.bucket(raw, d.f.grain);
         if (Normalizer.isBlank(raw)) return { label: BLANK_LABEL, sort: Infinity, key: '' };
-        return { label: String(raw), sort: String(raw), key: norm.text(raw) };
+        return { label: String(raw), sort: textSort(raw), key: norm.text(raw) };
       };
       let pairs = 0;
       for (let n = 0; n < linked.length; n++) {

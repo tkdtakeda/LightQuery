@@ -366,6 +366,15 @@
       this._afterDatasetChange(role);
     }
 
+    /** 年度の始まり（月）を変える。期間の条件・ピボット・グラフに使うため、結果は未反映になり、ピボット・グラフは作り直す */
+    setFiscalStart(month) {
+      if (month === LQ.Fiscal.start()) return;
+      LQ.Fiscal.set(month);
+      this._emit('rules', { fiscal: true });
+      this._emit('aggregate', { fiscal: true });
+      this._emit('charts', { fiscal: true });
+    }
+
     /** ① / ②（選択中の抽出条件）の縦持ちを置き換える（null で外す）。列が変わるため出力列もそろえ直す */
     setUnpivot(role, def) {
       const ds = this.datasets[role];
@@ -883,7 +892,8 @@
         s ? s.id + ':' + s.version : '',
         this.profiles.enabled().map((p) => [p.id, p.condition ? p.condition.id + ':' + p.condition.version : '', QueryOps.signature(p.query),
           Normalizer.signatureOf(this.rulesFor(p))]),
-        this.effectiveCombine()
+        this.effectiveCombine(),
+        LQ.Fiscal.start()
       ]);
     }
 
