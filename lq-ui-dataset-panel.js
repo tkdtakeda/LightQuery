@@ -663,7 +663,8 @@
  * DerivedSection：読み込みパネルの区画（定義の一覧・状態・編集・削除）
  * DerivedEditor：定義を作る／直すモーダル
  *   読み替え：新しい列の名前・元の列・対応表（直接入力／Excel から貼り付け／ファイル）・対応表にない値の扱い
- *   計算：新しい列の名前・式（列名のボタンで [列名] を入れる）。入力中に式の誤りと先頭の行の計算結果を示す
+ *   計算：新しい列の名前・式（列名のボタンで [列名] を、関数の一覧で関数を入れる）。入力中に、カーソルのある関数の書き方・
+ *         式の誤り・先頭の行の計算結果を示す（関数の一覧と書き方の表示は lq-ui-formula.js）
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -729,7 +730,7 @@
         UI.field('新しい列の名前', this.nameInput),
         this.kind === 'map' ? this._mapFields() : this._calcFields()
       ]);
-      const modal = h('div', { class: 'lq-modal lq-modal--derive', role: 'dialog', 'aria-modal': 'true', 'aria-label': meta.label },
+      const modal = h('div', { class: 'lq-modal lq-modal--derive' + (this.kind === 'calc' ? ' lq-modal--calc' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': meta.label },
         [h('div', { class: 'lq-modal__head' }, [Dom.icon(meta.icon, 'lq-panel__icon'),
           h('h2', { class: 'lq-modal__title', text: (role === 'source' ? '① ' : '② ') + '列を' + meta.label + 'で追加' }),
           UI.iconButton('xmark', '閉じる（Esc）', () => this.close())]),
@@ -920,35 +921,49 @@
 
     _calcFields() {
       const d = this.def;
-      this.exprInput = h('input', { class: 'lq-input lq-expr', type: 'text', value: d.expr, spellcheck: 'false', placeholder: '例：([単価]+[送料])×[数量]÷[係数]' });
+      this.exprInput = h('input', { class: 'lq-input lq-expr', type: 'text', value: d.expr, spellcheck: 'false', placeholder: '例：IF([金額]>=10000, "大口", "通常")' });
+      this.hint = new LQ.FormulaHint();
+      const syncHint = () => this.hint.update(this.exprInput.value, this.exprInput.selectionStart === null ? this.exprInput.value.length : this.exprInput.selectionStart);
       this.exprInput.addEventListener('input', () => {
         d.expr = this.exprInput.value;
+        syncHint();
         this._renderPreview();
         this._validate();
       });
+      ['click', 'keyup', 'focus'].forEach((type) => this.exprInput.addEventListener(type, syncHint));
       const chips = h('div', { class: 'lq-colchips lq-colchips--insert' }, this._names().map((n) => h('button', {
         class: 'lq-colchip', type: 'button', title: '[' + n + '] を式に入れる', onclick: () => this._insert('[' + n + ']')
       }, [Dom.icon('plus'), h('span', { class: 'lq-colchip__name', text: n })])));
-      const ops = h('div', { class: 'lq-row' }, ['+', '-', '×', '÷', '(', ')', '&', 'ROUND(', 'ROUNDUP(', 'ROUNDDOWN('].map((op) =>
-        h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: op + ' を入れる', onclick: () => this._insert(op) }, op)));
+      /* 記号：[入れる文字, 見出し, 入れたあとカーソルを戻す文字数] */
+      const OPS = [['+', '+'], ['-', '−'], ['×', '×'], ['÷', '÷'], ['^', '^'], ['(', '('], [')', ')'], ['&', '&'], [', ', ','],
+        ['=', '='], ['<>', '<>'], ['>=', '>='], ['<=', '<='], ['>', '>'], ['<', '<'], ['""', '"文字"', 1]];
+      const ops = h('div', { class: 'lq-row lq-fxops' }, OPS.map((op) =>
+        h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: op[0] + ' を入れる', onclick: () => this._insert(op[0], op[2] || 0) }, op[1])));
+      const palette = new LQ.FormulaPalette((text, back) => this._insert(text, back));
       this.exprStatus = h('div');
       this.preview = h('div', { class: 'lq-derive__preview' });
       this._renderPreview();
+      syncHint();
       return h('div', { class: 'lq-stack' }, [
-        UI.field('式', h('div', { class: 'lq-stack' }, [this.exprInput, ops, this.exprStatus])),
-        UI.field('列（押すと式に入ります）', chips),
-        h('p', { class: 'lq-field__hint', text: '列名は [ ] で囲みます。+ − ×（*）÷（/）と括弧で計算し、& で文字をつなぎます（例：[姓]&" "&[名]）。ROUND（四捨五入）・ROUNDUP（切り上げ）・ROUNDDOWN（切り捨て）は ROUND([金額]×1.1, 0) のように桁数を指定します。空欄は 0 として計算し、数値として読めない値や 0 での割り算になる行は空欄にします。' }),
-        UI.field('先頭 ' + PREVIEW_ROWS + ' 行の計算結果', this.preview)
+        UI.field('式', h('div', { class: 'lq-stack' }, [this.exprInput, this.hint.el, ops, this.exprStatus])),
+        /* 左：列と計算結果（入れた結果をすぐ見比べる）／右：関数の一覧 */
+        h('div', { class: 'lq-fxgrid' }, [
+          h('div', { class: 'lq-stack' }, [UI.field('列（押すと式に入ります）', chips), UI.field('先頭 ' + PREVIEW_ROWS + ' 行の計算結果', this.preview)]),
+          UI.field('関数（押すと式に入ります）', palette.el)
+        ]),
+        h('p', { class: 'lq-field__hint', text: '空欄は 0 として計算します。数値として読めない値・0 での割り算・計算できない値（日付でない・見つからない など）になる行は空欄にして、件数を一覧に出します（IFERROR で代わりの値にできます）。' })
       ]);
     }
 
-    _insert(text) {
+    /** カーソルの位置に文字を入れる（back：入れたあとカーソルを左へ戻す文字数。"" の間に入るときなど） */
+    _insert(text, back) {
       const input = this.exprInput;
       const start = input.selectionStart === null ? input.value.length : input.selectionStart;
       const end = input.selectionEnd === null ? start : input.selectionEnd;
       input.value = input.value.slice(0, start) + text + input.value.slice(end);
       input.focus();
-      input.setSelectionRange(start + text.length, start + text.length);
+      const caret = start + text.length - (back || 0);
+      input.setSelectionRange(caret, caret);
       input.dispatchEvent(new Event('input'));
     }
 

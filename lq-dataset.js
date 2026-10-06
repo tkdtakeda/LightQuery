@@ -485,223 +485,20 @@
  * 読み込んだ表に、ほかの列から作る列を加える（Dataset が読み込み範囲を当てはめるたびに作り直す）。
  *   読み替え（map）：対応表（元の値 → 読み替え後）で置き換える。前後の空白・全角半角・大文字小文字をそろえて照らし合わせ、
  *                    「*」のワイルドカードも使える。対応表にない値は「元の値のまま／空欄／指定した値」
- *   計算（calc）：[列名] を使った式。+ - × ÷（* /）・括弧・& （文字のつなぎ合わせ）・"文字"・ROUND / ROUNDUP / ROUNDDOWN。
- *                 空欄は 0 として計算（Excel と同じ）。数値として読めない値・0 での割り算の行は空欄にして件数を数える
+ *   計算（calc）：[列名] を使った式（Excel と同じ書き方。演算子・比較・関数は lq-formula.js / lq-formula-funcs.js）。
+ *                 空欄は 0 として計算（Excel と同じ）。数値として読めない値・0 での割り算・計算できない値の行は空欄にして件数を数える
  *   定義：{id, kind:'map'|'calc', name, from, rows:[[元, 後]], unmatched:'keep'|'blank'|'value', value, expr}
  * ========================================================================= */
 (function (global) {
   'use strict';
 
   const LQ = global.LQ;
-  const ValueParser = LQ.ValueParser;
 
   const KINDS = { map: { label: '読み替え', badge: '読替', icon: 'right-left' }, calc: { label: '計算', badge: '計算', icon: 'calculator' } };
   const UNMATCHED = ['keep', 'blank', 'value'];
   const MAX_ROWS = 20000;
   const MAX_DEFS = 30;
-  const FUNCS = {
-    ROUND: (x, n) => roundTo(x, n, (v) => Math.round(v)),
-    ROUNDUP: (x, n) => roundTo(x, n, (v) => Math.ceil(v)),
-    ROUNDDOWN: (x, n) => roundTo(x, n, (v) => Math.floor(v))
-  };
-  /* 式の中の全角の記号・数字を半角にそろえる（[列名] と "文字" の中は変えない） */
-  const SYMBOLS = { '＋': '+', '－': '-', '−': '-', '＊': '*', '×': '*', '／': '/', '÷': '/', '（': '(', '）': ')', '＆': '&',
-    '［': '[', '］': ']', '，': ',', '、': ',', '．': '.', '”': '"', '“': '"', '＂': '"', '　': ' ' };
-
-  /** Excel と同じく、0 から遠ざかる向きに丸める（ROUND）。小数の誤差を抑えるため桁を指数で動かす */
-  function roundTo(x, n, fn) {
-    const digits = Math.trunc(n || 0);
-    const sign = x < 0 ? -1 : 1;
-    const shifted = Number(Math.abs(x) + 'e' + digits);
-    const v = fn(Number(shifted.toPrecision(15)));
-    return sign * Number(v + 'e' + (-digits));
-  }
-
-  class FormulaError extends Error {
-    constructor(message, pos) {
-      super(message);
-      this.pos = pos;
-    }
-  }
-
-  /* ---------------------------------------------------------------------
-   * 式の字句解析と構文解析（再帰下降）。結果は評価関数の木
-   * ------------------------------------------------------------------- */
-  function tokenize(src) {
-    const out = [];
-    let i = 0;
-    while (i < src.length) {
-      let ch = SYMBOLS[src[i]] || src[i];
-      if (/[０-９]/.test(ch)) ch = String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
-      if (ch === ' ' || ch === '\t' || ch === '\n') {
-        i++;
-        continue;
-      }
-      if (ch === '[') {
-        let end = i + 1;
-        while (end < src.length && src[end] !== ']' && src[end] !== '］') end++;
-        if (end >= src.length) throw new FormulaError('「]」で閉じていない列名があります', i);
-        out.push({ t: 'col', v: src.slice(i + 1, end).trim(), pos: i });
-        i = end + 1;
-        continue;
-      }
-      if (ch === '"') {
-        let j = i + 1;
-        while (j < src.length && (SYMBOLS[src[j]] || src[j]) !== '"') j++;
-        if (j >= src.length) throw new FormulaError('「"」で閉じていない文字があります', i);
-        out.push({ t: 'str', v: src.slice(i + 1, j), pos: i });
-        i = j + 1;
-        continue;
-      }
-      if (/[0-9.]/.test(ch)) {
-        let j = i;
-        let num = '';
-        while (j < src.length) {
-          let c = SYMBOLS[src[j]] || src[j];
-          if (/[０-９]/.test(c)) c = String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
-          if (!/[0-9.]/.test(c)) break;
-          num += c;
-          j++;
-        }
-        if (Number.isNaN(Number(num))) throw new FormulaError('数「' + num + '」を読めません', i);
-        out.push({ t: 'num', v: Number(num), pos: i });
-        i = j;
-        continue;
-      }
-      if ('+-*/()&,'.indexOf(ch) !== -1) {
-        out.push({ t: 'op', v: ch, pos: i });
-        i++;
-        continue;
-      }
-      const m = /^[A-Za-zＡ-Ｚａ-ｚ]+/.exec(src.slice(i));
-      if (m) {
-        const name = m[0].normalize('NFKC').toUpperCase();
-        if (!FUNCS[name]) throw new FormulaError('「' + m[0] + '」は使えません（列名は [ ] で囲みます。関数は ROUND・ROUNDUP・ROUNDDOWN）', i);
-        out.push({ t: 'fn', v: name, pos: i });
-        i += m[0].length;
-        continue;
-      }
-      throw new FormulaError('「' + src[i] + '」は使えません（列名は [ ] で囲みます）', i);
-    }
-    return out;
-  }
-
-  /** 値を数として読む（空欄は 0。読めなければ NaN） */
-  function toNumber(v) {
-    if (typeof v === 'number') return v;
-    if (v === '' || v === null || v === undefined || String(v).trim() === '') return 0;
-    return ValueParser.parseNumber(v);
-  }
-
-  function toText(v) {
-    return typeof v === 'number' ? formatNumber(v) : String(v === null || v === undefined ? '' : v);
-  }
-
-  function formatNumber(v) {
-    const r = Number(v.toPrecision(15));
-    return String(Object.is(r, -0) ? 0 : r);
-  }
-
-  const NOT_NUMBER = { code: 'nan' };
-  const DIV_ZERO = { code: 'div0' };
-
-  function num(v) {
-    const n = toNumber(v);
-    if (Number.isNaN(n)) throw NOT_NUMBER;
-    return n;
-  }
-
-  /**
-   * @param {string} expr
-   * @param {Function} columnIndex 列名 → 列番号（なければ -1）
-   * @returns {{evaluate:function(Function):*, columns:string[]}} evaluate(cellOf) は 1 行分の値を返す
-   */
-  function compile(expr, columnIndex) {
-    const tokens = tokenize(String(expr || ''));
-    if (!tokens.length) throw new FormulaError('式を入力してください', 0);
-    let p = 0;
-    const columns = [];
-    const peek = () => tokens[p];
-    const isOp = (v) => peek() && peek().t === 'op' && peek().v === v;
-    const expect = (v) => {
-      if (!isOp(v)) throw new FormulaError('「' + v + '」が必要です', peek() ? peek().pos : String(expr).length);
-      p++;
-    };
-    function primary() {
-      const tk = peek();
-      if (!tk) throw new FormulaError('式が途中で終わっています', String(expr).length);
-      p++;
-      if (tk.t === 'num') return () => tk.v;
-      if (tk.t === 'str') return () => tk.v;
-      if (tk.t === 'col') {
-        const idx = columnIndex(tk.v);
-        if (idx < 0) throw new FormulaError('列「' + tk.v + '」がありません', tk.pos);
-        if (columns.indexOf(tk.v) === -1) columns.push(tk.v);
-        return (cell) => cell(idx);
-      }
-      if (tk.t === 'fn') {
-        expect('(');
-        const args = [concat()];
-        while (isOp(',')) {
-          p++;
-          args.push(concat());
-        }
-        expect(')');
-        if (args.length > 2) throw new FormulaError(tk.v + ' の引数は（値, 桁数）の 2 つまでです', tk.pos);
-        const fn = FUNCS[tk.v];
-        return (cell) => fn(num(args[0](cell)), args[1] ? num(args[1](cell)) : 0);
-      }
-      if (tk.t === 'op' && tk.v === '(') {
-        const inner = concat();
-        expect(')');
-        return inner;
-      }
-      if (tk.t === 'op' && tk.v === '-') {
-        const inner = primary();
-        return (cell) => -num(inner(cell));
-      }
-      throw new FormulaError('「' + tk.v + '」の位置がおかしいです', tk.pos);
-    }
-    function mul() {
-      let left = primary();
-      while (isOp('*') || isOp('/')) {
-        const op = peek().v;
-        p++;
-        const l = left;
-        const r = primary();
-        left = op === '*' ? (cell) => num(l(cell)) * num(r(cell)) : (cell) => {
-          const d = num(r(cell));
-          if (d === 0) throw DIV_ZERO;
-          return num(l(cell)) / d;
-        };
-      }
-      return left;
-    }
-    function add() {
-      let left = mul();
-      while (isOp('+') || isOp('-')) {
-        const op = peek().v;
-        p++;
-        const l = left;
-        const r = mul();
-        left = op === '+' ? (cell) => num(l(cell)) + num(r(cell)) : (cell) => num(l(cell)) - num(r(cell));
-      }
-      return left;
-    }
-    function concat() {
-      let left = add();
-      while (isOp('&')) {
-        p++;
-        const l = left;
-        const r = add();
-        left = (cell) => toText(l(cell)) + toText(r(cell));
-      }
-      return left;
-    }
-    const root = concat();
-    if (p < tokens.length) throw new FormulaError('「' + tokens[p].v + '」の位置がおかしいです', tokens[p].pos);
-    return { evaluate: root, columns: columns };
-  }
+  const Formula = LQ.Formula;
 
   /* ---------------------------------------------------------------------
    * 読み替え
@@ -743,7 +540,7 @@
 
     MAX_ROWS: MAX_ROWS,
     MAX_DEFS: MAX_DEFS,
-    FormulaError: FormulaError,
+    FormulaError: Formula.FormulaError,
 
     /** 保存・JSON から読んだ定義の値の種類を確かめる（使えないものは null） */
     clean(raw) {
@@ -771,8 +568,8 @@
     /** 式の確認（画面の入力中の表示用）。@returns {{ok:boolean, message?:string, pos?:number, columns?:string[]}} */
     check(expr, names) {
       try {
-        const c = compile(expr, (n) => names.indexOf(n));
-        return { ok: true, columns: c.columns };
+        const c = Formula.compile(expr, (n) => names.indexOf(n));
+        return { ok: true, columns: c.columns, functions: c.functions };
       } catch (err) {
         return { ok: false, message: err.message, pos: err.pos };
       }
@@ -820,19 +617,19 @@
       }
       let compiled;
       try {
-        compiled = compile(def.expr, columnIndex);
+        compiled = Formula.compile(def.expr, columnIndex);
       } catch (err) {
         return { values: null, info: { ok: false, message: '式：' + err.message } };
       }
       const values = new Array(rows);
-      const errors = { nan: 0, div0: 0 };
+      const errors = { nan: 0, div0: 0, value: 0 };
       for (let r = 0; r < rows; r++) {
         try {
-          values[r] = toText(compiled.evaluate((c) => cell(r, c)));
+          values[r] = Formula.toText(compiled.evaluate((c) => cell(r, c)));
         } catch (err) {
-          if (err === NOT_NUMBER) errors.nan++;
-          else if (err === DIV_ZERO) errors.div0++;
-          else throw err;
+          const code = Formula.faultCode(err);
+          if (!code) throw err;
+          errors[code]++;
           values[r] = '';
         }
       }
@@ -848,6 +645,7 @@
         const bad = [];
         if (info.errors.nan) bad.push('数値として読めない値 ' + fmt(info.errors.nan) + ' 行');
         if (info.errors.div0) bad.push('0 での割り算 ' + fmt(info.errors.div0) + ' 行');
+        if (info.errors.value) bad.push('計算できない値（日付でない・見つからない など）' + fmt(info.errors.value) + ' 行');
         return fmt(rows) + ' 行を計算' + (bad.length ? '（' + bad.join('・') + 'は空欄）' : '');
       }
       return '読み替え ' + fmt(info.matched) + ' 行' + (info.unmatched ? '・対応表にない値 ' + fmt(info.unmatched) + ' 行' : '');

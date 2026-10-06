@@ -567,6 +567,40 @@
       }
     },
     {
+      id: 'functions',
+      icon: 'square-root-variable',
+      title: '列の追加：関数（IF・TEXT・日付・文字）で区分や年度を作る',
+      desc: '① に関数で列を加え、ピボットで集計します。区分＝IFS([金額]>=30000,"大口",[金額]>=10000,"中口",TRUE,"小口")、年度＝IF(MONTH([受注日])>=4, YEAR([受注日]), YEAR([受注日])-1)&"年度"、曜日＝TEXT([受注日],"aaa")、締め日＝EOMONTH([受注日],0)、分類記号＝LEFT([商品コード],1)、備考＝IF(ISBLANK([備考]),"なし","あり")。① の読み込みパネルの「列の追加」で式を直すと、書き方と計算結果をその場で確かめられます。',
+      tags: ['関数', 'IF', 'TEXT', '日付', 'ピボット'],
+      build() {
+        const calc = (id, name, expr) => ({ id: id, kind: 'calc', name: name, expr: expr });
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1717) },
+          profiles: [],
+          derived: {
+            source: [
+              calc('smp-fx-size', '区分', 'IFS([金額]>=30000, "大口", [金額]>=10000, "中口", TRUE, "小口")'),
+              calc('smp-fx-fy', '年度', 'IF(MONTH([受注日])>=4, YEAR([受注日]), YEAR([受注日])-1)&"年度"'),
+              calc('smp-fx-week', '曜日', 'TEXT([受注日], "aaa")'),
+              calc('smp-fx-close', '締め日', 'EOMONTH([受注日], 0)'),
+              calc('smp-fx-cls', '分類記号', 'LEFT([商品コード], 1)'),
+              calc('smp-fx-note', '備考の有無', 'IF(ISBLANK([備考]), "なし", "あり")')
+            ],
+            condition: []
+          },
+          output: ['s:受注番号', 's:受注日', 's:年度', 's:締め日', 's:曜日', 's:商品コード', 's:分類記号', 's:金額', 's:区分', 's:備考', 's:備考の有無'],
+          aggregate: {
+            target: 'source',
+            rows: [{ key: 's:区分' }],
+            cols: [{ key: 's:年度' }],
+            values: [{ fn: 'count' }],
+            sort: { by: 'value', dir: 'desc', value: 0 }
+          },
+          tab: 'source'
+        };
+      }
+    },
+    {
       id: 'criteria',
       icon: 'greater-than-equal',
       title: '② の値に >= や <> を書いて比べる（Excel の COUNTIF と同じ書き方）',
@@ -643,7 +677,7 @@
     { label: '複数の抽出条件', icon: 'arrow-down-1-9', ids: ['priority', 'independent', 'rules'] },
     { label: 'ピボット', icon: 'table-cells', ids: ['aggregate', 'condagg', 'pivot'] },
     { label: 'グラフ', icon: 'chart-column', ids: ['chart-trend', 'chart-dist', 'chart-scatter', 'chart-pivot'] },
-    { label: '前処理（縦に結合・列の追加・重複の削除）', icon: 'layer-group', ids: ['union', 'derive'] },
+    { label: '前処理（縦に結合・列の追加・関数・重複の削除）', icon: 'layer-group', ids: ['union', 'derive', 'functions'] },
     { label: 'その他（速度の確認）', icon: 'ellipsis', ids: ['perf'] }
   ];
 

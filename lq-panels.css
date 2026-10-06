@@ -1067,3 +1067,118 @@
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
+
+/* ---------- 計算の式：関数の一覧・書き方の表示 ---------- */
+.lq-modal--calc {
+  width: var(--w-modal);
+}
+
+/* 列（左）と関数（右）を並べ、どちらも見ながら式を組み立てる */
+.lq-fxgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.lq-fxgrid .lq-colchips--insert {
+  max-height: var(--h-fxcols);
+  overflow-y: auto;
+}
+
+.lq-fxops .lq-btn {
+  min-width: var(--h-control-sm);
+  font-family: var(--font-mono);
+}
+
+.lq-fxpalette {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lq-fxpalette .lq-seg.is-dim {
+  opacity: var(--opacity-sub);
+}
+
+.lq-fxlist {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--h-colpick);
+  overflow-y: auto;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.lq-fxitem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: var(--border-width) solid var(--color-border-soft);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lq-fxitem:hover,
+.lq-fxitem:focus-visible {
+  background: var(--color-primary-faint);
+}
+
+.lq-fxitem__name {
+  flex: 0 0 auto;
+  min-width: var(--w-fxname);
+  font-family: var(--font-mono);
+  font-weight: var(--fw-bold);
+  color: var(--color-primary-strong);
+}
+
+.lq-fxitem__desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-sub);
+}
+
+/* カーソルのある関数の書き方（関数の外では書き方の要点） */
+.lq-fxhint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
+}
+
+.lq-fxhint.is-fn {
+  background: var(--color-primary-faint);
+  color: var(--color-text);
+}
+
+.lq-fxhint__sig {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+}
+
+.lq-fxhint__arg {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--color-mark);
+  font-weight: var(--fw-bold);
+}
+
+.lq-fxhint__text {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.lq-fxhint__example code {
+  font-family: var(--font-mono);
+}
