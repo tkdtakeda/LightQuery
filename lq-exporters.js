@@ -12,7 +12,7 @@
 
   const FORMATS = [
     { id: 'xlsx', label: 'Excel ブック（.xlsx）', ext: 'xlsx', icon: 'file-excel', recommended: true, needsLibrary: true,
-      note: '文字化けせず、先頭の 0 や長い数字もそのまま残ります。抽出条件ごとのシートに分けることもでき、「抽出条件」シートに根拠を記録します。' },
+      note: '文字化けせず、先頭の 0 や長い数字もそのまま残ります。抽出条件ごとのシートに分けることもでき、「抽出条件」シートに抽出の内容を記録します。' },
     { id: 'csv-utf8-bom', label: 'CSV（UTF-8・BOM 付き）', ext: 'csv', icon: 'file-csv', protectable: true,
       note: 'Excel 2016 以降でダブルクリックして開いても文字化けしません。' },
     { id: 'csv-sjis', label: 'CSV（Shift_JIS）', ext: 'csv', icon: 'file-csv', protectable: true,

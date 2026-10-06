@@ -82,7 +82,7 @@
         type: 'button',
         title: '表の見た目：列の間隔・行の間隔・文字サイズ（各 3 段階）',
         onclick: (e) => this.open(e.currentTarget)
-      }, [Dom.icon('text-height'), '表示']);
+      }, [Dom.icon('text-height'), '表の見た目']);
       return this._button;
     }
 
@@ -223,7 +223,7 @@
   const BADGE = {
     source: '<span class="lq-badge lq-badge--src">①</span>',
     condition: '<span class="lq-badge lq-badge--cond">②</span>',
-    meta: '<span class="lq-badge lq-badge--meta">根拠</span>'
+    meta: '<span class="lq-badge lq-badge--meta">情報</span>'
   };
   const TITLE_LENGTH = 16;
 

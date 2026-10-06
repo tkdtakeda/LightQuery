@@ -15,8 +15,8 @@
 
   const GROUPS = [
     { prefix: 's:', label: '① 元データ', short: '元データ', badge: ['src', '①'] },
-    { prefix: 'c:', label: '② 条件データ', short: '条件データ', badge: ['cond', '②'] },
-    { prefix: 'm:', label: '根拠（抽出条件・行番号・一致数）', short: '抽出条件・行番号など', badge: ['meta', '根拠'] }
+    { prefix: 'c:', label: '② 照合表', short: '照合表', badge: ['cond', '②'] },
+    { prefix: 'm:', label: '情報（抽出条件・行番号・一致数）', short: '抽出条件・行番号など', badge: ['meta', '情報'] }
   ];
 
   class OutputPanel {
@@ -36,13 +36,13 @@
       this.list = h('ul', { class: 'lq-collist' });
       this._shownKeys = [];
       this.bulkCount = h('span', { class: 'lq-colbulk__count lq-num' });
-      this.allOn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(true) }, [Dom.icon('square-check'), 'すべて ON']);
-      this.allOff = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(false) }, [Dom.icon('square'), 'すべて OFF']);
+      this.allOn = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(true) }, [Dom.icon('square-check'), 'すべて出力']);
+      this.allOff = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this._bulk(false) }, [Dom.icon('square'), 'すべて出力しない']);
       this.bulk = h('div', { class: 'lq-colbulk' }, [this.bulkCount, h('span', { class: 'lq-colbulk__actions' }, [this.allOn, this.allOff])]);
       this.empty = h('p', { class: 'lq-field__hint', text: '① または ② を読み込むと、ここに列が表示されます。' });
       this.memo = h('p', { class: 'lq-field__hint lq-colmemo' });
-      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '覚えている並びを消し、① の列を表示・② の列を非表示の初期状態に戻す（元に戻せます）',
-        onclick: () => this._reset() }, [Dom.icon('rotate-left'), '初期状態に戻す']);
+      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '覚えている並びを消し、① の列を表示・② の列を非表示の初期設定に戻す（元に戻せます）',
+        onclick: () => this._reset() }, [Dom.icon('rotate-left'), '初期設定に戻す']);
       this.el = h('div', {}, [
         UI.section('まとめて切り替え', [groups]),
         UI.section('列の一覧（上から順に表示・出力）', [
@@ -51,7 +51,7 @@
           this.bulk,
           this.list,
           this.memo,
-          UI.note('tip', '列が多いときは「すべて OFF」にしてから、必要な列だけチェックを入れると早く選べます。絞り込み中は、一覧に出ている列だけが対象です。'),
+          UI.note('tip', '列が多いときは「すべて出力しない」にしてから、必要な列だけチェックを入れると早く選べます。絞り込み中は、一覧に出ている列だけが対象です。'),
           UI.note('tip', '左端のつまみをドラッグして並べ替えます。表の見出しをドラッグしても同じ順序が変わります。チェックボックスを選んで Alt+↑／Alt+↓ でも移動できます。'),
           UI.note('info', '並びと表示は列の名前でこのブラウザに記憶し、次に同じ名前の列を読み込んだときも使います（① にサンプルを表示している間の変更は記憶しません）。')
         ], [reset])
@@ -67,8 +67,8 @@
       return h('div', { class: 'lq-colgroup' }, [
         h('div', { class: 'lq-colgroup__head' }, [UI.badge(g.badge[0], g.badge[1]), g.short, count]),
         h('div', { class: 'lq-colgroup__actions' }, [
-          h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: g.label + 'の列をすべて表示', onclick: () => this._group(g.prefix, true) }, [Dom.icon('eye'), '表示']),
-          h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: g.label + 'の列をすべて非表示', onclick: () => this._group(g.prefix, false) }, [Dom.icon('eye-slash'), '隠す'])
+          h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: g.label + 'の列をすべて出力する', onclick: () => this._group(g.prefix, true) }, [Dom.icon('eye'), '出力']),
+          h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: g.label + 'の列をすべて出力しない', onclick: () => this._group(g.prefix, false) }, [Dom.icon('eye-slash'), '出力しない'])
         ])
       ]);
     }
@@ -88,23 +88,23 @@
       const scope = this.filter.value.trim() ? '絞り込み中の ' : '';
       this.ctx.toasts.show({
         type: 'success',
-        title: scope + keys.length + ' 列を' + (visible ? '表示' : '非表示') + 'にしました',
+        title: scope + keys.length + ' 列を' + (visible ? '出力する' : '出力しない') + 'ようにしました',
         message: visible ? '不要な列はチェックを外してください。' : '出力したい列にチェックを入れてください。',
-        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '出力列の表示を元に戻しました') }]
+        actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '出力列の設定を元に戻しました') }]
       });
     }
 
-    /** 「すべて ON／OFF」の件数と、押しても変わらないときの無効化・理由 */
+    /** 「すべて出力／出力しない」の件数と、押しても変わらないときの無効化・理由 */
     _renderBulk(shown) {
       const on = shown.filter((c) => c.visible).length;
       const filtered = !!this.filter.value.trim();
       this.bulk.hidden = !shown.length;
-      this.bulkCount.textContent = (filtered ? '絞り込み中の ' + shown.length + ' 列のうち' : '全 ' + shown.length + ' 列のうち') + ' 表示 ' + on + ' 列';
+      this.bulkCount.textContent = (filtered ? '絞り込み中の ' + shown.length + ' 列のうち' : '全 ' + shown.length + ' 列のうち') + ' 出力 ' + on + ' 列';
       this.allOn.disabled = on === shown.length;
       this.allOff.disabled = on === 0;
       const scope = filtered ? '一覧に出ている ' + shown.length + ' 列' : 'すべての列（' + shown.length + ' 列）';
-      this.allOn.title = this.allOn.disabled ? '対象の列はすべて表示中です' : scope + 'を表示にする（元に戻せます）';
-      this.allOff.title = this.allOff.disabled ? '対象の列はすべて非表示です' : scope + 'を非表示にする（元に戻せます）';
+      this.allOn.title = this.allOn.disabled ? '対象の列はすべて出力します' : scope + 'を出力する（元に戻せます）';
+      this.allOff.title = this.allOff.disabled ? '対象の列はすべて出力しません' : scope + 'を出力しない（元に戻せます）';
     }
 
     _reset() {
@@ -114,8 +114,8 @@
       Flash.el(this.list);
       this.ctx.toasts.show({
         type: 'success',
-        title: '出力列を初期状態に戻しました',
-        message: '① の列を表示・② の列を非表示にし、覚えていた並び（今は使っていない列の分も）を消しました。',
+        title: '出力列を初期設定に戻しました',
+        message: '① の列を出力・② の列を出力しないにし、覚えていた並び（今は使っていない列の分も）を消しました。',
         actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, '出力列の並びを元に戻しました') }]
       });
     }
@@ -180,7 +180,7 @@
         const name = LQ.ResultView.nameOf(col.key);
         const reason = this._unavailableReason(col.key);
         const owners = this._owners(col.key);
-        const check = h('input', { type: 'checkbox', checked: col.visible, title: col.visible ? '表示中（外すと隠します）' : '非表示（入れると表示します）' });
+        const check = h('input', { type: 'checkbox', checked: col.visible, title: col.visible ? '出力する（外すと出力しません）' : '出力しない（入れると出力します）' });
         check.addEventListener('change', () => {
           this.state.setColumnVisible(col.key, check.checked);
           const item = this.list.querySelector('[data-key="' + CSS.escape(col.key) + '"]');

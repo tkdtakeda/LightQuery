@@ -1,8 +1,8 @@
 /* =========================================================================
  * LightQuery - lq-ui-main.js
- * メイン領域：タブ（抽出結果 / ピボット / グラフ / ① / ②）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
+ * メイン領域：タブ（① / ② ┃ 抽出結果 / ピボット / グラフ）、要約と注意帯、抽出条件ごとの絞り込み、表、ページ送り、
  *   空の状態（はじめに・次の一歩）。② のタブは選択中の抽出条件の ② を表示し、
- *   上の切替ボタン（CondTableBar）で表示する条件データ（＝選択中の抽出条件）を切り替える。
+ *   上の切替ボタン（CondTableBar）で表示する照合表（＝選択中の抽出条件）を切り替える。
  *   注意帯は描き直すたびに作るため、ボタンのフォーカスは data-focus-key で戻す。
  * ========================================================================= */
 (function (global) {
@@ -20,7 +20,7 @@
   const NUMERIC_RATIO = 0.8;
   const ROLE_TEXT = {
     source: { title: '① 元データ', icon: 'table', badge: ['src', '①'], label: '元データ', sub: '抽出・集計する側のデータ（Excel・CSV）' },
-    condition: { title: '② 条件データ', icon: 'list-check', badge: ['cond', '②'], label: '条件データ', sub: '条件の一覧（1 行＝1 セットの条件）' }
+    condition: { title: '② 照合表', icon: 'list-check', badge: ['cond', '②'], label: '照合表', sub: '照らし合わせる表（1 行＝1 セットの条件）' }
   };
 
   class MainView {
@@ -196,15 +196,17 @@
     _renderTabs() {
       const s = this.state;
       const res = s.result;
+      /* 左のアイコン列・ステップと同じ処理の順（入力の ① ② ┃ 結果の 抽出結果・ピボット・グラフ）に並べる */
       const specs = [
-        { id: 'result', icon: 'filter', label: '抽出結果', count: res ? Util.formatInt(res.length) + ' 行' : '未実行', stale: s.isStale() },
-        { id: 'aggregate', icon: 'table-cells', label: 'ピボット', count: this.aggregate.tabCount(), stale: !!res && s.isStale() && this.aggregate.target() === 'result' },
-        { id: 'chart', icon: 'chart-column', label: 'グラフ', count: this.chart.tabCount(), stale: !!res && s.isStale() && this.chart.target(this.chart.chart()) === 'result' && LQ.ChartSettings.isConfigured(this.chart.chart()) },
         { id: 'source', role: 'source' },
-        { id: 'condition', role: 'condition' }
+        { id: 'condition', role: 'condition' },
+        { id: 'result', icon: 'table-list', label: '抽出結果', count: res ? Util.formatInt(res.length) + ' 行' : '未実行', stale: s.isStale(), groupStart: true },
+        { id: 'aggregate', icon: 'table-cells', label: 'ピボット', count: this.aggregate.tabCount(), stale: !!res && s.isStale() && this.aggregate.target() === 'result' },
+        { id: 'chart', icon: 'chart-column', label: 'グラフ', count: this.chart.tabCount(), stale: !!res && s.isStale() && this.chart.target(this.chart.chart()) === 'result' && LQ.ChartSettings.isConfigured(this.chart.chart()) }
       ];
       Dom.clear(this.tabs);
       specs.forEach((t) => {
+        if (t.groupStart) this.tabs.appendChild(h('span', { class: 'lq-tabs__sep', 'aria-hidden': 'true' }));
         let lead;
         let label = t.label;
         let count = t.count;
@@ -216,11 +218,11 @@
           lead = UI.badge(r.badge[0], r.badge[1]);
           label = r.label;
           count = ds ? Util.formatInt(ds.rowCount) + ' 行' : '未読み込み';
-          /* 条件データが複数なら件数を出す（どれを表示するかはタブの中の切替ボタンで選ぶ） */
+          /* 照合表が複数なら件数を出す（どれを表示するかはタブの中の切替ボタンで選ぶ） */
           const tables = t.role === 'condition' ? LQ.CondTableBar.count(s) : 0;
           if (tables > 1) {
             count = tables + ' 件';
-            title = '条件データ ' + tables + ' 件（表示中：' + s.activeProfile.name + '）';
+            title = '照合表 ' + tables + ' 件（表示中：' + s.activeProfile.name + '）';
           }
           /* サンプル表示中・絞り込み中は、タブにも印を出す（ファイル名と行数はタブの中の要約に出す） */
           if (ds) {
@@ -282,7 +284,7 @@
       }
       if (!view.length && view.filter !== null) {
         const assign = view.result.stats.mode === 'assign';
-        this.grid.showEmpty(this._emptyMessage('filter', 'この抽出条件の行はありません', view.filter < 0
+        this.grid.showEmpty(this._emptyMessage('code-compare', 'この抽出条件の行はありません', view.filter < 0
           ? 'どの抽出条件にも該当しなかった行はありません。'
           : '「' + view.partName(view.filter) + '」の行はありません。' + (assign ? '条件に一致する行がないか、一致した行がすべて優先順位が上の抽出条件に入っています。' : '条件に一致する行がありません。'),
         h('button', { class: 'lq-btn', type: 'button', onclick: () => s.setFilter(null) }, [Dom.icon('list'), 'すべての行を表示'])));
@@ -295,7 +297,7 @@
         mode: 'result',
         scrollKey: 'result:' + paging.page + ':' + view.result.id + ':' + JSON.stringify(sort),
         columns: defs.map((d) => ({ key: d.key, label: d.name, kind: d.kind, sortDir: sort && sort.key === d.key ? sort.dir : null })),
-        rows: rows.map((r) => ({ head: { text: Util.formatInt(r.index + 1), index: r.index, action: 'explain', title: 'この行の判定根拠を表示' }, cells: r.cells })),
+        rows: rows.map((r) => ({ head: { text: Util.formatInt(r.index + 1), index: r.index, action: 'explain', title: 'この行の判定の根拠を表示' }, cells: r.cells })),
         numeric: this._numericColumns(rows, defs.length)
       });
       this.gridwrap.classList.toggle('is-stale', s.isStale());
@@ -313,6 +315,9 @@
         this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '並べ替えを解除して元の順に戻す', onclick: () => s.setSort(null) },
           [Dom.icon('xmark'), '解除']));
       }
+      /* 各タブの右に、そのタブの設定を開くボタンを同じ位置・同じ形で置く（ピボットの設定・グラフの設定・読み込みの設定と同じ） */
+      this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '抽出条件（① と ② の比べ方・出力する行）を設定する',
+        onclick: () => s.togglePanel('query') }, [Dom.icon('sliders'), '抽出条件の設定']));
       const counts = s.columnCounts();
       const total = counts['s:'].total + counts['c:'].total + counts['m:'].total;
       this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '表示・出力する列を選ぶ／並べ替える', onclick: () => s.togglePanel('output') },
@@ -324,7 +329,7 @@
       const st = res.stats;
       const fmt = Util.formatInt;
       const detailsBtn = h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '抽出条件・照合ルール・処理の内容を確認する',
-        onclick: (e) => this.app.resultDialogs.openResultDetails(e.currentTarget) }, [Dom.icon('magnifying-glass'), '根拠を見る']);
+        onclick: (e) => this.app.resultDialogs.openResultDetails(e.currentTarget) }, [Dom.icon('magnifying-glass'), '抽出の内容']);
       const time = h('span', { class: 'lq-summary__item lq-num' }, [Dom.icon('clock-rotate-left'), Util.formatSeconds(st.elapsedMs)]);
       const shown = h('span', { class: 'lq-summary__item lq-num', text: '表示 ' + fmt(view.length) + ' 行 × ' + defs.length + ' 列' });
       let items;
@@ -375,7 +380,7 @@
           class: 'lq-fchip' + (active ? ' is-active' : '') + (value === -1 ? ' lq-fchip--none' : ''), type: 'button', title: title,
           'aria-pressed': active ? 'true' : 'false', dataset: { focusKey: 'filter:' + value },
           onclick: () => s.setFilter(value === null ? null : (value < 0 ? LQ.AppState.UNMATCHED_FILTER : view.parts[value].id))
-        }, [rank ? h('span', { class: 'lq-fchip__rank', text: rank }) : null, h('span', { class: 'lq-fchip__label', text: label }),
+        }, [rank ? UI.rank(rank) : null, h('span', { class: 'lq-fchip__label', text: label }),
           h('span', { class: 'lq-fchip__count lq-num', text: fmt(count) })]);
       };
       const items = [chip(null, 'すべて', counts.total, '全 ' + fmt(counts.total) + ' 行を表示')];
@@ -387,7 +392,7 @@
       });
       if (counts.unmatched || view.result.stats.includeUnmatched) items.push(chip(-1, '該当なし', counts.unmatched, 'どの抽出条件にも該当しなかった行だけを表示'));
       this.info.appendChild(h('div', { class: 'lq-filterbar', role: 'toolbar', 'aria-label': '抽出条件で絞り込み' },
-        [h('span', { class: 'lq-filterbar__label' }, [Dom.icon('filter'), '表示する行'])].concat(items)));
+        [h('span', { class: 'lq-filterbar__label' }, [Dom.icon('list-ul'), '表示する行'])].concat(items)));
     }
 
     _renderWelcome() {
@@ -421,16 +426,16 @@
               open();
             }
           }
-        }, [Dom.icon('circle-check', 'lq-drop__icon'), h('div', { class: 'lq-drop__title', text: '② 条件データ（読み込み済み）' }),
+        }, [Dom.icon('circle-check', 'lq-drop__icon'), h('div', { class: 'lq-drop__title', text: '② 照合表（読み込み済み）' }),
           h('div', { class: 'lq-drop__sub', text: '抽出条件 ' + s.profiles.length + ' 件のうち ' + loaded + ' 件分を読み込み済みです' }),
           h('div', { class: 'lq-drop__sub', text: 'クリックで抽出条件を確認・変更。あとは ① 元データを読み込めば抽出できます' })]);
       };
       const sampleBtn = h('button', { class: 'lq-btn', type: 'button', onclick: () => this.app.dialogs.openSamples(sampleBtn, 'bottom-start') }, [Dom.icon('flask'), 'サンプルで試す']);
       const aggNote = h('p', { class: 'lq-empty__lead' }, [Dom.icon('calculator'), ' ② を使わずに ',
-        h('strong', { text: '① だけでピボット' }), 'を作ることもできます（① を読み込み、「ピボット」タブで設定します）。']);
+        h('strong', { text: '① だけでピボット・グラフ' }), 'を作ることもできます（① を読み込み、「ピボット」「グラフ」タブで設定します）。']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: '① と ② を読み込み、条件に一致する行を取り出します' }),
-        h('p', { class: 'lq-empty__lead', text: '① 元データの各行を、② 条件データの各行（1 行＝1 セットの条件）と照らし合わせ、一致した行を表示・出力します。② は抽出条件ごとに持てるので、列の構成が違う表を複数使い、名前と優先順位で振り分けることもできます。Excel（.xlsx / .xls）と CSV に対応しています。' }),
+        h('p', { class: 'lq-empty__lead', text: '① 元データの各行を、② 照合表の各行（1 行＝1 セットの条件）と照らし合わせ、一致した行を表示・出力します。② は抽出条件ごとに持てるので、列の構成が違う表を複数使い、名前と優先順位で振り分けることもできます。Excel（.xlsx .xlsm .xls .xlsb .ods）・CSV・TSV・TXT と、Excel からの貼り付けに対応しています。' }),
         h('div', { class: 'lq-empty__cards' }, [card('source'), condCard()]),
         aggNote,
         h('div', { class: 'lq-empty__links' }, [sampleBtn,
@@ -466,11 +471,16 @@
           s.setTab('aggregate');
           s.openPanel('aggregate');
         } }, [Dom.icon('table-cells'), '② を使わずに ① だけでピボットを作る']);
+      const chartOnly = h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', title: 'グラフタブに切り替え、グラフの設定を開きます（① の全行で作ります）',
+        onclick: () => {
+          s.setTab('chart');
+          s.openPanel('chart');
+        } }, [Dom.icon('chart-column'), '① だけでグラフを作る']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: 'あと少しで抽出できます' }),
         list,
         h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。各段階のカードを押すと、その設定を開けます。' }),
-        h('div', { class: 'lq-empty__links' }, [aggOnly])
+        h('div', { class: 'lq-empty__links' }, [aggOnly, chartOnly])
       ]));
     }
 
@@ -490,9 +500,9 @@
       const condNeeded = !hasConds || v.needsCondition || !v.ok;
       return [
         { icon: 'table', title: '① 元データ', panel: 'source', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
-        { icon: 'list-check', title: '② 条件データ', panel: 'condition', state: cond ? 'done' : (condNeeded ? 'current' : 'done'),
+        { icon: 'list-check', title: '② 照合表', panel: 'condition', state: cond ? 'done' : (condNeeded ? 'current' : 'done'),
           text: cond ? cond.name + '（' + Util.formatInt(cond.rowCount) + ' 行）' : (condNeeded ? '読み込んでください（固定値だけの条件なら不要）' : '固定値だけの条件のため不要') },
-        { icon: 'filter', title: '条件', panel: 'query', state: hasConds && v.ok ? 'done' : ((cond || !condNeeded) ? 'current' : 'todo'),
+        { icon: 'code-compare', title: '抽出条件', panel: 'query', state: hasConds && v.ok ? 'done' : ((cond || !condNeeded) ? 'current' : 'todo'),
           text: hasConds ? (v.ok ? LQ.Logic.toJapanese(v.ast) : v.errors[0].message) : '① と ② の列の対応を決めます' },
         this._runStep(hasConds && v.ok)
       ];
@@ -510,9 +520,9 @@
       const first = all.first;
       return [
         { icon: 'table', title: '① 元データ', panel: 'source', state: 'done', text: src.name + '（' + Util.formatInt(src.rowCount) + ' 行）' },
-        { icon: 'list-check', title: '② 条件データ', panel: 'condition', state: loaded === need.length ? 'done' : 'current',
+        { icon: 'list-check', title: '② 照合表', panel: 'condition', state: loaded === need.length ? 'done' : 'current',
           text: need.length ? '読み込み済み ' + loaded + ' / ' + need.length + ' 件（抽出条件ごと）' : '固定値だけの抽出条件のため不要' },
-        { icon: 'filter', title: '抽出条件', panel: 'query', state: all.ok ? 'done' : 'current',
+        { icon: 'code-compare', title: '抽出条件', panel: 'query', state: all.ok ? 'done' : 'current',
           text: all.ok ? '有効 ' + enabled.length + ' 件・' + mode.short : (first ? '「' + first.profile.name + '」：' + first.issue.message : 'すべて無効です') },
         this._runStep(all.ok)
       ];
@@ -545,7 +555,7 @@
       ], raw, (value) => s.setRaw(role, value));
       this.tools.appendChild(seg.el);
       /* そのパネルを開いているときは押しても閉じるだけなので出さない（狭い画面でタブの行が折り返さないようにする） */
-      if (s.panel !== role) this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => s.togglePanel(role) }, [Dom.icon('sliders'), '読み込み設定']));
+      if (s.panel !== role) this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '読み込みの設定（ファイル・読み込み範囲・列の追加・絞り込み）を開く', onclick: () => s.togglePanel(role) }, [Dom.icon('sliders'), '読み込みの設定']));
       this._renderDatasetSummary(ds, raw);
       const filterBar = LQ.FilterBar.render(this.ctx, ds, role);
       if (filterBar) {
@@ -581,7 +591,8 @@
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
       if (raw) {
         this.info.appendChild(UI.note('tip', h('span', { title: '行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列の一覧（値で絞り込む・出力する）が開きます（出力しない列は薄く表示）。' },
-          '元のシートのまま表示中。行番号・列記号で範囲を、列名で絞り込み・出力を指定できます。')));
+          '元のシートのまま表示中。行番号・列記号で範囲を、列名で絞り込み・出力を指定できます。' +
+          (this.state.panel === ds.role ? '（パネルを閉じると元の表示に戻ります）' : ''))));
       }
       if (!ds.rowCount) this.info.appendChild(UI.note('warn', 'データ行がありません。「読み込み範囲」でヘッダー行・データ開始行を確認してください。'));
     }

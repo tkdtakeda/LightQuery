@@ -158,7 +158,7 @@
       const match = LQ.QueryEngine.MATCH_MODES.find((m) => m.id === st.matchMode);
       const lines = [];
       if (head) lines.push(['抽出条件', head]);
-      if (part.condition) lines.push(['② 条件データ', this._describeDataset(part.condition)]);
+      if (part.condition) lines.push(['② 照合表', this._describeDataset(part.condition)]);
       snap.conditions.forEach((text, i) => lines.push([i === 0 ? '条件' : '', text]));
       lines.push(['組み合わせ', snap.exprJa]);
       lines.push(['出力する行', join.label + '（' + join.note + '）']);
@@ -408,7 +408,7 @@
      * 表（ファイル・シート）から作る
      * ================================================================= */
 
-    /** 条件データ（表）を選んで一覧の最後に加える（② のタブ・パネルから）。上限に達していればファイルを選ぶ前に知らせる */
+    /** 照合表（表）を選んで一覧の最後に加える（② タブの「表から作成」から）。上限に達していればファイルを選ぶ前に知らせる */
     addTables() {
       const s = this.state;
       if (!s.activeProfile.isBlank() && !s.profiles.canAdd()) {
@@ -422,7 +422,7 @@
      * 選んだ表ごとに抽出条件を作る。選択中が空の抽出条件なら 1 件目はそこに入れ、
      * 残りは選択中の下（append のときは一覧の最後）に並べる。
      * @param {Array<{dataset:LQ.Dataset, name:string}>} tables
-     * @param {{append?:boolean}} opts append：② のタブ・パネルの「条件データを追加」から（画面はそのまま、追加した表を表示する）
+     * @param {{append?:boolean}} opts append：② タブの「表から作成」から（画面はそのまま、追加した表を表示する）
      */
     createFromTables(tables, opts) {
       const s = this.state;
@@ -453,14 +453,14 @@
       }
       const list = made.map((p) => '「' + p.name + '」（' + s.profiles.rank(p.id) + ' 位）').join('・');
       const limit = skipped ? '上限（' + LQ.Profile.MAX + ' 件）のため ' + skipped + ' 件は作れませんでした。' : '';
-      const undo = this._undo(snap, (append ? '条件データを追加する' : '表から作る') + '前の一覧に戻しました');
+      const undo = this._undo(snap, '表から作る' + '前の一覧に戻しました');
       if (append) {
         s.setTab('condition');
         this.toasts.show({
           type: 'success',
-          title: '条件データを ' + made.length + ' 件追加しました',
-          message: list + '。「条件を設定」で、① のどの列と比べるかを決めてください。' + limit,
-          actions: [{ label: '条件を設定', icon: 'filter', primary: true, onClick: () => s.openPanel('query') }].concat(undo)
+          title: '照合表から抽出条件を ' + made.length + ' 件作りました',
+          message: list + '。「抽出条件を開く」で、① のどの列と比べるかを決めてください。' + limit,
+          actions: [{ label: '抽出条件を開く', icon: 'code-compare', primary: true, onClick: () => s.openPanel('query') }].concat(undo)
         });
         return;
       }
@@ -502,7 +502,7 @@
         type: 'success',
         title: '抽出条件を書き出しました',
         message: name + '（' + count + ' 件・' + (opts.withData ? '② のデータを含む' : '② はファイル名のみ') + '・' + Util.formatBytes(blob.size) +
-          '）。「読込」またはドラッグ＆ドロップで再利用できます。'
+          '）。「読み込み」またはドラッグ＆ドロップで再利用できます。'
       });
     }
 
@@ -654,7 +654,7 @@
       this.toasts.show({
         type: 'success',
         title: 'サンプル「' + built.title + '」を読み込みました',
-        message: '右上の「' + this.app.cta().label + '」で結果を確認できます。' +
+        message: '右上の青いボタンで結果を確認できます。' +
           (stashed ? '自分の抽出条件 ' + stashed + ' 件は退避しました（「サンプルデータのみクリア」で戻ります）。' : ''),
         actions: this._undo(snap, 'サンプルを読み込む前に戻しました')
       });
@@ -696,7 +696,7 @@
   const Async = LQ.Async;
   const fmt = Util.formatInt;
 
-  const ROLE_LABEL = { source: '① 元データ', condition: '② 条件データ' };
+  const ROLE_LABEL = { source: '① 元データ', condition: '② 照合表' };
   /* 読み込みの最後の段階（読み込んだ表を画面の表にする。割合は測れない） */
   const TABLE_STEP = { id: 'table', label: '表の準備', weight: 1 };
   const FILE_ACCEPT = '.xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt';
@@ -872,9 +872,10 @@
       const chart = tab.chart();
       if (chart && tab.target(chart) === 'result' && s.isStale()) return null;
       const open = s.panel === 'chart';
+      /* 一覧では 1 つに決まる次の一歩がないため、押せない状態にして案内だけを出す */
       if (tab.gridMode) {
-        return { id: 'chartSingle', label: '選んでいるグラフを大きく表示する', icon: 'up-right-and-down-left-from-center',
-          status: { kind: 'info', text: 'グラフ ' + s.charts.items.length + ' 枚を一覧で表示中。画像の保存・コピーは各グラフの右上から' } };
+        return { id: 'chartGrid', label: '保存は各グラフの右上から', icon: 'table-cells-large', disabled: true,
+          status: { kind: 'info', text: 'グラフ ' + s.charts.items.length + ' 枚を一覧で表示中。種類の変更は各グラフの「1 枚で表示」から' } };
       }
       if (!LQ.ChartSettings.isConfigured(chart)) {
         return { id: 'setupChart', label: 'グラフを設定する', icon: 'chart-column', disabled: open,
@@ -921,7 +922,7 @@
       const of = multi ? '「' + p.name + '」の' : '';
       const ref = p.conditionRef && p.conditionRef.fileName;
       if (e.code === 'noConditionData' || (e.code === 'noCondition' && !p.condition)) {
-        return { id: 'loadCondition', target: p.id, label: (of ? of + ' ' : '') + '② 条件データを読み込む', icon: 'file-import',
+        return { id: 'loadCondition', target: p.id, label: (of ? of + ' ' : '') + '② 照合表を読み込む', icon: 'file-import',
           status: { kind: e.code === 'noCondition' ? 'info' : 'warn',
             text: ref ? '前回は「' + ref + '」を使っていました（同じファイルなら読み込み範囲も前回どおり）' : '固定値だけの条件なら ② は不要です（左の「抽出条件」）' } };
       }
@@ -967,7 +968,6 @@
         case 'setupAggregate': this.state.openPanel('aggregate'); break;
         case 'setupChart': this.state.openPanel('chart'); break;
         case 'saveChart': this.main.chart.save(); break;
-        case 'chartSingle': this.main.chart.actions.setView('single'); break;
         case 'export': this.resultDialogs.openExport(anchor); break;
         default: break;
       }
@@ -1003,7 +1003,7 @@
 
     /**
      * role：'source'（①）/ 'condition'（選択中の抽出条件の ②・複数可）/ 'tables'（表ごとに抽出条件を作る）/
-     *       'append'（条件データを一覧の最後に追加する）/ 'settings'（JSON）
+     *       'append'（照合表を一覧の最後に追加する）/ 'settings'（JSON）
      */
     pickFile(role) {
       const isJson = role === 'settings';
@@ -1056,7 +1056,7 @@
      * ② の表を読み込む。表が複数（複数ファイル・複数シート）なら選ぶ小窓を出す。
      * @param {File[]} files
      * @param {'active'|'new'|'append'} mode active：選択中の抽出条件の ② に / new：表ごとに抽出条件を作る（選択中の下へ）/
-     *        append：表ごとに抽出条件を作る（一覧の最後へ。② のタブ・パネルの「条件データを追加」）
+     *        append：表ごとに抽出条件を作る（一覧の最後へ。② タブの「表から作成」）
      */
     async loadTables(files, mode) {
       if (this._blockedByBusy()) return;
@@ -1088,7 +1088,7 @@
       } finally {
         progress.close();
       }
-      failed.forEach((msg) => this.toasts.show({ type: 'error', title: '② 条件データを読み込めませんでした', message: msg }));
+      failed.forEach((msg) => this.toasts.show({ type: 'error', title: '② 照合表を読み込めませんでした', message: msg }));
       if (!tables.length) return;
       const opts = { append: mode === 'append' };
       if (tables.length === 1) {
@@ -1263,7 +1263,7 @@
       s.setDataset(role, null);
       this.toasts.show({
         type: 'info',
-        title: role === 'source' ? '① 元データを閉じました' : '② 条件データを外しました' + (target && s.profiles.length > 1 ? '（抽出条件「' + target.name + '」）' : ''),
+        title: role === 'source' ? '① 元データを外しました' : '② 照合表を外しました' + (target && s.profiles.length > 1 ? '（抽出条件「' + target.name + '」）' : ''),
         message: ds.name,
         actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.restore(snap, ROLE_LABEL[role] + 'を元に戻しました') }]
       });
@@ -1426,10 +1426,11 @@
       ['source', 'condition'].forEach((role) => {
         if (p !== role) s.setRaw(role, false);
       });
-      if ((p === 'source' || p === 'condition') && s.datasets[p]) {
+      /* ② は未読み込みでもタブを開く（どの抽出条件の ② を編集するかを、タブの切替ボタンで選べるようにする） */
+      if ((p === 'source' && s.datasets.source) || p === 'condition') {
         if (this._tabBeforePanel === null) this._tabBeforePanel = s.view.tab;
         s.setTab(p);
-        s.setRaw(p, true);
+        if (s.datasets[p]) s.setRaw(p, true);
       } else if (this._tabBeforePanel !== null) {
         const back = this._tabBeforePanel;
         this._tabBeforePanel = null;

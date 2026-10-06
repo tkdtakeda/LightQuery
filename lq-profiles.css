@@ -408,16 +408,15 @@
   color: var(--color-text-inverse);
 }
 
-.lq-fchip__rank {
-  display: inline-grid;
-  place-items: center;
-  min-width: var(--icon-lg);
+.lq-fchip .lq-badge--rank {
   height: var(--icon-lg);
-  border-radius: var(--radius-pill);
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
   font-size: var(--fs-2xs);
-  font-weight: var(--fw-bold);
+}
+
+/* 選択中（塗りつぶし）のボタンの中では、順位の印を白地にして読めるようにする */
+.lq-fchip.is-active .lq-badge--rank {
+  background: var(--color-surface);
+  color: var(--color-primary-strong);
 }
 
 .lq-fchip__label {
@@ -705,111 +704,6 @@
 .lq-fchip--add:hover {
   border-color: var(--color-primary);
   background: var(--color-primary-faint);
-}
-
-/* ---------- ② パネルの一覧 ---------- */
-/* 一覧の下に続く読み込み設定（別の入れ物）にも、区画の区切りを付ける */
-.lq-section + .lq-dsbody > .lq-section:first-child {
-  margin-top: var(--space-6);
-  padding-top: var(--space-5);
-  border-top: var(--border-width) solid var(--color-border);
-}
-
-.lq-condtables {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.lq-condtable {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding-right: var(--space-3);
-  border: var(--border-width) solid var(--color-border);
-  border-left: var(--indicator-width) solid transparent;
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
-}
-
-.lq-condtable:hover {
-  border-color: var(--color-primary-line);
-}
-
-.lq-condtable.is-active {
-  border-color: var(--color-primary-line);
-  border-left-color: var(--color-primary);
-  background: var(--color-primary-faint);
-}
-
-.lq-condtable.is-empty {
-  border-style: dashed;
-}
-
-.lq-condtable.is-active.is-empty {
-  border-left-style: solid;
-}
-
-.lq-condtable__main {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: var(--space-4);
-  min-width: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  text-align: left;
-  color: inherit;
-}
-
-.lq-condtable__main .lq-badge {
-  flex-shrink: 0;
-}
-
-.lq-condtable__body {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.lq-condtable__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: var(--fw-bold);
-}
-
-.lq-condtable__main:hover .lq-condtable__name {
-  color: var(--color-primary);
-}
-
-.lq-condtable__meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-xs);
-  color: var(--color-text-sub);
-}
-
-.lq-condtable.is-empty .lq-condtable__meta {
-  color: var(--color-warning-strong);
-}
-
-.lq-condtable.is-disabled .lq-condtable__name,
-.lq-condtable.is-disabled .lq-condtable__meta {
-  color: var(--color-text-disabled);
-}
-
-.lq-condtable > .lq-btn {
-  flex-shrink: 0;
 }
 
 /* ---------- ① / ② の絞り込み（抽出の前に行を減らす） ---------- */

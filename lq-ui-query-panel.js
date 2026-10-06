@@ -77,8 +77,8 @@
       this.label = UI.badge('label', c.label);
       this.left = h('select', { class: 'lq-select lq-select--sm', title: '① 元データの列（入力して探せます）' });
       this.left.addEventListener('change', () => this._patch({ left: this.left.value }, this.left));
-      this.right = this._columnSelect('col', '比べる相手：② 条件データの列、または固定値（入力して探せます）');
-      this.right2 = this._columnSelect('col2', '範囲の終わり：② 条件データの列（「指定なし」なら制限なし。入力して探せます）');
+      this.right = this._columnSelect('col', '比べる相手：② 照合表の列、または固定値（入力して探せます）');
+      this.right2 = this._columnSelect('col2', '範囲の終わり：② 照合表の列（「指定なし」なら制限なし。入力して探せます）');
       const letterOf = (role) => (v) => LQ.ColumnCombo.letterIn(this.state.datasets[role], v);
       this.leftBox = LQ.ColumnCombo.enhance(this.left, { letterOf: letterOf('source') }).el;
       this.rightCol = LQ.ColumnCombo.enhance(this.right, { letterOf: letterOf('condition') }).el;
@@ -91,6 +91,8 @@
         this.right.focus();
       }, 'lq-btn--sm');
       this.tilde = h('span', { class: 'lq-cond__ga', text: '〜' });
+      /* 固定値のときは、② の列ではないことを色に頼らず文字でも示す（範囲は入力欄が 2 つで幅が足りないため付けない） */
+      this.fixedTag = h('span', { class: 'lq-tag lq-cond__fixed', text: '固定値', title: '② の列ではなく、入力した値と比べます（右のボタンで ② の列に戻せます）' });
       this.rightBox = h('div', { class: 'lq-cond__right' });
       this.op = h('select', { class: 'lq-select lq-select--sm', title: '比較方法' });
       this.op.addEventListener('change', () => this._patch({ op: this.op.value }, this.op));
@@ -157,7 +159,7 @@
     /** 相手の欄を今の条件の形（列／固定値 × 1 つ／範囲）に組み替える */
     _layoutRight(c, pair) {
       const parts = c.right.type === 'value'
-        ? (pair ? [this.value, this.tilde, this.value2, this.back] : [this.value, this.back])
+        ? (pair ? [this.value, this.tilde, this.value2, this.back] : [this.fixedTag, this.value, this.back])
         : (pair ? [this.rightCol, this.tilde, this.rightCol2] : [this.rightCol]);
       const now = Array.prototype.slice.call(this.rightBox.children);
       if (now.length === parts.length && parts.every((el, i) => now[i] === el)) return;
@@ -227,6 +229,9 @@
       }
       this.el.classList.toggle('is-pair', pair);
       this._layoutRight(c, pair);
+      /* 比べる相手の色：② の列は ② の色（青緑）、固定値は色を付けない */
+      this.rightBox.classList.toggle('is-col', c.right.type !== 'value');
+      this.rightBox.classList.toggle('is-value', c.right.type === 'value');
       if (c.right.type === 'value') {
         if (document.activeElement !== this.value) this.value.value = c.right.value || '';
         if (document.activeElement !== this.value2) this.value2.value = c.right.value2 || '';
@@ -317,8 +322,8 @@
 /* =========================================================================
  * ── 抽出条件パネル ──
  * 抽出条件パネル：上に抽出条件の一覧（ProfileListView）、下に選択中の抽出条件の編集。
- *   編集は決める順に並べる：名前・② 条件データ・出力する行 → 条件の一覧 → 組み合わせ（条件が 2 件以上のとき）
- *   → 照合ルール（全体／個別）→ 詳細（① の 1 行が ② の複数の行に一致したとき。畳んでおく）。
+ *   編集は Power Query の「マージ」と同じ順に並べる：名前・② 照合表 → 条件の一覧（どの列を比べるか）→ 組み合わせ（条件が 2 件以上のとき）
+ *   → 出力する行（結合の種類）→ 照合ルール（全体／個別）→ 詳細（① の 1 行が ② の複数の行に一致したとき。畳んでおく）。
  *   条件は「① 列 が ② 列 を含む」の語順で並べ、同名列の提案・除外リストのヒントを出す。
  *   条件の行（ConditionRow）は id ごとに使い回し、入力中のフォーカスを失わないようにする。
  * ========================================================================= */
@@ -345,14 +350,14 @@
       this.state = ctx.state;
       this.app = ctx.app;
       this.title = '抽出条件';
-      this.icon = 'filter';
+      this.icon = 'code-compare';
       this.size = 'lg';
       this.rows = new Map();
       this._colsKey = null;
       this._profileId = null;
       this.list = new LQ.ProfileListView(ctx);
       this.el = h('div');
-      Dom.append(this.el, [this.list.el, this._buildHead(), this._buildConditions(), this._buildLogic(), this._buildRules(), this._buildMatch()]);
+      Dom.append(this.el, [this.list.el, this._buildHead(), this._buildConditions(), this._buildLogic(), this._buildJoin(), this._buildRules(), this._buildMatch()]);
       ctx.bus.on('query', (d) => this.update(d));
       ['datasets', 'profiles', 'store', 'rules', 'output'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
       ctx.bus.on('focus-condition', (d) => this._focusCondition(d.id, d.field));
@@ -366,7 +371,7 @@
         h('button', { class: 'lq-btn lq-btn--ghost lq-btn--sm', type: 'button', title: '抽出条件を .json に書き出す（1 件・一括）',
           onclick: (e) => this.app.profileDialogs.openJsonExport(e.currentTarget) }, [Dom.icon('file-export'), '書き出し']),
         h('button', { class: 'lq-btn lq-btn--ghost lq-btn--sm', type: 'button', title: '書き出した抽出条件（.json）を読み込む（ドラッグ＆ドロップも可）',
-          onclick: () => this.app.pickFile('settings') }, [Dom.icon('folder-open'), '読込'])
+          onclick: () => this.app.pickFile('settings') }, [Dom.icon('folder-open'), '読み込み'])
       ];
     }
 
@@ -385,8 +390,7 @@
         h('h3', { class: 'lq-section__title' }, [Dom.icon('pen-to-square'), this.headTitle]),
         h('div', { class: 'lq-stack' }, [
           UI.field('名前', h('div', { class: 'lq-profname__row' }, [this.rankBadge, this.nameInput])),
-          UI.field('② 条件データ（この抽出条件で使う表）', this.condCard),
-          this._buildJoin()
+          UI.field('② 照合表（この抽出条件で使う表）', this.condCard)
         ])
       ]);
       return this.head;
@@ -451,7 +455,7 @@
     }
 
     /**
-     * 出力する行（一致した行／一致しなかった行／すべての行）。結果を真逆にする選択のため、② のすぐ下に横並びで出す。
+     * 出力する行（一致した行／一致しなかった行／すべての行）。Power Query のマージと同じく、比べる列を決めたあとに選ぶ（横並び）。
      *   説明は選んでいるものだけを下に出し、ほかは見出しの title で示す
      */
     _buildJoin() {
@@ -472,7 +476,7 @@
         joinList.appendChild(el);
       });
       this.joinDesc = h('div', { class: 'lq-field__hint' });
-      return UI.field('出力する行（塗った部分の ① の行を出します）', h('div', { class: 'lq-stack' }, [joinList, this.joinDesc]));
+      return UI.section('出力する行（結合の種類。塗った部分の ① の行を出します）', [joinList, this.joinDesc]);
     }
 
     /** ① の 1 行が ② の複数の行に一致したとき（使う頻度が低いため畳んでおく） */
@@ -593,7 +597,7 @@
       Dom.clear(this.ruleLine);
       Dom.append(this.ruleLine, [
         p.rules
-          ? h('span', { class: 'lq-tag lq-tag--own', title: 'この抽出条件だけの照合ルールで比べます' }, [Dom.icon('filter'), '個別の設定'])
+          ? h('span', { class: 'lq-tag lq-tag--own', title: 'この抽出条件だけの照合ルールで比べます' }, [Dom.icon('code-compare'), '個別の設定'])
           : h('span', { class: 'lq-tag', title: '全体の照合ルールで比べます' }, [Dom.icon('globe'), '全体の設定']),
         h('span', { class: 'lq-ruleline__text', text: text, title: text }),
         h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '照合ルールのパネルを開く（全体の設定／この抽出条件だけの設定を選べます）',
@@ -602,7 +606,7 @@
       if (changed) Flash.el(this.ruleLine);
     }
 
-    /** ② 条件データのカード：読み込み済みなら表の要約と操作、未読み込みなら読み込みの案内 */
+    /** ② 照合表のカード：読み込み済みなら表の要約と操作、未読み込みなら読み込みの案内 */
     _renderCondCard(p) {
       const card = this.condCard;
       const ds = p.condition;
@@ -637,7 +641,7 @@
             h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '別のファイル・シートに差し替える（元に戻せます）', onclick: () => this.app.pickFile('condition') },
               [Dom.icon('file-import'), '差し替え']),
             h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: 'ヘッダー行・データ開始行などの読み込み設定を開く', onclick: () => this.state.openPanel('condition') },
-              [Dom.icon('sliders'), '読み込み設定']),
+              [Dom.icon('sliders'), '読み込みの設定']),
             h('button', { class: 'lq-btn lq-btn--xs lq-btn--danger', type: 'button', title: 'この抽出条件から ② を外す（元に戻せます）', onclick: () => this.app.clearDataset('condition') },
               [Dom.icon('xmark'), '外す'])
           ])
@@ -654,7 +658,7 @@
           open();
         }
       };
-      const lines = [h('div', { class: 'lq-condcard__name', text: '② 条件データを読み込む' }),
+      const lines = [h('div', { class: 'lq-condcard__name', text: '② 照合表を読み込む' }),
         h('div', { class: 'lq-condcard__meta', text: 'クリックして選択／ドラッグ＆ドロップ／Ctrl+V（複数のファイル・シートは、表ごとに抽出条件にできます）' })];
       if (ref && ref.fileName) {
         lines.push(h('div', { class: 'lq-condcard__ref' }, [Dom.icon('clock-rotate-left'),

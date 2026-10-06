@@ -21,7 +21,7 @@
   const SAMPLE = 200;
   const RATIO = 0.8;
   const TYPE_ICON = { number: 'hashtag', date: 'calendar-days', text: 'font', count: 'list-ol', condRow: 'list-check' };
-  const TYPE_TITLE = { number: '数値の列', date: '日付の列', text: '文字の列', count: '行の数', condRow: '② 条件データの 1 行＝1 グループ' };
+  const TYPE_TITLE = { number: '数値の列', date: '日付の列', text: '文字の列', count: '行の数', condRow: '② 照合表の 1 行＝1 グループ' };
   const ZONES = [
     { id: 'rows', label: '行', icon: 'grip-lines', hint: '縦に並べる項目（地域・顧客など）' },
     { id: 'cols', label: '列', icon: 'grip-lines-vertical', hint: '横に並べる項目（月・カテゴリなど。' + Settings.LIMIT.colItems + ' 種類まで）' },
@@ -86,11 +86,6 @@
       this.el = h('div', {}, [this.body]);
       ['aggregate', 'output', 'datasets', 'profiles', 'result'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
       this.render();
-    }
-
-    headerActions() {
-      return [h('button', { class: 'lq-btn lq-btn--ghost lq-btn--sm', type: 'button', title: 'ピボットタブで表を見る',
-        onclick: () => this.state.setTab('aggregate') }, [Dom.icon('table'), '表を表示'])];
     }
 
     get settings() {

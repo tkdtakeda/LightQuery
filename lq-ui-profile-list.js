@@ -31,13 +31,13 @@
       this.combine = this._buildCombine();
       const tools = h('span', { class: 'lq-section__tools' }, [
         h('button', {
-          class: 'lq-btn lq-btn--xs', type: 'button', title: 'Excel のシートや CSV を選び、表ごとに抽出条件を作ります（複数のファイル・シートを選べます）',
+          class: 'lq-btn lq-btn--xs', type: 'button', title: 'Excel のシートや CSV を選び、表ごとに抽出条件を作ります（複数のファイル・シートを選べます。② タブの「表から作成」と同じ）',
           onclick: () => this.app.pickFile('tables')
         }, [Dom.icon('file-circle-plus'), '表から作成']),
         h('button', {
           class: 'lq-btn lq-btn--xs', type: 'button', title: '空の抽出条件を一覧の最後（最も低い優先順位）に追加します',
           onclick: () => this.app.profiles.add()
-        }, [Dom.icon('plus'), '追加'])
+        }, [Dom.icon('plus'), '空で追加'])
       ]);
       this.el = UI.section('抽出条件の一覧', [this.list, this.hint, this.combine.el], [this.count, tools]);
       this._bindDrag();

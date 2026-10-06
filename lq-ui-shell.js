@@ -81,10 +81,10 @@
   const RAIL_GROUPS = [
     { label: '入力', items: [
       { id: 'source', icon: 'table', label: '①元データ', title: '① 元データ：読み込み・ヘッダー・範囲・列の追加・絞り込み' },
-      { id: 'condition', icon: 'list-check', label: '②条件データ', title: '② 条件データ（選択中の抽出条件）：読み込み・ヘッダー・範囲・列の追加・絞り込み', role: 'condition' }
+      { id: 'condition', icon: 'list-check', label: '②照合表', title: '② 照合表（選択中の抽出条件）：読み込み・ヘッダー・範囲・列の追加・絞り込み', role: 'condition' }
     ] },
     { label: '抽出', items: [
-      { id: 'query', icon: 'filter', label: '抽出条件', title: '抽出条件：一覧（名前・優先順位）と、① と ② の対応・比較方法・組み合わせ・出力する行' }
+      { id: 'query', icon: 'code-compare', label: '抽出条件', title: '抽出条件：一覧（名前・優先順位）と、① と ② の対応・比較方法・組み合わせ・出力する行' }
     ] },
     { label: '出力', items: [
       { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' },
@@ -339,7 +339,7 @@
       }, [Dom.icon(icon), h('div', { class: 'lq-dropoverlay__title', text: title }), h('div', { class: 'lq-dropoverlay__sub', text: sub })]);
       this.el = h('div', { class: 'lq-dropoverlay' }, [
         zone('source', 'table', '① 元データとして読み込む', '抽出される側のデータ（Excel・CSV）'),
-        zone('condition', 'list-check', '② 条件データとして読み込む', owner + '複数のファイル・シートは、表ごとに抽出条件にできます（抽出条件の .json はどちらでも可）')
+        zone('condition', 'list-check', '② 照合表として読み込む', owner + '複数のファイル・シートは、表ごとに抽出条件にできます（抽出条件の .json はどちらでも可）')
       ]);
       this.root.appendChild(this.el);
     }

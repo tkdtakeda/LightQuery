@@ -266,9 +266,15 @@
   min-width: 0;
 }
 
-.lq-cond__right .lq-input {
-  border-color: var(--color-accent-line);
-  background: var(--color-accent-faint);
+.lq-cond__fixed {
+  flex: none;
+}
+
+/* 比べる相手：② の列は ② の色（他の画面と同じ青緑）。固定値は通常の入力欄のまま */
+.lq-cond__right.is-col .lq-input,
+.lq-cond__right.is-col .lq-select {
+  border-color: var(--color-cond-line);
+  background: var(--color-cond-faint);
 }
 
 .lq-cond__issue {
@@ -705,6 +711,24 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+/* 目的ごとの見出し（2 列の表の横幅いっぱいに置く） */
+.lq-samples__group {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding-bottom: var(--space-2);
+  border-bottom: var(--border-width) solid var(--color-border);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  color: var(--color-text-sub);
+}
+
+.lq-samples__group:first-child {
+  margin-top: 0;
 }
 
 .lq-sample {

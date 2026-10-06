@@ -67,14 +67,14 @@
         onclick: () => {
           this.pop.close();
           this.app.pickFile('settings');
-        } }, [Dom.icon('folder-open'), '読込（.json）']);
+        } }, [Dom.icon('folder-open'), '読み込み（.json）']);
       this.pop.open(anchor, [
         h('div', { class: 'lq-popover__head' }, [Dom.icon('folder-open'), h('span', { text: '作業セット' }), this.count,
           UI.iconButton('xmark', '閉じる（Esc）', () => this.pop.close(), 'lq-btn--sm')]),
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
           this.ws.sets.length >= SEARCH_FROM ? search : null,
           this.list,
-          h('p', { class: 'lq-field__hint', text: '作業ごとに、抽出条件・② のデータ・照合ルール・出力列・集計の設定をまとめて保存します。変更は開いているセットに自動で保存されます。① 元データは切り替えてもそのままです。' })
+          h('p', { class: 'lq-field__hint', text: '作業ごとに、抽出条件・② のデータ・照合ルール・出力列・集計の設定をまとめて保存します。変更は開いているセットに自動で保存されます。① 元データは切り替えてもそのままです。抽出条件だけをファイルで渡す・残すときは、抽出条件パネルの「書き出し」（.json）を使います。' })
         ])]),
         h('div', { class: 'lq-popover__foot' }, [newBtn, importBtn])
       ], { key: POP_KEY, size: 'lg', placement: 'bottom-start', onClose: () => {

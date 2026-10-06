@@ -290,7 +290,7 @@
     { key: 'm:profile', name: '抽出条件', desc: '行が該当した抽出条件の名前（振り分けでは優先順位が最も高いもの）' },
     { key: 'm:priority', name: '優先順位', desc: '該当した抽出条件の優先順位（1 が最優先）' },
     { key: 'm:srcRow', name: '① 行番号', desc: '① 元データでの行番号（Excel の行番号と同じ）' },
-    { key: 'm:condRow', name: '② 行番号', desc: '一致した ② 条件データの行番号' },
+    { key: 'm:condRow', name: '② 行番号', desc: '一致した ② 照合表の行番号' },
     { key: 'm:count', name: '② 一致数', desc: '① の行に一致した ② の行の数' }
   ];
 

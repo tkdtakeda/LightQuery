@@ -9,7 +9,7 @@
   const LQ = global.LQ;
   const Util = LQ.Util;
 
-  const ROLE_LABEL = { source: '① 元データ', condition: '② 条件データ' };
+  const ROLE_LABEL = { source: '① 元データ', condition: '② 照合表' };
   const DETECT_ROWS = 30;
 
   function isBlankCell(value) {

@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-chart-panel.js
- * グラフの設定パネル：グラフ（一覧・名前）→ 対象 → 種類（目的ごと）→ 項目 → 置き場所 → 表示 の順に並べる。
+ * グラフの設定パネル：題名 → 対象 → 種類（目的ごと）→ 項目 → 置き場所 → 表示 の順に並べる。
  *   ・列を押すだけで描ける：種類を自分で選んでいなければ、列の組み合わせに合う種類を選んで置く
  *     （数値 1 つ → ヒストグラム、数値 2 つ → 散布図、文字＋数値 → 横棒、日付＋数値 → 折れ線）
  *   ・種類を先に選ぶと、空いている置き場所に入れる列の種類を示す。今の列で描けない種類は薄くして理由を添える
@@ -46,11 +46,6 @@
       this.el = h('div', {}, [this.body]);
       ['charts', 'output', 'datasets', 'profiles', 'result'].forEach((topic) => ctx.bus.on(topic, () => this.render()));
       this.render();
-    }
-
-    headerActions() {
-      return [h('button', { class: 'lq-btn lq-btn--ghost lq-btn--sm', type: 'button', title: 'グラフタブでグラフを見る',
-        onclick: () => this.state.setTab('chart') }, [Dom.icon('chart-column'), 'グラフを表示'])];
     }
 
     /** 選択中のグラフ（まだなければ、表示用の空のグラフ。最初の操作で一覧に加える） */
@@ -105,17 +100,7 @@
     /* ---------------- グラフの一覧・名前 ---------------- */
 
     _listSection() {
-      const all = this.state.charts;
       const chart = this.chart;
-      const chips = all.items.map((c) => h('button', {
-        class: 'lq-fchip lq-chlist__chip' + (c.id === all.activeId ? ' is-active' : ''), type: 'button', title: Settings.describe(c),
-        dataset: { flashKey: 'chart:' + c.id }, onclick: () => this.actions.select(c.id)
-      }, [Dom.icon(Types.get(c.type).icon, Types.get(c.type).iconClass || ''), h('span', { class: 'lq-fchip__label', text: Settings.title(c) })]));
-      const add = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '新しいグラフを加える（今のグラフは残ります）',
-        onclick: () => {
-          const c = this.actions.add();
-          if (c) this._flash = 'chart:' + c.id;
-        } }, [Dom.icon('plus'), '追加']);
       const name = h('input', { class: 'lq-input lq-input--sm', type: 'text', value: chart.name, placeholder: Settings.autoTitle(chart) + '（自動の題名）',
         maxlength: String(Settings.NAME_MAX), title: 'グラフの題名（空欄なら置いた項目から自動で付けます）。Enter で反映', dataset: { flashKey: 'name' } });
       name.addEventListener('change', () => {
@@ -124,15 +109,7 @@
         this._flash = 'name';
         this.actions.rename(this.actions.active().id, name.value);
       });
-      const exists = !!this.actions.active();
-      const dup = UI.iconButton('clone', 'このグラフを複製する', () => this.actions.duplicate(chart.id), 'lq-btn--sm');
-      const del = UI.iconButton('trash-can', 'このグラフを削除する（元に戻せます）', () => this.actions.remove(chart.id), 'lq-btn--sm');
-      dup.disabled = !exists;
-      del.disabled = !exists;
-      return UI.section('グラフ', [
-        all.items.length > 1 ? h('div', { class: 'lq-chlist' }, chips) : null,
-        h('div', { class: 'lq-row lq-chname' }, [UI.field('題名', name, null, 'lq-chname__field'), dup, del])
-      ], [add]);
+      return UI.section('題名', [name, h('p', { class: 'lq-field__hint', text: 'グラフの切り替え・追加・複製・削除は、グラフタブ上部の「表示するグラフ」で行います。' })]);
     }
 
     /* ---------------- 対象 ---------------- */

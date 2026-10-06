@@ -248,7 +248,7 @@
       const s = this.state;
       const main = this.main;
       main.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '行・列・値を設定する',
-        onclick: () => s.togglePanel('aggregate') }, [Dom.icon('table-cells'), 'ピボットの設定']));
+        onclick: () => s.togglePanel('aggregate') }, [Dom.icon('sliders'), 'ピボットの設定']));
       if (!s.datasets.source) {
         main.grid.showEmpty(main._emptyMessage('table-cells', '① 元データを読み込むとピボットを作れます',
           '② を使わずに ① だけでも作れます。行（地域など）× 列（月など）で、件数・合計・平均などを表にします。抽出したあとは、その抽出結果でも作れます。'));

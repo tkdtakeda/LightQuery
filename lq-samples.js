@@ -141,7 +141,7 @@
     },
     {
       id: 'exclude',
-      icon: 'filter',
+      icon: 'magnifying-glass',
       title: 'キーワードを含み、除外語を含まない',
       desc: 'A：商品名がキーワードを含む かつ B：商品名が除外語を含まない かつ C：備考が除外語を含まない。② の行ごとに判定します。',
       tags: ['含む', '含まない'],
@@ -575,7 +575,31 @@
     }
   ];
 
+  /* サンプルの一覧の見出し（目的ごと）。ここにない id は「その他」に入る */
+  const GROUPS = [
+    { label: '基本の抽出', icon: 'play', ids: ['idlist', 'threshold', 'exclude', 'logic', 'report', 'ngword'] },
+    { label: '比べ方の書き方（ワイルドカード・比較演算子・日付）', icon: 'equals', ids: ['wildcard', 'criteria', 'dates'] },
+    { label: '複数の抽出条件', icon: 'arrow-down-1-9', ids: ['priority', 'independent', 'rules'] },
+    { label: 'ピボット', icon: 'table-cells', ids: ['aggregate', 'condagg', 'pivot'] },
+    { label: 'グラフ', icon: 'chart-column', ids: ['chart-trend', 'chart-dist', 'chart-scatter', 'chart-pivot'] },
+    { label: 'その他（列の追加・速度の確認）', icon: 'ellipsis', ids: ['derive', 'perf'] }
+  ];
+
   const Samples = {
+    /** 目的ごとの見出しと、その中のサンプル（list() と同じ形） */
+    groups() {
+      const all = Samples.list();
+      const used = new Set();
+      const out = GROUPS.map((g) => {
+        const items = g.ids.map((id) => all.find((s) => s.id === id)).filter(Boolean);
+        items.forEach((s) => used.add(s.id));
+        return { label: g.label, icon: g.icon, items: items };
+      });
+      const rest = all.filter((s) => !used.has(s.id));
+      if (rest.length) out[out.length - 1].items = out[out.length - 1].items.concat(rest);
+      return out.filter((g) => g.items.length);
+    },
+
     list() {
       return SAMPLES.map((s) => ({ id: s.id, icon: s.icon, title: s.title, desc: s.desc, tags: s.tags.slice() }));
     },
