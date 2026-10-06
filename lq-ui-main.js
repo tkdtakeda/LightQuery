@@ -269,6 +269,7 @@
       this._renderResultTools(defs);
       this._renderSummary(view, defs);
       this._renderSourceFlow(view);
+      this._renderReview(view);
       this._renderFilterBar(view);
       if (s.isStale()) {
         this.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
@@ -334,6 +335,10 @@
       const fmt = Util.formatInt;
       const detailsBtn = h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '抽出条件・照合ルール・処理の内容を確認する',
         onclick: (e) => this.app.resultDialogs.openResultDetails(e.currentTarget) }, [Dom.icon('magnifying-glass'), '抽出の内容']);
+      const compareBtn = h('button', { class: 'lq-btn lq-btn--sm' + (this.app.compare.active ? ' is-active' : ''), type: 'button',
+        title: '直前の抽出結果や前回出力したファイルと比べ、増えた行・消えた行・変わった行を確かめる',
+        onclick: (e) => LQ.CompareDialog.open(this.ctx, e.currentTarget) }, [Dom.icon('not-equal'), '前回と比べる']);
+      const actions = h('span', { class: 'lq-summary__actions' }, [detailsBtn, compareBtn]);
       const time = h('span', { class: 'lq-summary__item lq-num' }, [Dom.icon('clock-rotate-left'), Util.formatSeconds(st.elapsedMs)]);
       const shown = h('span', { class: 'lq-summary__item lq-num', text: '表示 ' + fmt(view.length) + ' 行 × ' + defs.length + ' 列' });
       let items;
@@ -352,7 +357,7 @@
           shown,
           h('span', { class: 'lq-summary__item', title: '条件の組み合わせ' }, [Dom.icon('code-branch'), h('span', { class: 'lq-summary__expr', text: part.snapshot.exprJa })]),
           h('span', { class: 'lq-summary__item', text: join.label + (ps.needsCondition && !anti ? '・' + match.label : '') }),
-          time, detailsBtn
+          time, actions
         ];
       } else {
         const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
@@ -365,7 +370,7 @@
           unmatched ? h('span', { class: 'lq-summary__item lq-num', title: 'どの抽出条件にも該当しなかった行も、「該当なし」として表示・出力します' },
             [Dom.icon('circle-plus'), '該当なし ' + fmt(unmatched) + ' 行も出力']) : null,
           h('span', { class: 'lq-summary__item', title: mode.desc }, [Dom.icon(mode.icon), '抽出条件 ' + res.parts.length + ' 件・' + mode.short]),
-          shown, time, detailsBtn
+          shown, time, actions
         ];
       }
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
@@ -379,6 +384,14 @@
       const bar = LQ.PrepFlowBar.render(this.ctx, src, { tail: { icon: 'code-compare', label: '抽出で該当', rows: st.matchedSources,
         title: '使う行のうち、抽出条件に該当した ① の行' } });
       if (bar) this.info.appendChild(bar);
+    }
+
+    /** 結果を確かめる帯（処理の順：① の流れ → 一致しなかった ② の行 → 前回との違い） */
+    _renderReview(view) {
+      const miss = LQ.CondMissBar.render(this.ctx, view);
+      if (miss) this.info.appendChild(miss);
+      const cmp = LQ.CompareBar.render(this.ctx);
+      if (cmp) this.info.appendChild(cmp);
     }
 
     /** 抽出条件ごとの絞り込み（件数付き）。抽出条件が複数か「該当なし」があるときだけ出す */

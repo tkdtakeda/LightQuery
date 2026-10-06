@@ -950,7 +950,8 @@
       const joinKind = query.joinKind;
       const matchMode = needsCond ? query.matchMode : 'first';
       const pairs = matchMode === 'all' && joinKind !== 'anti';
-      const stopAtFirst = joinKind === 'anti';
+      /* ② の行ごとに ① のどれかと一致したか（「② で一致しなかった行」に使う。そのため一致しなかった行の出力でも ② を最後まで見る） */
+      const condHit = needsCond ? new Uint8Array(M) : null;
       const out = new ResultBuilder(joinKind === 'left' ? N : Math.min(N, 65536));
       let matchedSources = 0;
       let truncated = false;
@@ -983,6 +984,7 @@
             }
             if (evaluate(x, r) === 1) {
               count++;
+              condHit[r] = 1;
               if (first < 0) first = r;
               if (pairs) {
                 if (out.length >= MAX_OUTPUT_ROWS) {
@@ -991,7 +993,6 @@
                 }
                 out.push(x, r, 0);
               }
-              if (stopAtFirst) break;
             }
             if (!index) r++;
           }
@@ -1012,8 +1013,11 @@
       onProgress({ phase: 'match', ratio: 1, label: '照合中', done: N, total: N });
 
       const built = out.finish();
+      const condUnmatched = [];
+      if (condHit && !truncated) for (let r = 0; r < M; r++) if (!condHit[r]) condUnmatched.push(r);
       return {
         id: LQ.Util.uid('res'),
+        condUnmatched: condHit && !truncated ? Int32Array.from(condUnmatched) : null,
         src: built.src,
         cond: built.cond,
         count: built.count,

@@ -206,6 +206,8 @@
           ownRules: !!p.ownRules,
           query: p.query,
           rules: p.rules || ctx.rules,
+          /* ① のどの行とも一致しなかった ② の行（② の行番号の位置。振り分けの前に数える。② を使わない・打ち切ったときは null） */
+          condUnmatched: st.needsCondition ? results[i].condUnmatched : null,
           hits: merged.hits[i],
           assigned: merged.assigned[i],
           rows: merged.counts[i],

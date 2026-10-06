@@ -221,7 +221,7 @@
   const NAME_MAX = 40;
   const SLOT_IDS = ['x', 'y', 'size', 'color'];
   const PARKED_MAX = 6;
-  const FNS = ['count', 'sum', 'avg', 'min', 'max'];
+  const FNS = ['count', 'sum', 'avg', 'min', 'max', 'distinct'];
   const TOPS = ['auto', 0, 5, 10, 20, 30];
   const PIVOT_VIEWS = ['table', 'chart', 'split'];
   const PIVOT_TYPES = ['auto', 'hbar', 'bar', 'pareto', 'line', 'donut'];

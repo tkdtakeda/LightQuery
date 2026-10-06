@@ -87,7 +87,8 @@
   display: none;
 }
 
-/* ---------- 処理の流れ（メインの ① / ② タブ・抽出結果の上） ---------- */
+/* ---------- 処理の流れ（メインの ① / ② タブ・抽出結果の上）
+ *   抽出結果を確かめる帯（一致しなかった ② の行・前回との違い）も同じ見た目を使う ---------- */
 .lq-flow {
   padding: var(--space-2) var(--space-4);
   border: var(--border-width) solid var(--color-border-soft);
@@ -144,5 +145,13 @@
 }
 
 .lq-flow__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-left: auto;
+}
+
+.lq-flow__base {
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
 }

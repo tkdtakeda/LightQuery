@@ -454,6 +454,7 @@
       const facts = [
         st.needsCondition ? '② ' + snap.conditionName + '（' + fmt(st.conditionRows) + ' 行）' : '② は使っていません（固定値の条件のみ）',
         snap.conditionPrep ? '② の前処理：' + snap.conditionPrep : null,
+        part.condUnmatched ? '一致しなかった ② の行：' + fmt(part.condUnmatched.length) + ' 行' : null,
         '組み合わせ：' + snap.exprJa,
         '出力する行：' + join.label + (st.needsCondition && st.joinKind !== 'anti' ? '・' + match.label : ''),
         part.ownRules ? '照合ルール（個別）：' + snap.rules : null,

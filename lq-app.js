@@ -174,6 +174,7 @@
       lines.push(['出力する行', join.label + '（' + join.note + '）']);
       if (st.needsCondition && st.joinKind !== 'anti') lines.push(['複数一致したとき', match.label]);
       if (part.ownRules) lines.push(['照合ルール（個別）', snap.rules]);
+      if (part.condUnmatched) lines.push(['一致しなかった ② の行', fmt(part.condUnmatched.length) + ' 行（② ' + fmt(part.condition.rowCount) + ' 行のうち、① のどの行とも一致しなかった行）']);
       const shadow = part.hits - part.assigned;
       lines.push(['件数', '該当 ' + fmt(part.hits) + ' 行・出力 ' + fmt(part.rows) + ' 行' +
         (shadow > 0 ? '（うち ' + fmt(shadow) + ' 行は優先順位が上の抽出条件に振り分け）' : '')]);
@@ -210,6 +211,8 @@
       else if (view.filter !== null) lines.push(['出力した範囲', view.filter < 0 ? '該当なしの行のみ' : '抽出条件「' + view.partName(view.filter) + '」の行のみ']);
       if (s.view.sort) lines.push(['並び順', LQ.ResultView.nameOf(s.view.sort.key) + '（' + (s.view.sort.dir === 'desc' ? '降順' : '昇順') + '）']);
       lines.push(['出力した列', prepared.defs.map((d) => d.name).join('、')]);
+      const cmpLine = this.app.compare.metaLine();
+      if (cmpLine) lines.push(cmpLine);
       if (s.isStale()) lines.push(['注意', '出力時点の画面の条件は、この結果を作った条件から変更されています']);
       lines.push(['作成', 'LightQuery（簡易クエリ）']);
       return lines;
@@ -659,6 +662,8 @@
         s.setAggregate(built.aggregate || (s.sampleStash ? s.sampleStash.aggregate : s.aggregate));
         s.setCharts(built.charts || (s.sampleStash ? s.sampleStash.charts : s.charts));
         s.setTab(built.tab || 'result');
+        if (built.compare) this.app.compare.useSample(built.compare);
+        else this.app.compare.leaveSample();
       } catch (err) {
         built = null;
         this.toasts.show({ type: 'error', title: 'サンプルを読み込めませんでした', message: err.message });
@@ -683,6 +688,7 @@
       const snap = s.snapshot();
       const back = s.sampleStash ? s.sampleStash.profiles.filter((p) => !p.isBlank()).length : 0;
       s.exitSample();
+      this.app.compare.leaveSample();
       this.toasts.show({
         type: 'info',
         title: 'サンプルデータを消去しました',
@@ -730,6 +736,7 @@
       this.profiles = new LQ.ProfileActions(this);
       this.exporter = new LQ.ExportActions(this);
       this.prep = new LQ.PrepActions(this);
+      this.compare = new LQ.CompareActions(this);
       this._token = null;
       this._validations = new Map();
       this._tabBeforePanel = null;
@@ -1333,6 +1340,7 @@
           return;
         }
         s.setResult(result, signature);
+        this.compare.remember();
         if (s.view.tab !== 'aggregate') s.setTab('result');
         this._announce(result);
       } catch (err) {

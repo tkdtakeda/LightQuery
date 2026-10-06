@@ -601,6 +601,35 @@
       }
     },
     {
+      id: 'review',
+      icon: 'not-equal',
+      title: '結果を確かめる：一致しなかった ② の行・前回との違い・顧客数',
+      desc: '② の顧客 15 件で受注を抽出します。抽出すると、要約の下に「一致しなかった ② の行」（受注のない顧客 3 件）と「前回との違い」（基準：サンプルの先月の抽出結果。受注番号で見分けて、増えた行・消えた行・変わった行）が出ます。件数を押すとその行を確かめられます。ピボットは地域ごとの件数と、重複を除いた顧客数です。',
+      tags: ['一致しなかった ② の行', '前回との違い', '重複を除いた件数'],
+      build() {
+        const grid = orders(1919);
+        const idIdx = ORDER_HEADER.indexOf('顧客ID');
+        const ids = Array.from(new Set(grid.slice(1).map((r) => r[idIdx]))).slice(0, 12).concat(['C9001', 'C9002', 'C9003']);
+        const set = new Set(ids);
+        const cols = ['受注番号', '受注日', '顧客ID', '顧客名', '地域', '金額'];
+        const pick = cols.map((c) => ORDER_HEADER.indexOf(c));
+        const amount = cols.indexOf('金額');
+        /* 先月の抽出結果：今月の結果から 6 行を除き（→ 増えた行）、4 行を足し（→ 消えた行）、5 行の金額を変える（→ 変わった行） */
+        const matched = grid.slice(1).filter((r) => set.has(r[idIdx])).map((r) => pick.map((k) => r[k]));
+        const last = matched.slice(0, matched.length - 6).map((r, i) => (i % 9 === 3 && i < 45 ? r.map((v, j) => (j === amount ? String(Number(v) + 1000) : v)) : r));
+        for (let i = 0; i < 4; i++) last.push(['OD-9' + String(90001 + i), '2025/03/2' + i, ids[i], '（先月の受注）', '東京', String(1000 * (i + 1))]);
+        return {
+          source: { name: ORDERS_NAME, grid: grid },
+          profiles: [{ name: '対象の顧客', condition: { name: 'サンプル_対象顧客.csv', grid: [['顧客ID']].concat(ids.map((id) => [id])) },
+            query: Q([C('顧客ID', 'eq', col('顧客ID'))]) }],
+          output: cols.map((c) => 's:' + c),
+          aggregate: { target: 'result', rows: [{ key: 's:地域' }], values: [{ fn: 'count' }, { key: 's:顧客ID', fn: 'distinct' }], sort: { by: 'value', dir: 'desc', value: 0 } },
+          compare: { name: 'サンプル_先月の抽出結果.xlsx', grid: [cols].concat(last), key: '受注番号' },
+          tab: 'result'
+        };
+      }
+    },
+    {
       id: 'criteria',
       icon: 'greater-than-equal',
       title: '② の値に >= や <> を書いて比べる（Excel の COUNTIF と同じ書き方）',
@@ -676,6 +705,7 @@
     { label: '比べ方の書き方（ワイルドカード・比較演算子・日付）', icon: 'equals', ids: ['wildcard', 'criteria', 'dates'] },
     { label: '複数の抽出条件', icon: 'arrow-down-1-9', ids: ['priority', 'independent', 'rules'] },
     { label: 'ピボット', icon: 'table-cells', ids: ['aggregate', 'condagg', 'pivot'] },
+    { label: '結果を確かめる（一致しなかった ② の行・前回との違い）', icon: 'not-equal', ids: ['review'] },
     { label: 'グラフ', icon: 'chart-column', ids: ['chart-trend', 'chart-dist', 'chart-scatter', 'chart-pivot'] },
     { label: '前処理（縦に結合・列の追加・関数・重複の削除）', icon: 'layer-group', ids: ['union', 'derive', 'functions'] },
     { label: 'その他（速度の確認）', icon: 'ellipsis', ids: ['perf'] }
@@ -704,7 +734,7 @@
       return SAMPLES.find((s) => s.id === id) || null;
     },
 
-    /** @returns {{id, title, source:{name,grid,settings?,members?:Array<{name,grid}>,dedup?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[]}} */
+    /** @returns {{id, title, source:{name,grid,settings?,members?:Array<{name,grid}>,dedup?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[], compare?:{name, grid, key}}} */
     build(id) {
       const sample = Samples.get(id);
       if (!sample) throw new Error('サンプルが見つかりません');

@@ -31,6 +31,7 @@
   const COND_ROW = 'x:condRow';
   const FUNCS = [
     { id: 'count', label: '件数', keyless: true, pct: true },
+    { id: 'distinct', label: '重複を除いた件数', note: '空欄を除いた値の種類の数（顧客数・商品数など）。前後の空白・全角半角・大文字小文字はそろえて数えます' },
     { id: 'sum', label: '合計', pct: true },
     { id: 'avg', label: '平均' },
     { id: 'min', label: '最小', note: '数値がなく日付だけの列は、最も古い日付' },
@@ -71,6 +72,8 @@
 
   const PivotSettings = {
     FUNCS: FUNCS,
+    /** 列のキー（s: / c: / m:）か。件数・「② の行」は列ではない */
+    isColumnKey: isKey,
     SHOWS: SHOWS,
     GRAINS: GRAINS,
     LIMIT: LIMIT,
@@ -221,6 +224,18 @@
     return { rows: 0, n: 0, mean: 0, m2: 0, sum: 0, min: Infinity, max: -Infinity, dmin: Infinity, dmax: -Infinity, dn: 0 };
   }
 
+  /* 重複を除いた件数は、絞り込み・重複の削除と同じそろえ方で値を数える */
+  const distinctNorm = new Normalizer(Normalizer.DEFAULT_RULES);
+
+  /** 重複を除いた件数の途中結果（値の種類を集める）。@returns {string} 'distinct' / 'blank' */
+  function addDistinct(acc, raw) {
+    acc.rows++;
+    if (Normalizer.isBlank(raw)) return 'blank';
+    if (!acc.set) acc.set = new Set();
+    acc.set.add(distinctNorm.text(raw));
+    return 'distinct';
+  }
+
   /** @returns {string} 'num' / 'date' / 'blank' / 'invalid' */
   function addValue(acc, raw) {
     acc.rows++;
@@ -262,13 +277,18 @@
     out.dn = a.dn + b.dn;
     out.dmin = Math.min(a.dmin, b.dmin);
     out.dmax = Math.max(a.dmax, b.dmax);
+    if (a.set || b.set) {
+      out.set = new Set(a.set || []);
+      if (b.set) b.set.forEach((x) => out.set.add(x));
+    }
     return out;
   }
 
   /** @returns {{value:number|null, date:boolean}} */
   function finish(acc, fn) {
-    if (!acc) return { value: fn === 'count' || fn === 'sum' ? 0 : null, date: false };
+    if (!acc) return { value: fn === 'count' || fn === 'sum' || fn === 'distinct' ? 0 : null, date: false };
     if (fn === 'count') return { value: acc.rows, date: false };
+    if (fn === 'distinct') return { value: acc.set ? acc.set.size : 0, date: false };
     if (fn === 'sum') return { value: acc.n ? acc.sum : (acc.dn ? null : 0), date: false };
     if (fn === 'avg') return { value: acc.n ? acc.mean : null, date: false };
     if (fn === 'stdev') return { value: acc.n >= 2 ? Math.sqrt(acc.m2 / (acc.n - 1)) : null, date: false };
@@ -334,7 +354,14 @@
       }
       cell.members.push(member);
       const kinds = new Array(this.vc);
-      for (let v = 0; v < this.vc; v++) kinds[v] = fns[v] === 'count' ? (cell.accs[v].rows++, 'count') : addValue(cell.accs[v], raws[v]);
+      for (let v = 0; v < this.vc; v++) {
+        if (fns[v] === 'count') {
+          cell.accs[v].rows++;
+          kinds[v] = 'count';
+        } else {
+          kinds[v] = fns[v] === 'distinct' ? addDistinct(cell.accs[v], raws[v]) : addValue(cell.accs[v], raws[v]);
+        }
+      }
       return kinds;
     }
   }
