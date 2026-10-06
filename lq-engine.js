@@ -8,7 +8,7 @@
  * ── 期間の解釈 ──
  * 期間の解釈：「2024」「2024/05」「2024年5月」「2024年度」「2024/05/10」のような年・年月・日と、
  *   今日を基準にした「今日・昨日・今週・先週・今月・先月・今年・昨年・今年度・前年度・直近 N 日・今後 N 日」を
- *   [start, end)（UTC 基準のミリ秒。end は含まない）に読み替える。年度は 4 月始まり、週は月曜始まり。
+ *   [start, end)（UTC 基準のミリ秒。end は含まない）に読み替える。年度の始まりは LQ.Fiscal（初期値 4 月）、週は月曜始まり。
  *   日付の比較値は ValueParser.parseDate と同じ「UTC の 0 時」を 1 日の始まりとする。
  * ========================================================================= */
 (function (global) {
@@ -16,7 +16,6 @@
 
   const LQ = global.LQ;
   const DAY = 86400000;
-  const FY_START_MONTH = 4;
 
   const RE_YEAR = /^(\d{4})年?$/;
   const RE_FISCAL = /^(\d{4})年度$/;
@@ -41,7 +40,8 @@
   }
 
   function fiscalRange(fy, label) {
-    return range(Date.UTC(fy, FY_START_MONTH - 1, 1), Date.UTC(fy + 1, FY_START_MONTH - 1, 1), label);
+    const st = LQ.Fiscal.start();
+    return range(Date.UTC(fy, st - 1, 1), Date.UTC(fy + 1, st - 1, 1), label);
   }
 
   function fmt(ms) {
@@ -54,7 +54,7 @@
     const y = t.getUTCFullYear();
     const m = t.getUTCMonth() + 1;
     const monday = today - ((t.getUTCDay() + 6) % 7) * DAY;
-    const fy = m >= FY_START_MONTH ? y : y - 1;
+    const fy = LQ.Fiscal.yearOf(y, m);
     switch (s) {
       case '今日': case '本日': return range(today, today + DAY, '今日');
       case '昨日': return range(today - DAY, today, '昨日');
@@ -97,7 +97,7 @@
       const rel = relative(s, todayUtc(now));
       if (rel) return rel;
       let r = RE_FISCAL.exec(s);
-      if (r) return fiscalRange(Number(r[1]), r[1] + '年度（4月〜翌3月）');
+      if (r) return fiscalRange(Number(r[1]), r[1] + '年度（' + LQ.Fiscal.span() + '）');
       r = RE_YEAR.exec(s);
       if (r) return range(Date.UTC(Number(r[1]), 0, 1), Date.UTC(Number(r[1]) + 1, 0, 1), r[1] + '年');
       r = RE_MONTH.exec(s);
@@ -121,8 +121,9 @@
     },
 
     /** 今日の日付の文字（計算結果の再利用のキーに使う） */
+    /** 期間の読み替えが変わる目安（今日の日付と年度の始まり。値の準備の再利用に使う） */
     todayKey(now) {
-      return String(todayUtc(now));
+      return String(todayUtc(now)) + '|' + LQ.Fiscal.start();
     }
   };
 
@@ -132,11 +133,12 @@
 /* =========================================================================
  * ── 比較方法の登録簿 ──
  * 比較方法（演算子）の登録簿。新しい比較方法は register() で追加するだけでよい。
- *   prep：値の下ごしらえ方法（key＝同値判定用 / text＝文字列比較用 / typed＝大小比較用）
+ *   prep：値の下ごしらえ方法（key＝同値判定用 / text＝文字列比較用 / typed＝大小比較用 / plain＝正規表現用）
  *   test(left, right)：true / false / null（比較できない）を返す
  *   wildcard：② の値・固定値の「*」（ワイルドカード）と先頭の比較演算子（>=0.1・<>アヒル など。Excel の COUNTIF と同じ書き方）を
  *             判定の書き方として扱う（Normalizer.criteria。照合ルールが ON のとき。negative なら当てはまらない行が真）
- *   rightPrep：② の値・固定値の下ごしらえが ① と違うとき（期間 = period）
+ *   rightPrep：② の値・固定値の下ごしらえが ① と違うとき（期間 = period／正規表現 = regex）
+ *   validate(value)：固定値の書き方の誤り（文章。正しければ null）／example：固定値の入力欄の例
  *   pair：② の値を 2 つ使う（範囲：開始〜終了。test(left, right, right2)）
  *   date：① が日付の列のときの呼び方 {name, phrase}（以降・以前など）
  *   日付どうしの「以下・超え・範囲の終わり」は、時刻のない日付を「その日の終わり」までとして比べる
@@ -186,7 +188,8 @@
 
   const Operators = {
     register(def) {
-      registry.set(def.id, Object.freeze(Object.assign({ negative: false, positive: null, wildcard: false, rightPrep: null, pair: false, date: null }, def)));
+      registry.set(def.id, Object.freeze(Object.assign({ negative: false, positive: null, wildcard: false, rightPrep: null, pair: false, date: null,
+        validate: null, example: null }, def)));
     },
 
     get(id) {
@@ -281,6 +284,18 @@
     id: 'lt', name: '未満', phrase: '未満', group: 'compare', order: 100, prep: 'typed',
     date: { name: 'より前', phrase: 'より前（前日まで）' },
     test: comparator((d) => d < 0)
+  });
+  /* 正規表現：② の値・固定値を正規表現として ① の値に当てはめる（全角半角・空白だけそろえ、表記ゆれのそろえ方は使わない）。書き方の誤りは比較できない */
+  const regexError = (v) => LQ.Normalizer.regexError(v);
+  Operators.register({
+    id: 'regex', name: '正規表現に一致', phrase: 'の正規表現に一致', group: 'partial', order: 64, prep: 'plain', rightPrep: 'regex',
+    validate: regexError, example: '^A-\\d{3}$',
+    test: (l, r) => (r ? r.re.test(l) : null)
+  });
+  Operators.register({
+    id: 'notRegex', name: '正規表現に一致しない', phrase: 'の正規表現に一致しない', group: 'partial', order: 66, prep: 'plain', rightPrep: 'regex',
+    negative: true, positive: 'regex', validate: regexError, example: '^A-\\d{3}$',
+    test: (l, r) => (r ? !r.re.test(l) : null)
   });
   /* 範囲：開始・終了のどちらかが空欄ならその側は無制限。両端を含む */
   Operators.register({
@@ -789,6 +804,8 @@
         out.push({ field: 'right', code: 'value', message: '固定値を入力してください' });
       } else if (op && op.rightPrep === 'period' && !LQ.Period.parse(c.right.value)) {
         out.push({ field: 'right', code: 'period', message: '「' + c.right.value + '」は期間として読めません（例：2024・2024/05・2024年度・今月・直近30日）' });
+      } else if (op && op.validate && op.validate(c.right.value)) {
+        out.push({ field: 'right', code: 'value', message: op.validate(c.right.value) });
       }
       return out;
     }
@@ -950,7 +967,8 @@
       const joinKind = query.joinKind;
       const matchMode = needsCond ? query.matchMode : 'first';
       const pairs = matchMode === 'all' && joinKind !== 'anti';
-      const stopAtFirst = joinKind === 'anti';
+      /* ② の行ごとに ① のどれかと一致したか（「② で一致しなかった行」に使う。そのため一致しなかった行の出力でも ② を最後まで見る） */
+      const condHit = needsCond ? new Uint8Array(M) : null;
       const out = new ResultBuilder(joinKind === 'left' ? N : Math.min(N, 65536));
       let matchedSources = 0;
       let truncated = false;
@@ -983,6 +1001,7 @@
             }
             if (evaluate(x, r) === 1) {
               count++;
+              condHit[r] = 1;
               if (first < 0) first = r;
               if (pairs) {
                 if (out.length >= MAX_OUTPUT_ROWS) {
@@ -991,7 +1010,6 @@
                 }
                 out.push(x, r, 0);
               }
-              if (stopAtFirst) break;
             }
             if (!index) r++;
           }
@@ -1012,8 +1030,11 @@
       onProgress({ phase: 'match', ratio: 1, label: '照合中', done: N, total: N });
 
       const built = out.finish();
+      const condUnmatched = [];
+      if (condHit && !truncated) for (let r = 0; r < M; r++) if (!condHit[r]) condUnmatched.push(r);
       return {
         id: LQ.Util.uid('res'),
+        condUnmatched: condHit && !truncated ? Int32Array.from(condUnmatched) : null,
         src: built.src,
         cond: built.cond,
         count: built.count,
@@ -1045,6 +1066,7 @@
           rules: norm.describe(),
           sourceName: source.name,
           conditionName: needsCond ? condition.name : '',
+          conditionPrep: needsCond && LQ.PrepFlow && LQ.PrepFlow.active(condition) ? LQ.PrepFlow.text(condition) : '',
           finishedAt: new Date()
         }
       };

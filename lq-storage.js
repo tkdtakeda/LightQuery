@@ -437,11 +437,13 @@
 
 /* =========================================================================
  * ── 読み込みの記憶（毎月差し替える表のために） ──
- * ① と、② の抽出条件ごとに、読み込み範囲（シート・ヘッダー行・データ開始行・開始列）と絞り込みを記憶し、
+ * ① と、② の抽出条件ごとに、読み込み範囲（シート・ヘッダー行・データ開始行・開始列）と絞り込み・重複の削除を記憶し、
  * 次に表を読み込んだときに当てはめる。
  *   ・読み込み範囲：当てはめた結果の列名が、記憶した列名の 8 割以上と一致したときだけ使う（違う構成の表なら自動判定のまま）。
  *                   終了行は月ごとに行数が変わるため引き継がない
  *   ・絞り込み：列名で当てはめる。「値を選ぶ」は前回選んだ値だけを残し、前回の一覧になかった値（新しい値）は外して知らせる
+ *   ・重複の削除：比べる列を列名で当てはめる（ない列は除いて比べ、その旨を処理の流れに出す）
+ *   ・縦持ち：縦持ちにする列を列名で当てはめる（1 列もなければ当てはめない）
  *   キーは ① が 'source'、② が 'cond:' + 抽出条件の id。サンプルの表は記憶しない。
  * ========================================================================= */
 (function (global) {
@@ -451,6 +453,8 @@
   const Prefs = LQ.Prefs;
   const READ_KEY = 'loadMemory.read';
   const FILTER_KEY = 'loadMemory.filters';
+  const DEDUP_KEY = 'loadMemory.dedup';
+  const UNPIVOT_KEY = 'loadMemory.unpivot';
   const MATCH_RATIO = 0.8;
   const MAX_ENTRIES = 60;
   const NEW_VALUE_LIMIT = 5;
@@ -467,7 +471,9 @@
   }
 
   function baseNames(ds) {
-    return ds.columns.filter((c) => !c.derived).map((c) => c.name);
+    /* 縦持ちにしているときは、縦持ちにする前の列の名前（同じ構成の表かを比べるため） */
+    const own = ds.columns.filter((c) => !c.derived && !c.fileCol && !c.unpivot).map((c) => c.name);
+    return ds.unpivotInfo ? own.concat(ds.unpivotInfo.cols) : own;
   }
 
   function matchRatio(remembered, names) {
@@ -563,6 +569,47 @@
       });
       ds.setFilters(LQ.Util.clone(list));
       return { count: list.length, notes: notes };
+    },
+
+    /** 縦持ちを記憶する（使っていなければ「使わない」を記憶） */
+    rememberUnpivot(key, ds) {
+      if (!ds || ds.isSample) return;
+      const map = load(UNPIVOT_KEY);
+      delete map[key];
+      map[key] = ds.unpivot ? LQ.Util.clone(ds.unpivot) : null;
+      save(UNPIVOT_KEY, map);
+    },
+
+    /**
+     * 記憶した縦持ちを当てはめる（縦持ちにする列が 1 つもない表には当てはめない）
+     * @returns {string|null} 当てはめたときの説明
+     */
+    applyUnpivot(key, ds) {
+      const def = LQ.Unpivot.clean(load(UNPIVOT_KEY)[key]);
+      if (!def || !def.cols.some((n) => ds.findColumn(n) >= 0)) return null;
+      ds.setUnpivot(def);
+      const info = ds.unpivotInfo;
+      return '前回の縦持ち（' + LQ.Unpivot.describe(def) + '）を掛けました（' + LQ.Util.formatInt(info.base) + ' 行 → ' + LQ.Util.formatInt(info.kept) + ' 行）';
+    },
+
+    /** 重複の削除を記憶する（使っていなければ「使わない」を記憶） */
+    rememberDedup(key, ds) {
+      if (!ds || ds.isSample) return;
+      const map = load(DEDUP_KEY);
+      delete map[key];
+      map[key] = ds.dedup ? LQ.Util.clone(ds.dedup) : null;
+      save(DEDUP_KEY, map);
+    },
+
+    /**
+     * 記憶した重複の削除を当てはめる
+     * @returns {string|null} 当てはめたときの説明
+     */
+    applyDedup(key, ds) {
+      const def = load(DEDUP_KEY)[key];
+      if (!def || !Array.isArray(def.cols)) return null;
+      ds.setDedup(def);
+      return '前回の重複の削除（' + LQ.Dedup.describe(def) + 'は最初の行だけ残す）を掛けました（' + LQ.Util.formatInt(ds.dedupInfo.removed.length) + ' 行を除外）';
     }
   };
 

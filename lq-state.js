@@ -366,6 +366,34 @@
       this._afterDatasetChange(role);
     }
 
+    /** 年度の始まり（月）を変える。期間の条件・ピボット・グラフに使うため、結果は未反映になり、ピボット・グラフは作り直す */
+    setFiscalStart(month) {
+      if (month === LQ.Fiscal.start()) return;
+      LQ.Fiscal.set(month);
+      this._emit('rules', { fiscal: true });
+      this._emit('aggregate', { fiscal: true });
+      this._emit('charts', { fiscal: true });
+    }
+
+    /** ① / ②（選択中の抽出条件）の縦持ちを置き換える（null で外す）。列が変わるため出力列もそろえ直す */
+    setUnpivot(role, def) {
+      const ds = this.datasets[role];
+      if (!ds) return;
+      ds.setUnpivot(def);
+      if (this.keepsUserSettings) LQ.LoadMemory.rememberUnpivot(LQ.LoadMemory.keyOf(role, this.activeId), ds);
+      this.view.pages[role] = 0;
+      this._afterDatasetChange(role);
+    }
+
+    /** ① / ②（選択中の抽出条件）の重複の削除を置き換える（null で外す）。結果は未反映になる */
+    setDedup(role, def) {
+      const ds = this.datasets[role];
+      if (!ds) return;
+      ds.setDedup(def);
+      if (this.keepsUserSettings) LQ.LoadMemory.rememberDedup(LQ.LoadMemory.keyOf(role, this.activeId), ds);
+      this._afterDatasetChange(role);
+    }
+
     /** ① と各抽出条件の ② の読み込み範囲を記憶する（次に同じ構成の表を読み込んだときに使う） */
     _rememberReads() {
       if (!this.keepsUserSettings) return;
@@ -864,7 +892,8 @@
         s ? s.id + ':' + s.version : '',
         this.profiles.enabled().map((p) => [p.id, p.condition ? p.condition.id + ':' + p.condition.version : '', QueryOps.signature(p.query),
           Normalizer.signatureOf(this.rulesFor(p))]),
-        this.effectiveCombine()
+        this.effectiveCombine(),
+        LQ.Fiscal.start()
       ]);
     }
 

@@ -206,6 +206,8 @@
           ownRules: !!p.ownRules,
           query: p.query,
           rules: p.rules || ctx.rules,
+          /* ① のどの行とも一致しなかった ② の行（② の行番号の位置。振り分けの前に数える。② を使わない・打ち切ったときは null） */
+          condUnmatched: st.needsCondition ? results[i].condUnmatched : null,
           hits: merged.hits[i],
           assigned: merged.assigned[i],
           rows: merged.counts[i],
@@ -235,6 +237,7 @@
         },
         snapshot: {
           sourceName: ctx.source.name,
+          sourcePrep: LQ.PrepFlow.active(ctx.source) ? LQ.PrepFlow.text(ctx.source) : '',
           rules: new LQ.Normalizer(ctx.rules).describe(),
           ownRules: parts.filter((p) => p.ownRules).length,
           finishedAt: new Date()
@@ -266,7 +269,7 @@
       length: n,
       members: null,
       stats: { sourceRows: n, mode: 'assign', includeUnmatched: false, matchedSources: n, unmatchedRows: 0, outputRows: n, elapsedMs: 0, truncated: false },
-      snapshot: { sourceName: source.name, rules: new LQ.Normalizer(rules).describe(), ownRules: 0, finishedAt: new Date() }
+      snapshot: { sourceName: source.name, sourcePrep: LQ.PrepFlow.active(source) ? LQ.PrepFlow.text(source) : '', rules: new LQ.Normalizer(rules).describe(), ownRules: 0, finishedAt: new Date() }
     };
   };
 

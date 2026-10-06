@@ -21,12 +21,16 @@
   const Prefs = LQ.Prefs;
 
   /* ---------------------------------------------------------------------
-   * WorksetDB：IndexedDB（sets：セットの中身 / grids：② の表。キーは「セットの id|抽出条件の id」）
+   * WorksetDB：IndexedDB（sets：セットの中身 / grids：② の表。キーは「セットの id|抽出条件の id」／
+   *   results：セットで最後に抽出した結果（前回との比較の「直前の抽出結果」。キーはセットの id）
    * ------------------------------------------------------------------- */
   const DB_NAME = 'lightquery';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_SETS = 'sets';
   const STORE_GRIDS = 'grids';
+  const STORE_RESULTS = 'results';
+  /* 覚えておく抽出結果の行数の上限（大きすぎる結果はブラウザの容量を圧迫するため覚えない） */
+  const RESULT_MAX_ROWS = 200000;
   const SEP = '|';
 
   function promisify(req) {
@@ -64,6 +68,7 @@
           const db = req.result;
           if (!db.objectStoreNames.contains(STORE_SETS)) db.createObjectStore(STORE_SETS, { keyPath: 'id' });
           if (!db.objectStoreNames.contains(STORE_GRIDS)) db.createObjectStore(STORE_GRIDS);
+          if (!db.objectStoreNames.contains(STORE_RESULTS)) db.createObjectStore(STORE_RESULTS);
         };
         req.onsuccess = () => {
           this.db = req.result;
@@ -113,9 +118,21 @@
     }
 
     removeSet(id) {
-      const tx = this.db.transaction([STORE_SETS, STORE_GRIDS], 'readwrite');
+      const tx = this.db.transaction([STORE_SETS, STORE_GRIDS, STORE_RESULTS], 'readwrite');
       tx.objectStore(STORE_SETS).delete(id);
       tx.objectStore(STORE_GRIDS).delete(gridRange(id));
+      tx.objectStore(STORE_RESULTS).delete(id);
+      return done(tx);
+    }
+
+    /** セットで最後に抽出した結果（なければ undefined） */
+    getResult(setId) {
+      return promisify(this.db.transaction(STORE_RESULTS).objectStore(STORE_RESULTS).get(setId));
+    }
+
+    putResult(setId, table) {
+      const tx = this.db.transaction(STORE_RESULTS, 'readwrite');
+      tx.objectStore(STORE_RESULTS).put(table, setId);
       return done(tx);
     }
   }
@@ -135,7 +152,9 @@
         const plain = { name: p.name, enabled: p.enabled, createdAt: p.createdAt, query: LQ.QueryOps.toPlain(p.query), condition: p.currentRef() };
         if (p.rules) plain.rules = Util.clone(p.rules);
         if (p.condition && !p.condition.isSample) grids.set(p.id, p.condition.grid);
-        return { id: p.id, plain: plain, filters: p.condition ? Util.clone(p.condition.filters || []) : [] };
+        return { id: p.id, plain: plain, filters: p.condition ? Util.clone(p.condition.filters || []) : [],
+          dedup: p.condition && p.condition.dedup ? Util.clone(p.condition.dedup) : null,
+          unpivot: p.condition && p.condition.unpivot ? Util.clone(p.condition.unpivot) : null };
       });
       const src = state.datasets.source;
       const read = src && !src.isSample
@@ -189,7 +208,9 @@
       let missing = 0;
       const list = (c.profiles || []).map((item) => {
         const p = LQ.Profile.fromPlain(item.plain, { id: item.id, grid: grids.get(item.id) || null });
+        if (p.condition && item.unpivot) p.condition.setUnpivot(LQ.Unpivot.clean(item.unpivot));
         if (p.condition && item.filters && item.filters.length) p.condition.setFilters(item.filters);
+        if (p.condition && item.dedup) p.condition.setDedup(item.dedup);
         if (!p.condition && p.conditionRef && p.conditionRef.fileName) missing++;
         return p;
       });
@@ -312,6 +333,7 @@
         if (!restored || restored.missing) await this._open(found, { quiet: true, onlyIfContent: true });
       }
       this.ready = true;
+      await this._loadResult(this.activeId);
       this.bus.on('change', (e) => {
         if (SAVE_TOPICS.has(e.topic) || (e.topic === 'view' && e.detail && e.detail.pageSize)) this.schedule();
       });
@@ -450,8 +472,32 @@
       record.usedAt = new Date().toISOString();
       Prefs.set(ACTIVE_KEY, record.id);
       this._enqueue(() => this.db.putSet(record, null, null));
+      await this._loadResult(record.id);
       this._changed();
       return info;
+    }
+
+    /** セットで最後に抽出した結果を、前回との比較の「直前の抽出結果」の候補にする */
+    async _loadResult(setId) {
+      let table = null;
+      try {
+        table = setId && this.available ? (await this.db.getResult(setId)) || null : null;
+      } catch (err) {
+        table = null;
+      }
+      this.app.compare.useSaved(table);
+    }
+
+    /**
+     * 抽出結果を、開いているセットの「最後に抽出した結果」として覚える（サンプル表示中・大きすぎる結果は覚えない）
+     * @param {{name:string, header:string[], rows:string[][], at:Date}} table
+     * @returns {boolean} 覚えたか
+     */
+    saveResult(table) {
+      if (!this._canSave() || !table || table.rows.length > RESULT_MAX_ROWS) return false;
+      const id = this.activeId;
+      this._enqueue(() => this.db.putResult(id, { name: table.name, kind: 'previous', header: table.header, rows: table.rows, at: table.at }));
+      return true;
     }
 
     /** 今の状態から新しいセットを作って開いている扱いにする（初回の引き継ぎ用） */

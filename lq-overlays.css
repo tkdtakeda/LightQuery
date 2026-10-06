@@ -678,6 +678,14 @@
   background: var(--color-drop-cond);
 }
 
+/* ① を読み込み済みのとき：上に「置き換える」、下に「下に足す（縦に結合）」を重ねる */
+.lq-dropoverlay__pair {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: var(--space-8);
+  min-height: 0;
+}
+
 .lq-dropoverlay__zone.is-over {
   transform: scale(var(--scale-over));
   border-style: solid;

@@ -33,16 +33,23 @@
     /**
      * @param {'source'|'condition'} role
      * @param {LQ.SourceFile} source
-     * @param {{isSample?:boolean, settings?:object}} options
+     * @param {{isSample?:boolean, settings?:object, members?:LQ.SourceFile[], filters?:Array, dedup?:object, unpivot?:object}} options
+     *        members：縦に結合する 2 つ目以降のファイル（① のみ）。filters・dedup・unpivot：絞り込み・重複の削除・縦持ちを引き継ぐとき
      */
     constructor(role, source, options) {
       const opts = options || {};
       this.id = Util.uid('ds');
       this.role = role;
       this.source = source;
+      this.members = (opts.members || []).slice();
+      this.filters = (opts.filters || []).slice();
+      this.dedup = opts.dedup ? Util.clone(opts.dedup) : null;
+      this.unpivot = opts.unpivot ? Util.clone(opts.unpivot) : null;
       this.isSample = !!opts.isSample;
       this.version = 0;
       this.grid = [];
+      this.table = [];
+      this.union = null;
       this.columns = [];
       this.rowIdx = new Int32Array(0);
       this.auto = null;
@@ -54,6 +61,11 @@
 
     get name() {
       return this.source.name;
+    }
+
+    /** 縦に結合しているファイルの数（1 つなら 1） */
+    get fileCount() {
+      return this.members.length + 1;
     }
 
     get roleLabel() {
@@ -94,7 +106,20 @@
       const o = options || {};
       return new Dataset(this.role, this.source.clone(), {
         isSample: o.isSample === undefined ? this.isSample : !!o.isSample,
-        settings: Util.clone(this.settings)
+        settings: Util.clone(this.settings),
+        members: this.members.map((m) => m.clone()),
+        unpivot: this.unpivot
+      });
+    }
+
+    /**
+     * 縦に結合するファイルを入れ替えた新しいデータセット（読み込み範囲・絞り込み・重複の削除は引き継ぐ）。
+     * 元のデータセットは変えないため、取り消し（スナップショット）で元に戻せる。
+     * @param {LQ.SourceFile[]} members
+     */
+    withMembers(members) {
+      return new Dataset(this.role, this.source, {
+        isSample: this.isSample, settings: Util.clone(this.settings), members: members, filters: this.filters, dedup: this.dedup, unpivot: this.unpivot
       });
     }
 
@@ -117,10 +142,62 @@
       return { adjusted: adjusted };
     }
 
-    /** 設定から列と行を作り直す */
+    /** 設定から列と行を作り直す（縦に結合するファイルがあれば列の名前でそろえて 1 つの表にし、縦持ちの設定があれば縦持ちにする） */
     derive() {
-      const g = this.grid;
-      const s = this.settings;
+      const part = Dataset.extract(this.grid, this.settings);
+      let columns = part.columns;
+      let rows = part.rows;
+      this.table = this.grid;
+      this._rowNo = null;
+      this.union = null;
+      if (this.members.length) {
+        const u = LQ.SourceUnion.build(this, part);
+        this.table = u.table;
+        columns = u.columns;
+        rows = u.rows;
+        this._rowNo = u.rowNo;
+        this.union = u.info;
+      }
+      this.unpivotInfo = null;
+      /* 縦持ちにする前の列（縦持ちにする列を選ぶ画面に使う） */
+      this.preUnpivotColumns = columns.map((c) => ({ name: c.name, letter: c.letter, fileCol: !!c.fileCol }));
+      if (this.unpivot) {
+        const rn = this._rowNo;
+        const up = LQ.Unpivot.build(columns, rows, this.table, (r) => (rn ? rn[r] : r + 1), this.unpivot);
+        this.unpivotInfo = up.info;
+        if (up.table) {
+          this.table = up.table;
+          columns = up.columns;
+          rows = up.rows;
+          this._rowNo = up.rowNo;
+        }
+      }
+      this.columns = columns;
+      this._colIndex = new Map(columns.map((col) => [col.name, col.index]));
+      this.rowIdx = Int32Array.from(rows);
+      this._baseRowIdx = this.rowIdx;
+      this._appendDerived();
+      this._applyFilters();
+      this._applyDedup();
+      this.stats = {
+        rows: rows.length,
+        cols: columns.length,
+        skippedEmpty: this.union ? this.union.skippedEmpty : part.skippedEmpty,
+        firstRow: part.rows.length ? part.rows[0] + 1 : null,
+        lastRow: part.rows.length ? part.rows[part.rows.length - 1] + 1 : null,
+        rangeText: part.columns.length && part.rows.length
+          ? part.columns[0].letter + (part.rows[0] + 1) + ':' + part.columns[part.columns.length - 1].letter + (part.rows[part.rows.length - 1] + 1)
+          : '—'
+      };
+      this.version++;
+    }
+
+    /**
+     * grid に読み込み範囲を当てはめ、列（名前・元の列番号・列記号）とデータ行（grid の行番号）を取り出す。
+     * 空の行は除き、その数を skippedEmpty に数える。
+     * @returns {{columns:Array<{name:string, index:number, src:number, letter:string}>, rows:number[], skippedEmpty:number}}
+     */
+    static extract(g, s) {
       const c0 = s.startCol - 1;
       const headerIdx = s.hasHeader ? s.headerRow - 1 : -1;
       const first = s.startRow - 1;
@@ -171,38 +248,34 @@
         }
         columns.push({ name: name, index: columns.length, src: c, letter: letter });
       }
-      this.columns = columns;
-      this._colIndex = new Map(columns.map((col) => [col.name, col.index]));
-      this.rowIdx = Int32Array.from(rows);
-      this._baseRowIdx = this.rowIdx;
-      this._appendDerived();
-      this._applyFilters();
-      this.stats = {
-        rows: rows.length,
-        cols: columns.length,
-        skippedEmpty: skippedEmpty,
-        firstRow: rows.length ? rows[0] + 1 : null,
-        lastRow: rows.length ? rows[rows.length - 1] + 1 : null,
-        rangeText: columns.length && rows.length
-          ? columns[0].letter + (rows[0] + 1) + ':' + columns[columns.length - 1].letter + (rows[rows.length - 1] + 1)
-          : '—'
-      };
-      this.version++;
+      return { columns: columns, rows: rows, skippedEmpty: skippedEmpty };
     }
 
     /** データ行 r・列 c の値（文字列）。追加した列（読み替え・計算）は作った値を返す */
     cell(r, c) {
       const col = this.columns[c];
       if (col && col.values) return col.values[r];
-      const row = this.grid[this.rowIdx[r]];
+      const row = this.table[this.rowIdx[r]];
       if (!row || !col) return '';
       const v = row[col.src];
       return v === undefined || v === null ? '' : v;
     }
 
-    /** データ行 r の元の行番号（1 始まり。Excel の行番号と一致） */
+    /** データ行 r の元の行番号（1 始まり。Excel の行番号と一致。縦に結合しているときは、そのファイルでの行番号） */
     rowNumber(r) {
-      return this.rowIdx[r] + 1;
+      const i = this.rowIdx[r];
+      return this._rowNo ? this._rowNo[i] : i + 1;
+    }
+
+    /** 絞り込み前の b 行目の元の行番号（除いた行の内訳に使う） */
+    baseRowNumber(b) {
+      const i = (this._baseRowIdx || this.rowIdx)[b];
+      return this._rowNo ? this._rowNo[i] : i + 1;
+    }
+
+    /** データ行 r が絞り込み前の何行目か（絞り込み・重複の削除で除いた行を指すため） */
+    basePos(r) {
+      return this._basePos ? this._basePos[r] : r;
     }
 
     /** 追加した列（読み替え・計算）を作り直す（定義が変わったとき） */
@@ -212,7 +285,20 @@
       this._colIndex = new Map(this.columns.map((col) => [col.name, col.index]));
       this._appendDerived();
       this._applyFilters();
+      this._applyDedup();
       this.version++;
+    }
+
+    /** 縦持ちを置き換える（null で外す）。列が変わるため、表を作り直す */
+    setUnpivot(def) {
+      this.unpivot = def ? Util.clone(def) : null;
+      this.derive();
+    }
+
+    /** 重複の削除を置き換える（null で外す）。def：{cols:string[]}（空ならすべての列で比べる） */
+    setDedup(def) {
+      this.dedup = def ? Util.clone(def) : null;
+      this.refreshDerived();
     }
 
     /** 絞り込みを置き換える（[] で外す）。読み込み範囲を変えても掛けたまま残す */
@@ -232,7 +318,7 @@
       if (!col) return '';
       if (col.values) return (col.baseValues || col.values)[b];
       const base = this._baseRowIdx || this.rowIdx;
-      const row = this.grid[base[b]];
+      const row = this.table[base[b]];
       const v = row ? row[col.src] : undefined;
       return v === undefined || v === null ? '' : v;
     }
@@ -258,6 +344,7 @@
     _applyFilters() {
       const filters = this.filters || [];
       this.filterInfo = null;
+      this._basePos = null;
       if (!filters.length) return;
       const n = this.rowIdx.length;
       const items = [];
@@ -275,12 +362,37 @@
       }
       const base = this.rowIdx;
       this.rowIdx = Int32Array.from(keep, (r) => base[r]);
+      this._basePos = Int32Array.from(keep);
       this.columns.forEach((c) => {
         if (!c.values) return;
         c.baseValues = c.values;
         c.values = keep.map((r) => c.baseValues[r]);
       });
-      this.filterInfo = { base: n, kept: keep.length, items: items };
+      const removed = [];
+      for (let r = 0, k = 0; r < n; r++) {
+        if (k < keep.length && keep[k] === r) k++;
+        else removed.push(r);
+      }
+      this.filterInfo = { base: n, kept: keep.length, items: items, removed: Int32Array.from(removed) };
+    }
+
+    /** 重複の削除を当てはめる（絞り込みのあと。処理は lq-prep.js の Dedup）。結果は dedupInfo に残す */
+    _applyDedup() {
+      this.dedupInfo = this.dedup ? LQ.Dedup.apply(this, this.dedup) : null;
+    }
+
+    /** 列を残した行にそろえる（keep：今の行のうち残す行の位置）。絞り込み前の値は baseValues に残す */
+    keepRows(keep) {
+      const base = this.rowIdx;
+      const pos = this._basePos;
+      this.rowIdx = Int32Array.from(keep, (r) => base[r]);
+      this._basePos = Int32Array.from(keep, (r) => (pos ? pos[r] : r));
+      this.columns.forEach((c) => {
+        if (!c.values) return;
+        if (!c.baseValues) c.baseValues = c.values;
+        const cur = c.values;
+        c.values = keep.map((r) => cur[r]);
+      });
     }
 
     /** 定義の順に列を加える（前に加えた列も式・読み替えの元にできる）。結果は derivedInfo に残す */
@@ -395,223 +507,20 @@
  * 読み込んだ表に、ほかの列から作る列を加える（Dataset が読み込み範囲を当てはめるたびに作り直す）。
  *   読み替え（map）：対応表（元の値 → 読み替え後）で置き換える。前後の空白・全角半角・大文字小文字をそろえて照らし合わせ、
  *                    「*」のワイルドカードも使える。対応表にない値は「元の値のまま／空欄／指定した値」
- *   計算（calc）：[列名] を使った式。+ - × ÷（* /）・括弧・& （文字のつなぎ合わせ）・"文字"・ROUND / ROUNDUP / ROUNDDOWN。
- *                 空欄は 0 として計算（Excel と同じ）。数値として読めない値・0 での割り算の行は空欄にして件数を数える
+ *   計算（calc）：[列名] を使った式（Excel と同じ書き方。演算子・比較・関数は lq-formula.js / lq-formula-funcs.js）。
+ *                 空欄は 0 として計算（Excel と同じ）。数値として読めない値・0 での割り算・計算できない値の行は空欄にして件数を数える
  *   定義：{id, kind:'map'|'calc', name, from, rows:[[元, 後]], unmatched:'keep'|'blank'|'value', value, expr}
  * ========================================================================= */
 (function (global) {
   'use strict';
 
   const LQ = global.LQ;
-  const ValueParser = LQ.ValueParser;
 
   const KINDS = { map: { label: '読み替え', badge: '読替', icon: 'right-left' }, calc: { label: '計算', badge: '計算', icon: 'calculator' } };
   const UNMATCHED = ['keep', 'blank', 'value'];
   const MAX_ROWS = 20000;
   const MAX_DEFS = 30;
-  const FUNCS = {
-    ROUND: (x, n) => roundTo(x, n, (v) => Math.round(v)),
-    ROUNDUP: (x, n) => roundTo(x, n, (v) => Math.ceil(v)),
-    ROUNDDOWN: (x, n) => roundTo(x, n, (v) => Math.floor(v))
-  };
-  /* 式の中の全角の記号・数字を半角にそろえる（[列名] と "文字" の中は変えない） */
-  const SYMBOLS = { '＋': '+', '－': '-', '−': '-', '＊': '*', '×': '*', '／': '/', '÷': '/', '（': '(', '）': ')', '＆': '&',
-    '［': '[', '］': ']', '，': ',', '、': ',', '．': '.', '”': '"', '“': '"', '＂': '"', '　': ' ' };
-
-  /** Excel と同じく、0 から遠ざかる向きに丸める（ROUND）。小数の誤差を抑えるため桁を指数で動かす */
-  function roundTo(x, n, fn) {
-    const digits = Math.trunc(n || 0);
-    const sign = x < 0 ? -1 : 1;
-    const shifted = Number(Math.abs(x) + 'e' + digits);
-    const v = fn(Number(shifted.toPrecision(15)));
-    return sign * Number(v + 'e' + (-digits));
-  }
-
-  class FormulaError extends Error {
-    constructor(message, pos) {
-      super(message);
-      this.pos = pos;
-    }
-  }
-
-  /* ---------------------------------------------------------------------
-   * 式の字句解析と構文解析（再帰下降）。結果は評価関数の木
-   * ------------------------------------------------------------------- */
-  function tokenize(src) {
-    const out = [];
-    let i = 0;
-    while (i < src.length) {
-      let ch = SYMBOLS[src[i]] || src[i];
-      if (/[０-９]/.test(ch)) ch = String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
-      if (ch === ' ' || ch === '\t' || ch === '\n') {
-        i++;
-        continue;
-      }
-      if (ch === '[') {
-        let end = i + 1;
-        while (end < src.length && src[end] !== ']' && src[end] !== '］') end++;
-        if (end >= src.length) throw new FormulaError('「]」で閉じていない列名があります', i);
-        out.push({ t: 'col', v: src.slice(i + 1, end).trim(), pos: i });
-        i = end + 1;
-        continue;
-      }
-      if (ch === '"') {
-        let j = i + 1;
-        while (j < src.length && (SYMBOLS[src[j]] || src[j]) !== '"') j++;
-        if (j >= src.length) throw new FormulaError('「"」で閉じていない文字があります', i);
-        out.push({ t: 'str', v: src.slice(i + 1, j), pos: i });
-        i = j + 1;
-        continue;
-      }
-      if (/[0-9.]/.test(ch)) {
-        let j = i;
-        let num = '';
-        while (j < src.length) {
-          let c = SYMBOLS[src[j]] || src[j];
-          if (/[０-９]/.test(c)) c = String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
-          if (!/[0-9.]/.test(c)) break;
-          num += c;
-          j++;
-        }
-        if (Number.isNaN(Number(num))) throw new FormulaError('数「' + num + '」を読めません', i);
-        out.push({ t: 'num', v: Number(num), pos: i });
-        i = j;
-        continue;
-      }
-      if ('+-*/()&,'.indexOf(ch) !== -1) {
-        out.push({ t: 'op', v: ch, pos: i });
-        i++;
-        continue;
-      }
-      const m = /^[A-Za-zＡ-Ｚａ-ｚ]+/.exec(src.slice(i));
-      if (m) {
-        const name = m[0].normalize('NFKC').toUpperCase();
-        if (!FUNCS[name]) throw new FormulaError('「' + m[0] + '」は使えません（列名は [ ] で囲みます。関数は ROUND・ROUNDUP・ROUNDDOWN）', i);
-        out.push({ t: 'fn', v: name, pos: i });
-        i += m[0].length;
-        continue;
-      }
-      throw new FormulaError('「' + src[i] + '」は使えません（列名は [ ] で囲みます）', i);
-    }
-    return out;
-  }
-
-  /** 値を数として読む（空欄は 0。読めなければ NaN） */
-  function toNumber(v) {
-    if (typeof v === 'number') return v;
-    if (v === '' || v === null || v === undefined || String(v).trim() === '') return 0;
-    return ValueParser.parseNumber(v);
-  }
-
-  function toText(v) {
-    return typeof v === 'number' ? formatNumber(v) : String(v === null || v === undefined ? '' : v);
-  }
-
-  function formatNumber(v) {
-    const r = Number(v.toPrecision(15));
-    return String(Object.is(r, -0) ? 0 : r);
-  }
-
-  const NOT_NUMBER = { code: 'nan' };
-  const DIV_ZERO = { code: 'div0' };
-
-  function num(v) {
-    const n = toNumber(v);
-    if (Number.isNaN(n)) throw NOT_NUMBER;
-    return n;
-  }
-
-  /**
-   * @param {string} expr
-   * @param {Function} columnIndex 列名 → 列番号（なければ -1）
-   * @returns {{evaluate:function(Function):*, columns:string[]}} evaluate(cellOf) は 1 行分の値を返す
-   */
-  function compile(expr, columnIndex) {
-    const tokens = tokenize(String(expr || ''));
-    if (!tokens.length) throw new FormulaError('式を入力してください', 0);
-    let p = 0;
-    const columns = [];
-    const peek = () => tokens[p];
-    const isOp = (v) => peek() && peek().t === 'op' && peek().v === v;
-    const expect = (v) => {
-      if (!isOp(v)) throw new FormulaError('「' + v + '」が必要です', peek() ? peek().pos : String(expr).length);
-      p++;
-    };
-    function primary() {
-      const tk = peek();
-      if (!tk) throw new FormulaError('式が途中で終わっています', String(expr).length);
-      p++;
-      if (tk.t === 'num') return () => tk.v;
-      if (tk.t === 'str') return () => tk.v;
-      if (tk.t === 'col') {
-        const idx = columnIndex(tk.v);
-        if (idx < 0) throw new FormulaError('列「' + tk.v + '」がありません', tk.pos);
-        if (columns.indexOf(tk.v) === -1) columns.push(tk.v);
-        return (cell) => cell(idx);
-      }
-      if (tk.t === 'fn') {
-        expect('(');
-        const args = [concat()];
-        while (isOp(',')) {
-          p++;
-          args.push(concat());
-        }
-        expect(')');
-        if (args.length > 2) throw new FormulaError(tk.v + ' の引数は（値, 桁数）の 2 つまでです', tk.pos);
-        const fn = FUNCS[tk.v];
-        return (cell) => fn(num(args[0](cell)), args[1] ? num(args[1](cell)) : 0);
-      }
-      if (tk.t === 'op' && tk.v === '(') {
-        const inner = concat();
-        expect(')');
-        return inner;
-      }
-      if (tk.t === 'op' && tk.v === '-') {
-        const inner = primary();
-        return (cell) => -num(inner(cell));
-      }
-      throw new FormulaError('「' + tk.v + '」の位置がおかしいです', tk.pos);
-    }
-    function mul() {
-      let left = primary();
-      while (isOp('*') || isOp('/')) {
-        const op = peek().v;
-        p++;
-        const l = left;
-        const r = primary();
-        left = op === '*' ? (cell) => num(l(cell)) * num(r(cell)) : (cell) => {
-          const d = num(r(cell));
-          if (d === 0) throw DIV_ZERO;
-          return num(l(cell)) / d;
-        };
-      }
-      return left;
-    }
-    function add() {
-      let left = mul();
-      while (isOp('+') || isOp('-')) {
-        const op = peek().v;
-        p++;
-        const l = left;
-        const r = mul();
-        left = op === '+' ? (cell) => num(l(cell)) + num(r(cell)) : (cell) => num(l(cell)) - num(r(cell));
-      }
-      return left;
-    }
-    function concat() {
-      let left = add();
-      while (isOp('&')) {
-        p++;
-        const l = left;
-        const r = add();
-        left = (cell) => toText(l(cell)) + toText(r(cell));
-      }
-      return left;
-    }
-    const root = concat();
-    if (p < tokens.length) throw new FormulaError('「' + tokens[p].v + '」の位置がおかしいです', tokens[p].pos);
-    return { evaluate: root, columns: columns };
-  }
+  const Formula = LQ.Formula;
 
   /* ---------------------------------------------------------------------
    * 読み替え
@@ -653,7 +562,7 @@
 
     MAX_ROWS: MAX_ROWS,
     MAX_DEFS: MAX_DEFS,
-    FormulaError: FormulaError,
+    FormulaError: Formula.FormulaError,
 
     /** 保存・JSON から読んだ定義の値の種類を確かめる（使えないものは null） */
     clean(raw) {
@@ -681,8 +590,8 @@
     /** 式の確認（画面の入力中の表示用）。@returns {{ok:boolean, message?:string, pos?:number, columns?:string[]}} */
     check(expr, names) {
       try {
-        const c = compile(expr, (n) => names.indexOf(n));
-        return { ok: true, columns: c.columns };
+        const c = Formula.compile(expr, (n) => names.indexOf(n));
+        return { ok: true, columns: c.columns, functions: c.functions };
       } catch (err) {
         return { ok: false, message: err.message, pos: err.pos };
       }
@@ -730,19 +639,19 @@
       }
       let compiled;
       try {
-        compiled = compile(def.expr, columnIndex);
+        compiled = Formula.compile(def.expr, columnIndex);
       } catch (err) {
         return { values: null, info: { ok: false, message: '式：' + err.message } };
       }
       const values = new Array(rows);
-      const errors = { nan: 0, div0: 0 };
+      const errors = { nan: 0, div0: 0, value: 0 };
       for (let r = 0; r < rows; r++) {
         try {
-          values[r] = toText(compiled.evaluate((c) => cell(r, c)));
+          values[r] = Formula.toText(compiled.evaluate((c) => cell(r, c)));
         } catch (err) {
-          if (err === NOT_NUMBER) errors.nan++;
-          else if (err === DIV_ZERO) errors.div0++;
-          else throw err;
+          const code = Formula.faultCode(err);
+          if (!code) throw err;
+          errors[code]++;
           values[r] = '';
         }
       }
@@ -758,6 +667,7 @@
         const bad = [];
         if (info.errors.nan) bad.push('数値として読めない値 ' + fmt(info.errors.nan) + ' 行');
         if (info.errors.div0) bad.push('0 での割り算 ' + fmt(info.errors.div0) + ' 行');
+        if (info.errors.value) bad.push('計算できない値（日付でない・見つからない など）' + fmt(info.errors.value) + ' 行');
         return fmt(rows) + ' 行を計算' + (bad.length ? '（' + bad.join('・') + 'は空欄）' : '');
       }
       return '読み替え ' + fmt(info.matched) + ' 行' + (info.unmatched ? '・対応表にない値 ' + fmt(info.unmatched) + ' 行' : '');
@@ -825,6 +735,7 @@
           return pattern.test(norm.key(v), norm.text(v), norm.typed(v)) !== op.negative;
         } };
       }
+      if (op.validate && op.validate(f.value)) return { test: null, message: op.validate(f.value) };
       const right = norm.converter(op.rightPrep || op.prep)(f.value);
       if (op.rightPrep === 'period' && !right) return { test: null, message: '「' + f.value + '」は期間として読めません（例：2024/05・今月・直近30日）' };
       const left = norm.converter(op.prep);

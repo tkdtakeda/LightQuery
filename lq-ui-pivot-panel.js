@@ -401,7 +401,9 @@
       let item;
       if (zone === 'values') {
         item = src.from === 'values' ? carry
-          : (type === 'number' ? { key: key, fn: 'sum', show: 'value' } : { key: null, fn: 'count', show: 'value' });
+          : (type === 'number' ? { key: key, fn: 'sum', show: 'value' }
+            /* 文字・日付の列を値に置いたら、その列の重複を除いた件数（顧客数など）。行の数は「件数」で数える */
+            : (type === 'count' || !LQ.PivotSettings.isColumnKey(key) ? { key: null, fn: 'count', show: 'value' } : { key: key, fn: 'distinct', show: 'value' }));
       } else {
         item = fromDim ? carry : { key: key, grain: type === 'date' ? 'month' : null };
       }

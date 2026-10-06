@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-rules-panel.js
- * 照合ルールパネル（空白・全角半角・大文字小文字・数値・日付のそろえ方・ワイルドカード）
+ * 照合ルールパネル（空白・全角半角・大文字小文字・表記ゆれ（かな・法人格・記号）・数値・日付のそろえ方・ワイルドカード）
  *   編集する対象は「全体の設定」（個別の設定がない抽出条件すべてに使う）か、
  *   「この抽出条件だけ」（選択中の抽出条件の個別の設定）のどちらか。
  *   対象の切替は、抽出条件が複数あるか個別の設定があるときだけ表示する（1 件だけなら全体の設定だけを扱う）。
@@ -25,7 +25,13 @@
     { key: 'wildcard', type: 'switch', label: '完全一致で ② の「*」をワイルドカードにする',
       example: '例：山田*＝山田で始まる、*商事＝商事で終わる、*東京*＝東京を含む、*＝空欄以外すべて。「一致しない」は当てはまらない行。全角の＊も同じ。① の * は文字のまま' },
     { key: 'compare', type: 'switch', label: '完全一致で ② の値の >= などを比較演算子にする（Excel の COUNTIF と同じ書き方）',
-      example: '例：>=0.1＝0.1 以上、<2011/01/01＝その日より前、<>アヒル＝アヒル以外、<>山田*＝山田で始まらない、=＝空欄、<>＝空欄以外。全角（＞＝ など）や ≧ ≦ ≠ も同じ。「一致しない」は当てはまらない行' }
+      example: '例：>=0.1＝0.1 以上、<2011/01/01＝その日より前、<>アヒル＝アヒル以外、<>山田*＝山田で始まらない、=＝空欄、<>＝空欄以外。全角（＞＝ など）や ≧ ≦ ≠ も同じ。「一致しない」は当てはまらない行' },
+    { key: 'kana', type: 'switch', label: 'ひらがな・カタカナを区別しない', group: '表記ゆれ（初期値はオフ）',
+      example: '例：やまだ＝ヤマダ、りんご＝リンゴ。全角・半角も区別しない設定なら ｶﾞｯｺｳ＝がっこう も同じ' },
+    { key: 'corp', type: 'switch', label: '法人格の書き方を無視する',
+      example: '例：株式会社山田商事＝(株)山田商事＝㈱山田商事＝山田商事株式会社＝山田商事。有限会社・合同会社・一般社団法人なども同じ' },
+    { key: 'symbol', type: 'switch', label: 'ハイフン・中黒などの記号を無視する',
+      example: '例：03-1234-5678＝0312345678、A-101＝A101、ジョン・スミス＝ジョンスミス。長音「ー」と空白は対象外（空白は「空白」の設定）' }
   ];
 
   const SCOPES = [
@@ -44,7 +50,8 @@
       this.controls = new Map();
       this.scope = this._buildScope();
       this.editing = h('div', { class: 'lq-rulescope__editing' });
-      this.cards = h('div', { class: 'lq-rules' }, RULES.map((rule) => this._card(rule)));
+      /* 見出しで区切って、使う頻度の低いまとまり（表記ゆれ）を見分けやすくする */
+      this.cards = h('div', { class: 'lq-rules' }, RULES.flatMap((rule) => [rule.group ? h('div', { class: 'lq-rule__group', text: rule.group }) : null, this._card(rule)]).filter(Boolean));
       const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '編集中の照合ルールを初期設定に戻す', onclick: () => this._reset() },
         [Dom.icon('rotate-left'), '初期設定に戻す']);
       this.el = h('div', {}, [
@@ -53,10 +60,36 @@
           this.editing,
           this.cards,
           UI.note('info', '変更すると、表示中の結果は「未反映」になります。右上のボタンで再抽出すると反映されます。設定はこのパソコンのブラウザに記憶されます。')
-        ], [reset])
+        ], [reset]),
+        this._fiscalSection()
       ]);
       ['rules', 'profiles'].forEach((topic) => ctx.bus.on(topic, () => this.sync()));
       this.sync();
+    }
+
+    /**
+     * 年度の始まり（抽出条件ごとには変えられない、すべてに共通の設定。照合ルールの対象の切替とは別の区画にする）
+     */
+    _fiscalSection() {
+      this.fiscal = h('select', { class: 'lq-select', title: '年度が何月から始まるか（初期値 4 月）' });
+      UI.fillSelect(this.fiscal, Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: (i + 1) + ' 月から' + (i === 0 ? '（暦年と同じ）' : (i === 3 ? '（初期値）' : '')) })),
+        String(LQ.Fiscal.start()));
+      this.fiscalSpan = h('div', { class: 'lq-rule__example' });
+      this.fiscal.addEventListener('change', () => {
+        this.state.setFiscalStart(Number(this.fiscal.value));
+        this._syncFiscal();
+        Flash.input(this.fiscal);
+        this.ctx.toasts.show({ type: 'success', title: '年度の始まりを ' + this.fiscal.value + ' 月にしました',
+          message: '年度は' + LQ.Fiscal.span() + 'です。期間の条件は再抽出で、ピボット・グラフはすぐに反映します。' });
+      });
+      this._syncFiscal();
+      const card = h('div', { class: 'lq-rule' }, [UI.field('年度の始まり', this.fiscal), this.fiscalSpan]);
+      return UI.section('年度（すべての抽出条件・ピボット・グラフに共通）', [card]);
+    }
+
+    _syncFiscal() {
+      this.fiscal.value = String(LQ.Fiscal.start());
+      this.fiscalSpan.textContent = '年度＝' + LQ.Fiscal.span() + '。期間の条件（今年度・2024年度）、ピボット・グラフの日付のまとめ方（年度・四半期）、月の名前（4月・10月 など）の項目の並び順に使います。';
     }
 
     /** 編集する対象：選択中の抽出条件に個別の設定があればそれ、なければ全体の設定 */

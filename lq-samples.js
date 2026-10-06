@@ -101,6 +101,41 @@
   };
   const ORDERS_NAME = 'サンプル_受注データ.xlsx';
 
+  /**
+   * 月ごとの受注ファイル（縦に結合のサンプル用）。
+   *   4 月：見出しが 1 行目／5 月：上に表題と空行があり見出しが 3 行目、4 月の終わりの 12 行を再送（重複）／
+   *   6 月：列の並びが違い「担当者」列が増えた、5 月の終わりの 8 行を再送（重複）
+   */
+  function monthlyOrders() {
+    const rand = createRandom(2025);
+    const customers = makeCustomers(120, 4, rand);
+    const staff = ['佐藤', '鈴木', '高橋', '田中'];
+    const base = ['受注番号', '受注日', '顧客ID', '顧客名', '地域', '商品名', '数量', '金額'];
+    let no = 250001;
+    const month = (m, count) => {
+      const rows = [];
+      for (let i = 0; i < count; i++) {
+        const cust = rand.pick(customers);
+        const prod = rand.pick(PRODUCTS);
+        const qty = rand.int(1, 20);
+        rows.push({ 受注番号: 'OD-' + (no++), 受注日: '2025/' + pad2(m) + '/' + pad2(rand.int(1, 28)), 顧客ID: cust.id, 顧客名: cust.name, 地域: cust.region,
+          商品名: prod.name, 数量: String(qty), 金額: String(qty * prod.price), 担当者: rand.pick(staff) });
+      }
+      return rows;
+    };
+    const apr = month(4, 300);
+    const may = apr.slice(-12).concat(month(5, 320));
+    const jun = may.slice(-8).concat(month(6, 340));
+    const juneCols = ['受注日', '受注番号', '地域', '顧客ID', '顧客名', '商品名', '金額', '数量', '担当者'];
+    const toGrid = (header, rows) => [header.slice()].concat(rows.map((r) => header.map((h) => r[h])));
+    return {
+      apr: toGrid(base, apr),
+      may: [['2025年5月 受注一覧'], []].concat(toGrid(base, may)),
+      jun: toGrid(juneCols, jun),
+      columns: base.concat(['担当者'])
+    };
+  }
+
   const SAMPLES = [
     {
       id: 'idlist',
@@ -532,6 +567,120 @@
       }
     },
     {
+      id: 'functions',
+      icon: 'square-root-variable',
+      title: '列の追加：関数（IF・TEXT・日付・文字）で区分や年度を作る',
+      desc: '① に関数で列を加え、ピボットで集計します。区分＝IFS([金額]>=30000,"大口",[金額]>=10000,"中口",TRUE,"小口")、年度＝IF(MONTH([受注日])>=4, YEAR([受注日]), YEAR([受注日])-1)&"年度"、曜日＝TEXT([受注日],"aaa")、締め日＝EOMONTH([受注日],0)、分類記号＝LEFT([商品コード],1)、備考＝IF(ISBLANK([備考]),"なし","あり")。① の読み込みパネルの「列の追加」で式を直すと、書き方と計算結果をその場で確かめられます。',
+      tags: ['関数', 'IF', 'TEXT', '日付', 'ピボット'],
+      build() {
+        const calc = (id, name, expr) => ({ id: id, kind: 'calc', name: name, expr: expr });
+        return {
+          source: { name: ORDERS_NAME, grid: orders(1717) },
+          profiles: [],
+          derived: {
+            source: [
+              calc('smp-fx-size', '区分', 'IFS([金額]>=30000, "大口", [金額]>=10000, "中口", TRUE, "小口")'),
+              calc('smp-fx-fy', '年度', 'IF(MONTH([受注日])>=4, YEAR([受注日]), YEAR([受注日])-1)&"年度"'),
+              calc('smp-fx-week', '曜日', 'TEXT([受注日], "aaa")'),
+              calc('smp-fx-close', '締め日', 'EOMONTH([受注日], 0)'),
+              calc('smp-fx-cls', '分類記号', 'LEFT([商品コード], 1)'),
+              calc('smp-fx-note', '備考の有無', 'IF(ISBLANK([備考]), "なし", "あり")')
+            ],
+            condition: []
+          },
+          output: ['s:受注番号', 's:受注日', 's:年度', 's:締め日', 's:曜日', 's:商品コード', 's:分類記号', 's:金額', 's:区分', 's:備考', 's:備考の有無'],
+          aggregate: {
+            target: 'source',
+            rows: [{ key: 's:区分' }],
+            cols: [{ key: 's:年度' }],
+            values: [{ fn: 'count' }],
+            sort: { by: 'value', dir: 'desc', value: 0 }
+          },
+          tab: 'source'
+        };
+      }
+    },
+    {
+      id: 'review',
+      icon: 'not-equal',
+      title: '結果を確かめる：一致しなかった ② の行・前回との違い・顧客数',
+      desc: '② の顧客 15 件で受注を抽出します。抽出すると、要約の下に「一致しなかった ② の行」（受注のない顧客 3 件）と「前回との違い」（基準：サンプルの先月の抽出結果。受注番号で見分けて、増えた行・消えた行・変わった行）が出ます。件数を押すとその行を確かめられます。ピボットは地域ごとの件数と、重複を除いた顧客数です。',
+      tags: ['一致しなかった ② の行', '前回との違い', '重複を除いた件数'],
+      build() {
+        const grid = orders(1919);
+        const idIdx = ORDER_HEADER.indexOf('顧客ID');
+        const ids = Array.from(new Set(grid.slice(1).map((r) => r[idIdx]))).slice(0, 12).concat(['C9001', 'C9002', 'C9003']);
+        const set = new Set(ids);
+        const cols = ['受注番号', '受注日', '顧客ID', '顧客名', '地域', '金額'];
+        const pick = cols.map((c) => ORDER_HEADER.indexOf(c));
+        const amount = cols.indexOf('金額');
+        /* 先月の抽出結果：今月の結果から 6 行を除き（→ 増えた行）、4 行を足し（→ 消えた行）、5 行の金額を変える（→ 変わった行） */
+        const matched = grid.slice(1).filter((r) => set.has(r[idIdx])).map((r) => pick.map((k) => r[k]));
+        const last = matched.slice(0, matched.length - 6).map((r, i) => (i % 9 === 3 && i < 45 ? r.map((v, j) => (j === amount ? String(Number(v) + 1000) : v)) : r));
+        for (let i = 0; i < 4; i++) last.push(['OD-9' + String(90001 + i), '2025/03/2' + i, ids[i], '（先月の受注）', '東京', String(1000 * (i + 1))]);
+        return {
+          source: { name: ORDERS_NAME, grid: grid },
+          profiles: [{ name: '対象の顧客', condition: { name: 'サンプル_対象顧客.csv', grid: [['顧客ID']].concat(ids.map((id) => [id])) },
+            query: Q([C('顧客ID', 'eq', col('顧客ID'))]) }],
+          output: cols.map((c) => 's:' + c),
+          aggregate: { target: 'result', rows: [{ key: 's:地域' }], values: [{ fn: 'count' }, { key: 's:顧客ID', fn: 'distinct' }], sort: { by: 'value', dir: 'desc', value: 0 } },
+          compare: { name: 'サンプル_先月の抽出結果.xlsx', grid: [cols].concat(last), key: '受注番号' },
+          tab: 'result'
+        };
+      }
+    },
+    {
+      id: 'unpivot',
+      icon: 'arrows-turn-to-dots',
+      title: '前処理：月が横に並んだ表を縦持ちにして月ごとに集計',
+      desc: '① は「顧客・地域・4月〜3月」の 12 か月が横に並んだ売上表です。「縦持ちにする」で 4月〜3月の列を「月」「売上」の行にし（空欄の月は行にしません）、ピボットで月ごとの売上を出します。① の読み込みパネルの「縦持ちにする」で、行にする列や列の名前を変えられます。',
+      tags: ['縦持ち', 'ピボット解除', '月別', '① だけ'],
+      build() {
+        const rand = createRandom(2468);
+        const months = ['4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月', '1月', '2月', '3月'];
+        const grid = [['顧客', '地域'].concat(months)];
+        makeCustomers(40, 4, rand).forEach((c) => grid.push([c.name, c.region].concat(months.map(() => (rand.next() < 0.15 ? '' : String(rand.int(1, 60) * 1000))))));
+        return {
+          source: { name: 'サンプル_月別売上表.xlsx', grid: grid, unpivot: { cols: months, name: '月', value: '売上', keepBlank: false } },
+          profiles: [],
+          output: ['s:顧客', 's:地域', 's:月', 's:売上'],
+          aggregate: { target: 'source', rows: [{ key: 's:月' }], cols: [], values: [{ key: 's:売上', fn: 'sum' }, { fn: 'count' }], sort: { by: 'label', dir: 'asc', value: 0 } },
+          tab: 'source'
+        };
+      }
+    },
+    {
+      id: 'variants',
+      icon: 'spell-check',
+      title: '表記ゆれ（法人格・かな・記号）と正規表現で照合',
+      desc: '① の取引先名は「株式会社」「(株)」「㈱」の有無、ひらがな・カタカナ、中黒などの書き方がばらばらです。この抽出条件だけの照合ルールで表記ゆれをそろえ、② の取引先マスタと完全一致で照合します。あわせて、伝票番号が「英字 2 文字-数字 4 桁」の形の行だけを、正規表現（^[A-Z]{2}-\\d{4}$）で選びます。',
+      tags: ['表記ゆれ', '法人格', '正規表現', '照合ルール（個別）'],
+      build() {
+        const rand = createRandom(1357);
+        const firms = [['やまだ商事', ['株式会社ヤマダ商事', '(株)やまだ商事', '㈱ヤマダ商事', 'ヤマダ商事株式会社']],
+          ['スズキ・電機', ['スズキ電機株式会社', 'スズキ電機(有)', '有限会社スズキ・電機', 'すずき電機']],
+          ['サトウ物産', ['サトウ物産(株)', '株式会社サトウ物産', 'サトウ物産㈱', 'さとう物産']],
+          ['アオキ食品', ['アオキ食品㈱', '合同会社アオキ食品', 'あおき食品', 'アオキ・食品']]];
+        const grid = [['伝票番号', '日付', '取引先名', '金額']];
+        for (let i = 0; i < 48; i++) {
+          const f = firms[i % firms.length];
+          const name = f[1][rand.int(0, f[1].length - 1)];
+          const no = i % 11 === 5 ? 'XX' + rand.int(100, 999) : (i % 13 === 7 ? 'TR' + rand.int(1000, 9999) : 'TR-' + String(rand.int(1000, 9999)));
+          grid.push([no, '2025/0' + rand.int(4, 9) + '/' + pad2(rand.int(1, 28)), name, String(rand.int(1, 90) * 1000)]);
+        }
+        const master = [['取引先名', '担当']].concat(firms.map((f, i) => [f[0], ['佐藤', '鈴木', '高橋', '田中'][i]]));
+        return {
+          source: { name: 'サンプル_取引データ.csv', grid: grid },
+          profiles: [{
+            name: '取引先マスタで照合', condition: { name: 'サンプル_取引先マスタ.csv', grid: master },
+            query: Q([C('取引先名', 'eq', col('取引先名')), C('伝票番号', 'regex', fixed('^[A-Z]{2}-\\d{4}$'))]),
+            rules: { kana: true, corp: true, symbol: true }
+          }],
+          output: ['s:伝票番号', 's:日付', 's:取引先名', 'c:取引先名', 'c:担当', 's:金額']
+        };
+      }
+    },
+    {
       id: 'criteria',
       icon: 'greater-than-equal',
       title: '② の値に >= や <> を書いて比べる（Excel の COUNTIF と同じ書き方）',
@@ -545,6 +694,32 @@
           source: { name: ORDERS_NAME, grid: orders(1515) },
           profiles: [{ name: '比較演算子で判定', condition: { name: 'サンプル_比較演算子.csv', grid: cond }, query: Q([eq('カテゴリ'), eq('金額'), eq('受注日'), eq('数量')], { matchMode: 'first' }) }],
           output: ['s:受注番号', 's:受注日', 's:カテゴリ', 's:数量', 's:金額', 'c:メモ']
+        };
+      }
+    },
+    {
+      id: 'union',
+      icon: 'layer-group',
+      title: '前処理：毎月のファイルを縦に結合して重複を除く',
+      desc: '4 月・5 月・6 月の受注ファイルを 1 つの表にまとめます。5 月は見出しが 3 行目（上に表題）、6 月は列の並びが違い「担当者」列が増えていますが、列は名前でそろえ、見出しの位置は自動で判定します。月をまたいで再送された受注（20 行）は「受注番号」での重複の削除で除きます。メインの ① タブの「処理の流れ」で各段の行数を、除いた行数を押すとその行を確かめられます。ピボットは元ファイルごとの件数と金額です。',
+      tags: ['縦に結合', '重複の削除', '処理の流れ', '① だけ'],
+      build() {
+        const m = monthlyOrders();
+        return {
+          source: {
+            name: 'サンプル_受注_2025年4月.csv', grid: m.apr,
+            members: [{ name: 'サンプル_受注_2025年5月.csv', grid: m.may }, { name: 'サンプル_受注_2025年6月.csv', grid: m.jun }],
+            dedup: { cols: ['受注番号'] }
+          },
+          profiles: [],
+          output: m.columns.map((h) => 's:' + h).concat(['s:元ファイル']),
+          aggregate: {
+            target: 'source',
+            rows: [{ key: 's:元ファイル' }],
+            values: [{ fn: 'count' }, { key: 's:金額', fn: 'sum' }],
+            sort: { by: 'label', dir: 'asc' }
+          },
+          tab: 'source'
         };
       }
     },
@@ -578,11 +753,13 @@
   /* サンプルの一覧の見出し（目的ごと）。ここにない id は「その他」に入る */
   const GROUPS = [
     { label: '基本の抽出', icon: 'play', ids: ['idlist', 'threshold', 'exclude', 'logic', 'report', 'ngword'] },
-    { label: '比べ方の書き方（ワイルドカード・比較演算子・日付）', icon: 'equals', ids: ['wildcard', 'criteria', 'dates'] },
+    { label: '比べ方の書き方（ワイルドカード・比較演算子・日付・表記ゆれ・正規表現）', icon: 'equals', ids: ['wildcard', 'criteria', 'dates', 'variants'] },
     { label: '複数の抽出条件', icon: 'arrow-down-1-9', ids: ['priority', 'independent', 'rules'] },
     { label: 'ピボット', icon: 'table-cells', ids: ['aggregate', 'condagg', 'pivot'] },
+    { label: '結果を確かめる（一致しなかった ② の行・前回との違い）', icon: 'not-equal', ids: ['review'] },
     { label: 'グラフ', icon: 'chart-column', ids: ['chart-trend', 'chart-dist', 'chart-scatter', 'chart-pivot'] },
-    { label: 'その他（列の追加・速度の確認）', icon: 'ellipsis', ids: ['derive', 'perf'] }
+    { label: '前処理（縦に結合・縦持ち・列の追加・関数・重複の削除）', icon: 'layer-group', ids: ['union', 'unpivot', 'derive', 'functions'] },
+    { label: 'その他（速度の確認）', icon: 'ellipsis', ids: ['perf'] }
   ];
 
   const Samples = {
@@ -608,7 +785,7 @@
       return SAMPLES.find((s) => s.id === id) || null;
     },
 
-    /** @returns {{id, title, source:{name,grid,settings?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[]}} */
+    /** @returns {{id, title, source:{name,grid,settings?,members?:Array<{name,grid}>,dedup?,unpivot?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[], compare?:{name, grid, key}}} */
     build(id) {
       const sample = Samples.get(id);
       if (!sample) throw new Error('サンプルが見つかりません');

@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="lq-grid.css">
   <link rel="stylesheet" href="lq-panels.css">
   <link rel="stylesheet" href="lq-profiles.css">
+  <link rel="stylesheet" href="lq-prep.css">
   <link rel="stylesheet" href="lq-pivot.css">
   <link rel="stylesheet" href="lq-chart.css">
 </head>
@@ -30,7 +31,10 @@
   <!-- 処理（Excel の読み書きに使う SheetJS は lq-readers.js が、グラフの Chart.js は lq-chart-render.js が必要時に CDN から読み込む） -->
   <script src="lq-core.js"></script>
   <script src="lq-readers.js"></script>
+  <script src="lq-formula.js"></script>
+  <script src="lq-formula-funcs.js"></script>
   <script src="lq-dataset.js"></script>
+  <script src="lq-prep.js"></script>
   <script src="lq-engine.js"></script>
   <script src="lq-profiles.js"></script>
   <script src="lq-result.js"></script>
@@ -44,6 +48,7 @@
   <script src="lq-exporters.js"></script>
   <script src="lq-storage.js"></script>
   <script src="lq-worksets.js"></script>
+  <script src="lq-compare.js"></script>
   <script src="lq-samples.js"></script>
   <!-- 画面 -->
   <script src="lq-ui-kit.js"></script>
@@ -57,8 +62,11 @@
   <script src="lq-ui-chart-panel.js"></script>
   <script src="lq-ui-drill.js"></script>
   <script src="lq-ui-main.js"></script>
+  <script src="lq-ui-formula.js"></script>
   <script src="lq-ui-dataset-panel.js"></script>
   <script src="lq-ui-filter.js"></script>
+  <script src="lq-ui-prep.js"></script>
+  <script src="lq-ui-review.js"></script>
   <script src="lq-ui-profile-list.js"></script>
   <script src="lq-ui-query-panel.js"></script>
   <script src="lq-ui-output-panel.js"></script>
@@ -67,7 +75,10 @@
   <script src="lq-ui-worksets.js"></script>
   <script src="lq-manual.js"></script>
   <script src="lq-ui-shell.js"></script>
-  <!-- 操作（組み立ては lq-app.js） -->
+  <!-- 操作（出力は lq-app-export.js、前処理は lq-app-prep.js、前回との比較は lq-app-compare.js。組み立ては lq-app.js） -->
+  <script src="lq-app-export.js"></script>
+  <script src="lq-app-prep.js"></script>
+  <script src="lq-app-compare.js"></script>
   <script src="lq-app.js"></script>
 </body>
 </html>

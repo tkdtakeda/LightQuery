@@ -473,6 +473,13 @@
   color: var(--color-text-muted);
 }
 
+.lq-rule__group {
+  margin-top: var(--space-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--color-text-sub);
+}
+
 .lq-rule__example b {
   color: var(--color-text-sub);
   font-weight: var(--fw-medium);
@@ -865,6 +872,53 @@
   font-weight: var(--fw-medium);
 }
 
+.lq-manual__toc a[hidden],
+.lq-manual__group[hidden] {
+  display: none;
+}
+
+.lq-manual__toc > .lq-input {
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+
+/* 目次のまとまり（画面の処理の順）の見出し */
+.lq-manual__group + .lq-manual__group {
+  margin-top: var(--space-5);
+}
+
+.lq-manual__grouphead {
+  padding: 0 var(--space-4) var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--color-text-muted);
+  letter-spacing: var(--ls-wide);
+}
+
+/* 今どこを読んでいるか（まとまり › 章・何章目か） */
+.lq-manual__crumb {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}
+
+.lq-manual__pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-9);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.lq-manual__lead {
+  font-size: var(--fs-md);
+}
+
+.lq-manual__steps li {
+  padding: var(--space-1) 0;
+}
+
 .lq-manual__content {
   flex: 1 1 auto;
   min-width: 0;
@@ -1066,4 +1120,119 @@
 .lq-colchips--insert .lq-colchip:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+/* ---------- 計算の式：関数の一覧・書き方の表示 ---------- */
+.lq-modal--calc {
+  width: var(--w-modal);
+}
+
+/* 列（左）と関数（右）を並べ、どちらも見ながら式を組み立てる */
+.lq-fxgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.lq-fxgrid .lq-colchips--insert {
+  max-height: var(--h-fxcols);
+  overflow-y: auto;
+}
+
+.lq-fxops .lq-btn {
+  min-width: var(--h-control-sm);
+  font-family: var(--font-mono);
+}
+
+.lq-fxpalette {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lq-fxpalette .lq-seg.is-dim {
+  opacity: var(--opacity-sub);
+}
+
+.lq-fxlist {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--h-colpick);
+  overflow-y: auto;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.lq-fxitem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: var(--border-width) solid var(--color-border-soft);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lq-fxitem:hover,
+.lq-fxitem:focus-visible {
+  background: var(--color-primary-faint);
+}
+
+.lq-fxitem__name {
+  flex: 0 0 auto;
+  min-width: var(--w-fxname);
+  font-family: var(--font-mono);
+  font-weight: var(--fw-bold);
+  color: var(--color-primary-strong);
+}
+
+.lq-fxitem__desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-sub);
+}
+
+/* カーソルのある関数の書き方（関数の外では書き方の要点） */
+.lq-fxhint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
+}
+
+.lq-fxhint.is-fn {
+  background: var(--color-primary-faint);
+  color: var(--color-text);
+}
+
+.lq-fxhint__sig {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+}
+
+.lq-fxhint__arg {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--color-mark);
+  font-weight: var(--fw-bold);
+}
+
+.lq-fxhint__text {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.lq-fxhint__example code {
+  font-family: var(--font-mono);
 }

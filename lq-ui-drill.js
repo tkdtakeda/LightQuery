@@ -2,6 +2,7 @@
  * LightQuery - lq-ui-drill.js
  * 内訳：ピボットのセルをダブルクリック（Enter）するか、グラフの棒・点を押すと、そこに入った行を表やグラフの上に重ねて表示する
  *   （ピボットテーブルの「詳細の表示」と同じ考え方）。タブやパネルは動かさず、閉じると元の行に戻る。
+ *   処理の流れ（① / ② の前処理）で除いた行も、同じ重ねる表示で見せる（entry.table に表を渡す）。
  *   内訳は見るだけ（ページ送りのみ）。右上の「コピー」「Excel」で書き出せる。
  *   列は出力列パネルの表示・並び順（「② の行」を使ったピボットでは ① の列）。
  * ========================================================================= */
@@ -21,7 +22,7 @@
   /* 閉じずに描き直すだけの話題（表示中の内訳と関係しない変化） */
   const KEEP_TOPICS = new Set(['busy', 'panel', 'library', 'start', 'worksets', 'aggregate-ready', 'chart-library']);
   /* 内訳を開いたまま表示を変えてよいタブ */
-  const DRILL_TABS = ['aggregate', 'chart'];
+  const DRILL_TABS = ['aggregate', 'chart', 'source', 'condition', 'result'];
 
   /* ---------------------------------------------------------------------
    * DrillTable：内訳の表（Exporters の table と同じ形＋ページ用の rowAt）
@@ -29,10 +30,11 @@
   const DrillTable = {
     /**
      * @param {LQ.ResultView} view 集計に使った見せ方
-     * @param {{by:Array, keys?:number[], src?:number[]}} entry 集計の 1 行分の内訳
+     * @param {{by:Array, keys?:number[], src?:number[], table?:object}} entry 集計の 1 行分の内訳（table があればその表を使う）
      * @param {Array<{key:string, visible:boolean}>} outputColumns 出力列の設定
      */
     create(view, entry, outputColumns) {
+      if (entry.table) return entry.table;
       let header;
       let cellsOf;
       let count;
@@ -185,13 +187,14 @@
     }
 
     _build() {
-      this.table = DrillTable.create(this.view, this.entry, this.state.output.columns);
+      const e = this.entry;
+      this.table = DrillTable.create(this.view, e, this.state.output.columns);
       this.numeric = DrillTable.numericColumns(this.table);
-      const by = this.entry.by.length ? this.entry.by.map((b) => b.name + '＝' + b.value).join(' × ') : '全体';
-      this.title.textContent = '内訳：' + by;
+      const by = e.by.length ? e.by.map((b) => b.name + '＝' + b.value).join(' × ') : '全体';
+      this.title.textContent = '内訳：' + (e.title || by);
       this.title.title = this.title.textContent;
       this.count.textContent = fmt(this.table.rowCount) + ' 行';
-      this.scope.textContent = '対象：' + this.scopeText + '。列は' + (this.entry.keys ? '出力列パネルの表示・並び順' : ' ① の列（出力列パネルの表示・並び順）') + 'です。';
+      this.scope.textContent = e.table ? this.scopeText : '対象：' + this.scopeText + '。列は' + (e.keys ? '出力列パネルの表示・並び順' : ' ① の列（出力列パネルの表示・並び順）') + 'です。';
       this._render();
     }
 
@@ -244,7 +247,7 @@
     }
 
     _fileName() {
-      const by = this.entry.by.map((b) => b.value).join('_') || '全体';
+      const by = this.entry.fileTag || this.entry.by.map((b) => b.value).join('_') || '全体';
       return Util.sanitizeFileName('LightQuery_内訳_' + by + '_' + Util.timestamp());
     }
 

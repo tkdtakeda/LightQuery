@@ -187,6 +187,7 @@
   --grid-font-l: var(--fs-lg);
   --w-col-grip: 7px;
   --h-colpick: 260px;
+  --h-fxcols: 120px;
   --h-rail-item: 58px;
   --h-dropzone: 220px;
   --w-rail: 72px;
@@ -224,6 +225,7 @@
   --w-switch-sm: 30px;
   --h-switch-sm: 16px;
   --w-fchip-max: 240px;
+  --w-fxname: 104px;
   --w-chip-owner-max: 140px;
   --h-tablepicks-max: 46dvh;
   --border-width: 1px;
