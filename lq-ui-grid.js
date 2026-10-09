@@ -414,8 +414,9 @@
       const sortText = col.sortDir === 'asc' ? '昇順' : (col.sortDir === 'desc' ? '降順' : '');
       const sortIcon = col.sortDir ? '<i class="fa-solid fa-' + SORT_ICON[col.sortDir] + ' lq-th__sort" aria-hidden="true"></i>' : '';
       return '<th class="' + cls.join(' ') + '"' + style + ' data-key="' + esc(col.key) + '" draggable="true" title="' +
-        esc(col.label) + '：押すと一覧（並べ替え・出力する）・ドラッグで列を移動' + (sortText ? '（今は ' + sortText + '）' : '') + '">' +
+        esc(col.label) + '：押すと一覧（並べ替え・絞り込み・出力する）・ドラッグで列を移動' + (sortText ? '（今は ' + sortText + '）' : '') + (col.filtered ? '・元データで絞り込み中' : '') + '">' +
         '<div class="lq-th">' + (BADGE[col.kind] || '') + '<span class="lq-th__name">' + esc(col.label) + '</span>' + sortIcon +
+        (col.filtered ? '<i class="fa-solid fa-filter lq-th__filtered" aria-hidden="true"></i>' : '') +
         '<i class="fa-solid fa-caret-down lq-th__caret" aria-hidden="true"></i></div>' + grip + '</th>';
     }
 

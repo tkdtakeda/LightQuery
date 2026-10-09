@@ -525,6 +525,7 @@
       this.manual = new LQ.ManualModal(ctx);
       this.columnMenu = new LQ.ColumnMenu(ctx);
       this.resultColumnMenu = new LQ.ResultColumnMenu(ctx);
+      this.resultFilter = new LQ.ResultFilterActions(ctx);
       this.panels = {
         source: new LQ.DatasetPanel(ctx, 'source'),
         condition: new LQ.DatasetPanel(ctx, 'condition'),

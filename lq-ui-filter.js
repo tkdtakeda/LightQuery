@@ -3,7 +3,7 @@
  * 絞り込みの画面：① / ② の行を、抽出の前に列ごとの条件で減らす（すべてを満たす行だけ残す）
  *   ColumnMenu   … 列の見出し（または読み込みパネル）を押すと開く一覧。Excel のオートフィルターと同じ形で、
  *                  「出力する」スイッチ・値の一覧（最初から表示）・たたんだ「条件で絞る」・残る行数の見込み・OK
- *   ResultColumnMenu … 抽出結果の見出しの一覧（並べ替え・出力する）
+ *   （抽出結果の見出しの一覧は lq-ui-result-filter.js。ColumnMenu を引き継いで使う）
  *   FilterBar    … プレビューの上に、掛けている絞り込みのタグ（× で外す）と「すべて外す」・残っている行数を出す
  *   FilterSection… 読み込みパネルの区画（一覧と「列を選んで絞り込む」）
  *   絞り込みは ① と、② の抽出条件ごとに列の名前で記憶し、次に読み込んだ表に掛け直す（LoadMemory）。
@@ -63,6 +63,13 @@
       const all = values.list.map((v) => v.value);
       const f = current ? LQ.Util.clone(current) : { id: LQ.Util.uid('flt'), col: colName, mode: 'values', op: date ? 'between' : 'eq', value: '', value2: '', values: all.slice() };
       if (f.mode !== 'values' && !f.values) f.values = all.slice();
+      if (f.mode === 'values' && f.exclude) {
+        /* 抽出結果の見出しで掛けた「除く値」は、残す値の一覧に直して見せる */
+        const norm = new LQ.Normalizer(LQ.Normalizer.DEFAULT_RULES);
+        const drop = new Set(f.values.map((v) => norm.text(v)));
+        f.values = all.filter((v) => !drop.has(norm.text(v)));
+        delete f.exclude;
+      }
       this.ds = ds;
       this.role = role;
       this.f = f;
@@ -308,50 +315,6 @@
   }
 
   /* ---------------------------------------------------------------------
-   * ResultColumnMenu：抽出結果の見出しを押すと開く一覧（並べ替え・出力する）
-   * ------------------------------------------------------------------- */
-  class ResultColumnMenu {
-    constructor(ctx) {
-      this.ctx = ctx;
-      this.state = ctx.state;
-    }
-
-    open(anchor, key) {
-      const pop = this.ctx.popovers;
-      if (pop.isOpen('rescol:' + key)) {
-        pop.close();
-        return;
-      }
-      const s = this.state;
-      const sort = s.view.sort && s.view.sort.key === key ? s.view.sort.dir : null;
-      const item = (dir, icon, label) => h('button', {
-        class: 'lq-colmenu__sort' + (sort === dir ? ' is-active' : ''), type: 'button', 'aria-pressed': sort === dir ? 'true' : 'false',
-        onclick: () => {
-          s.setSort(dir ? { key: key, dir: dir } : null);
-          pop.close();
-        }
-      }, [Dom.icon(icon), label, sort === dir ? h('span', { class: 'lq-colmenu__current', text: '（今の並び）' }) : null]);
-      const col = s.output.columns.find((c) => c.key === key);
-      const sw = UI.switchToggle('この列を出力する', col ? col.visible : true, (checked) => {
-        s.setColumnVisible(key, checked);
-        pop.close();
-      });
-      sw.el.classList.add('lq-colmenu__visible');
-      pop.open(anchor, [
-        h('div', { class: 'lq-popover__head' }, [Dom.icon('table-columns'), h('span', { class: 'lq-colmenu__title', text: LQ.ResultView.nameOf(key) }),
-          UI.iconButton('xmark', '閉じる（Esc）', () => pop.close(), 'lq-btn--sm')]),
-        h('div', { class: 'lq-popover__body lq-filter' }, [
-          sw.el,
-          h('div', { class: 'lq-colmenu__sorts' }, [item('asc', 'arrow-up-short-wide', '昇順に並べ替え（小さい順・古い順・あいうえお順）'),
-            item('desc', 'arrow-down-wide-short', '降順に並べ替え（大きい順・新しい順）'),
-            sort ? item(null, 'xmark', '並べ替えを解除（元の順）') : null]),
-          h('p', { class: 'lq-field__hint', text: '見出しをドラッグすると列の順番を変えられます。' })
-        ])
-      ], { key: 'rescol:' + key, placement: 'bottom-start' });
-    }
-  }
-
-  /* ---------------------------------------------------------------------
    * FilterBar：プレビューの上のタグ
    * ------------------------------------------------------------------- */
   const FilterBar = {
@@ -424,7 +387,6 @@
   }
 
   LQ.ColumnMenu = ColumnMenu;
-  LQ.ResultColumnMenu = ResultColumnMenu;
   LQ.FilterBar = FilterBar;
   LQ.FilterSection = FilterSection;
 })(window);

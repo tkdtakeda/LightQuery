@@ -272,6 +272,8 @@
       this._renderSummary(view, defs);
       this._renderSourceFlow(view);
       this._renderReview(view);
+      const sourceFilters = LQ.ResultFilterBar.render(this.ctx, view);
+      if (sourceFilters) this.info.appendChild(sourceFilters);
       this._renderFilterBar(view);
       if (s.isStale()) {
         this.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
@@ -300,10 +302,11 @@
       const paging = this._paging('result', view.length);
       const rows = view.page(paging.start, s.view.pageSize, defs);
       const sort = s.view.sort;
+      const filtered = LQ.ResultFilterBar.filteredKeys(s, view);
       this.grid.render({
         mode: 'result',
         scrollKey: 'result:' + paging.page + ':' + view.result.id + ':' + JSON.stringify(sort),
-        columns: defs.map((d) => ({ key: d.key, label: d.name, kind: d.kind, sortDir: sort && sort.key === d.key ? sort.dir : null })),
+        columns: defs.map((d) => ({ key: d.key, label: d.name, kind: d.kind, sortDir: sort && sort.key === d.key ? sort.dir : null, filtered: filtered.has(d.key) })),
         rows: rows.map((r) => ({ head: { text: Util.formatInt(r.index + 1), index: r.index, action: 'explain', title: 'この行の判定の根拠を表示' }, cells: r.cells })),
         numeric: this._numericColumns(rows, defs.length)
       });
