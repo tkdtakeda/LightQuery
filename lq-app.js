@@ -916,6 +916,9 @@
       const name = '貼り付けデータ（' + Util.pad2(d.getHours()) + ':' + Util.pad2(d.getMinutes()) + '）';
       try {
         this._putDataset(role, new LQ.Dataset(role, LQ.SourceFile.fromText(text, name)), '貼り付けデータ');
+        /* コピーした値は Excel の表示どおり（表示形式で丸めた値）のため、貼り付けるたびに知らせる */
+        this.toasts.show({ type: 'warn', title: '貼り付けた値は Excel の表示どおりです',
+          message: '小数を「0」のように丸めて表示しているセルは、丸めた値で照合します。元の値で照合するには、Excel ファイルを読み込んでください（ドラッグ＆ドロップ・ファイル選択）。' });
       } catch (err) {
         this.toasts.show({ type: 'error', title: '貼り付けたデータを読み込めませんでした', message: err.message });
       }

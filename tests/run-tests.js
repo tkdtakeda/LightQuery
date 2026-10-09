@@ -317,6 +317,19 @@ check('抽出結果の絞り込み：見出しの一覧で外した値を元の�
   });
 });
 
+check('貼り付け：読み込むたびに、値が Excel の表示どおり（丸めた値）だと知らせる', async (browser) => {
+  await withPage(browser, async (page) => {
+    const n = await page.evaluate(async () => {
+      const count = () => Array.from(document.querySelectorAll('.lq-toast')).filter((t) => t.textContent.indexOf('Excel の表示どおり') !== -1).length;
+      LQ.app.loadText('source', '品目\t率\nA\t0\nB\t1');
+      const first = count();
+      LQ.app.loadText('source', '品目\t率\nA\t0\nB\t1');
+      return [first, count()];
+    });
+    eq(n, [1, 2], '貼り付けるたびに通知が出る');
+  });
+});
+
 check('ピボット：重複を除いた件数（総計も重複を除く）と年度の始まり', async (browser) => {
   await withPage(browser, async (page) => {
     const r = await page.evaluate(async () => {
