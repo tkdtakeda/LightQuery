@@ -44,6 +44,8 @@
         onResultMenu: (key, anchor) => this.app.resultColumnMenu.open(anchor, key),
         onMove: (key, target, after) => this.state.moveColumn(key, target, after),
         onRowHead: (head, anchor) => this._onRowHead(head, anchor),
+        onRowOpen: (ri) => this._openRow(this._resultStart + ri),
+        onRowStep: (ri, delta) => this._stepRow(ri, delta),
         onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col),
         onColumnMenu: (name, anchor) => this.app.columnMenu.open(anchor, this.state.view.tab, name)
       });
@@ -302,12 +304,17 @@
       const paging = this._paging('result', view.length);
       const rows = view.page(paging.start, s.view.pageSize, defs);
       const sort = s.view.sort;
+      const current = this.app.rowDetail && this.app.rowDetail.isOpen() ? this.app.rowDetail.displayIndex() : -1;
+      this._resultStart = paging.start;
       const filtered = LQ.ResultFilterBar.filteredKeys(s, view);
       this.grid.render({
         mode: 'result',
         scrollKey: 'result:' + paging.page + ':' + view.result.id + ':' + JSON.stringify(sort),
         columns: defs.map((d) => ({ key: d.key, label: d.name, kind: d.kind, sortDir: sort && sort.key === d.key ? sort.dir : null, filtered: filtered.has(d.key) })),
-        rows: rows.map((r) => ({ head: { text: Util.formatInt(r.index + 1), index: r.index, action: 'explain', title: 'この行の判定の根拠を表示' }, cells: r.cells })),
+        openable: true,
+        openTitle: 'ダブルクリック（Enter）で判定の根拠を右に表示（開いたまま ↑↓ で前後の行へ）',
+        rows: rows.map((r) => ({ head: { text: Util.formatInt(r.index + 1), index: r.index, action: 'explain', title: 'この行の判定の根拠を右に表示（行のダブルクリックでも開きます）' },
+          cells: r.cells, rowClass: r.index === current ? 'is-current' : '' })),
         numeric: this._numericColumns(rows, defs.length)
       });
       this.gridwrap.classList.toggle('is-stale', s.isStale());
@@ -830,8 +837,33 @@
       }
     }
 
+    /** 抽出結果の表示中の i 行目の判定の根拠を開く（ダブルクリックで選ばれた文字は外す） */
+    _openRow(i) {
+      const sel = global.getSelection ? global.getSelection() : null;
+      if (sel && sel.removeAllRanges) sel.removeAllRanges();
+      this.app.rowDetail.open(i);
+    }
+
+    /** 行にフォーカスがある状態の ↑↓：根拠を開いていれば一緒に送る。閉じていればフォーカスだけ移す */
+    _stepRow(ri, delta) {
+      if (this.app.rowDetail.isOpen()) {
+        this.app.rowDetail.move(delta);
+        return;
+      }
+      const tr = this.grid.rowElement(ri + delta);
+      if (tr) {
+        tr.focus({ preventScroll: true });
+        tr.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    /** 抽出結果の表の、今のページの先頭が何行目か */
+    resultPageStart() {
+      return this._resultStart || 0;
+    }
+
     _onRowHead(head, anchor) {
-      if (head.action === 'explain') this.app.resultDialogs.openRowDetail(anchor, head.index);
+      if (head.action === 'explain') this._openRow(head.index);
       else if (head.action === 'raw-row') this.app.dialogs.openRawRowMenu(anchor, this.state.view.tab, head.rawIndex);
     }
   }

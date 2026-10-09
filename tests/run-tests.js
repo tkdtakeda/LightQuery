@@ -330,6 +330,65 @@ check('貼り付け：読み込むたびに、値が Excel の表示どおり（
   });
 });
 
+check('判定の根拠：行のダブルクリックで右に開き、↑↓ で前後の行（ページもまたぐ）・Esc で閉じる', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.evaluate(async () => {
+      await LQ.app.profiles.loadSample('priority');
+      await LQ.app.run();
+    });
+    await page.waitForSelector('tr[data-ri="2"]');
+    await page.dblclick('tr[data-ri="2"] td:nth-of-type(3)');
+    const r1 = await page.evaluate(() => {
+      const d = LQ.app.rowDetail;
+      const info = LQ.app.explainRow(d.displayIndex());
+      return { open: d.isOpen(), shown: !document.getElementById('lqDetail').hidden, i: d.displayIndex(), cards: document.querySelectorAll('.lq-detail__card').length,
+        unmatched: info.unmatched, statuses: info.cards.map((c) => c.status), current: document.querySelector('tr.is-current').dataset.ri };
+    });
+    eq(r1, { open: true, shown: true, i: 2, cards: 3, unmatched: true, statuses: ['miss', 'miss', 'miss'], current: '2' }, '該当なしの行：3 つの抽出条件すべてが「該当しない」と理由つきで並ぶ');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    eq(await page.evaluate(() => [LQ.app.rowDetail.displayIndex(), document.querySelector('tr.is-current').dataset.ri]), [0, '0'], '↑ で前の行へ移り、表の印も移る');
+    const r2 = await page.evaluate(async () => {
+      const d = LQ.app.rowDetail;
+      d.open(99);
+      d.move(1);
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      return [d.displayIndex(), LQ.app.state.view.pages.result];
+    });
+    eq(r2, [100, 1], '↓ でページをまたぐと次のページへ送る');
+    await page.keyboard.press('Escape');
+    eq(await page.evaluate(() => [LQ.app.rowDetail.isOpen(), !!document.querySelector('tr.is-current')]), [false, false], 'Esc で閉じる');
+  });
+});
+
+check('判定の根拠：抽出条件ごとの「該当する／しない」が抽出結果と食い違わない（式・② の比較・一致しなかった行）', async (browser) => {
+  await withPage(browser, async (page) => {
+    const bad = await page.evaluate(async () => {
+      const A = LQ.app;
+      const out = [];
+      for (const id of ['priority', 'logic', 'threshold', 'exclude', 'ngword', 'wildcard', 'dates', 'independent']) {
+        await A.profiles.loadSample(id);
+        if (!A.validationAll().ok) continue;
+        await A.run();
+        const view = A.main.resultView();
+        const n = Math.min(view.length, 60);
+        for (let i = 0; i < n; i++) {
+          const info = A.explainRow(i);
+          info.cards.forEach((c) => {
+            const e = c.explanation;
+            if (!e) return out.push(id + ' ' + i + '：根拠なし');
+            const expected = c.joinKind === 'anti' ? e.matches === 0 : (c.joinKind === 'left' ? true : e.matches > 0);
+            if ((c.status !== 'miss') !== expected) out.push(id + ' ' + i + '「' + c.name + '」：' + c.status + ' / 一致 ' + e.matches);
+            if (e.matches > 0 && e.value !== 1) out.push(id + ' ' + i + '：一致した行の式が満たすになっていない');
+          });
+        }
+      }
+      return out;
+    });
+    eq(bad.slice(0, 5), [], '根拠の判定と抽出結果が一致する');
+  });
+});
+
 check('ピボット：重複を除いた件数（総計も重複を除く）と年度の始まり', async (browser) => {
   await withPage(browser, async (page) => {
     const r = await page.evaluate(async () => {

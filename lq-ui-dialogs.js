@@ -189,7 +189,7 @@
 
 /* =========================================================================
  * ── 出力・根拠 ──
- * 結果まわりの小窓：出力（形式・範囲・ファイル名）、行の判定根拠、結果の根拠（抽出条件ごとの内容と件数）
+ * 結果まわりの小窓：出力（形式・範囲・ファイル名）、結果の根拠（抽出条件ごとの内容と件数）
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -200,14 +200,6 @@
   const UI = LQ.UI;
   const h = Dom.h;
   const fmt = Util.formatInt;
-
-  const EXPLAIN_STATE = {
-    true: { icon: 'circle-check', text: '満たす' },
-    false: { icon: 'circle-xmark', text: '満たさない' },
-    ignored: { icon: 'minus', text: '判定しない（② が空欄）' },
-    incomparable: { icon: 'triangle-exclamation', text: '比較できない（数値と文字など）' },
-    none: { icon: 'minus', text: 'ひも付く ② の行なし' }
-  };
 
   class ResultDialogs {
     constructor(ctx) {
@@ -358,63 +350,6 @@
         body, h('div', { class: 'lq-popover__foot' }, [downloadBtn, copyBtn])], { key: 'export', size: 'lg' });
       refresh();
       downloadBtn.focus();
-    }
-
-    /* ---------------- 行の判定根拠 ---------------- */
-
-    openRowDetail(anchor, index) {
-      const info = this.app.explainRow(index);
-      if (!info) return;
-      const s = this.state;
-      const pair = info.pair;
-      const part = info.part;
-      const src = s.datasets.source;
-      const where = ['① ' + src.rowNumber(pair.src) + ' 行目'];
-      if (part && pair.cond >= 0 && part.condition) where.push('② ' + part.condition.rowNumber(pair.cond) + ' 行目');
-      if (part && part.needsCondition && part.joinKind !== 'anti') where.push('② 一致数 ' + pair.count);
-      const notes = [];
-      if (info.stale) notes.push(UI.note('warn', 'この結果の後に条件が変更されています。以下は現在の条件での判定です。'));
-      if (info.missing) notes.push(UI.note('warn', 'この行の抽出条件は一覧から削除されています。'));
-      if (!part) {
-        notes.push(UI.note('info', 'この行は、どの抽出条件にも該当しませんでした（「該当なし」として出力しています）。'));
-      } else {
-        if (part.needsCondition && pair.cond < 0) {
-          notes.push(UI.note('info', part.joinKind === 'anti'
-            ? 'この行は ② のどの行の条件も満たさなかったため出力されています（一致しなかった行）。'
-            : 'この行は ② のどの行の条件も満たしませんでした（すべての行を出力する設定のため表示しています）。'));
-        }
-        if (info.others.length) {
-          const names = info.others.map((o) => o.priority + ' 位「' + o.name + '」').join('・');
-          notes.push(UI.note('tip', info.mode === 'assign'
-            ? 'ほかに ' + names + ' にも該当していますが、優先順位が上のこの抽出条件に振り分けました。'
-            : 'この行は ' + names + ' の結果にも含まれています（それぞれに出力）。'));
-        }
-      }
-      const items = info.explanation ? info.explanation.items : [];
-      const list = h('ul', { class: 'lq-explain' }, items.map((it) => {
-        const stInfo = EXPLAIN_STATE[it.state] || EXPLAIN_STATE.none;
-        return h('li', { class: 'lq-explain__item lq-explain__item--' + it.state }, [
-          UI.badge('label', it.label),
-          h('span', { class: 'lq-explain__state' }, [Dom.icon(stInfo.icon), stInfo.text]),
-          h('span', { class: 'lq-explain__text' }, [
-            it.leftName + '「', h('span', { class: 'lq-explain__value', text: it.leftValue }), '」が ',
-            it.rightName + '「', h('span', { class: 'lq-explain__value', text: it.rightValue }), '」' + it.phrase
-          ])
-        ]);
-      }));
-      const headline = info.multi
-        ? h('div', { class: 'lq-explain__profile' }, part
-          ? [Dom.icon('code-compare'), '抽出条件：', h('strong', { text: part.priority + ' 位「' + info.partName + '」' })]
-          : [Dom.icon('minus'), h('strong', { text: '該当なし' })])
-        : null;
-      this.pop.open(anchor, [
-        this._head('circle-info', '結果 ' + fmt(index + 1) + ' 行目の判定の根拠'),
-        h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, [
-          headline,
-          h('div', { class: 'lq-row lq-sub lq-num', text: where.join('・') })
-        ].concat(notes, [list]))]),
-        h('div', { class: 'lq-popover__foot' }, [Dom.icon('code-branch'), h('span', { text: '組み合わせ：' + (info.explanation ? info.explanation.exprJa : '—') })])
-      ], { key: 'row', size: 'lg', placement: 'bottom-start' });
     }
 
     /* ---------------- 結果の根拠（要約の「抽出の内容」） ---------------- */

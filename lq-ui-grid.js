@@ -233,6 +233,7 @@
      * @param {HTMLElement} root スクロールする入れ物
      * @param {{onSort:Function, onMove:Function, onRowHead:Function, onColHead:Function, onRowOpen?:Function}} handlers
      *        onRowOpen(ri, tr)：model.openable のとき、行のダブルクリック・Enter で呼ぶ（ri は表示中の何行目か）
+     *        onRowStep(ri, delta)：model.openable のとき、行にフォーカスがある状態の ↑↓ で呼ぶ
      */
     constructor(ctx, root, handlers) {
       this.ctx = ctx;
@@ -252,6 +253,7 @@
       root.addEventListener('dblclick', (e) => this._onRowOpen(e));
       root.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.isComposing) this._onRowOpen(e);
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') this._onRowStep(e, e.key === 'ArrowUp' ? -1 : 1);
       });
     }
 
@@ -262,6 +264,15 @@
       if (!tr) return;
       e.preventDefault();
       this.handlers.onRowOpen(Number(tr.dataset.ri), tr);
+    }
+
+    /** 開ける行にフォーカスがあるときの ↑↓（onRowStep があるときだけ。ないときはふつうに表を送る） */
+    _onRowStep(e, delta) {
+      if (!this.model || !this.model.openable || !this.handlers.onRowStep || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const tr = e.target.closest ? e.target.closest('tr[data-ri]') : null;
+      if (!tr || e.target !== tr) return;
+      e.preventDefault();
+      this.handlers.onRowStep(Number(tr.dataset.ri), delta);
     }
 
     /** 表示中の ri 行目の行（フォーカスを戻すため） */

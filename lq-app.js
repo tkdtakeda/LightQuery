@@ -536,6 +536,7 @@
         chart: new LQ.ChartPanel(ctx)
       };
       this.main = new LQ.MainView(ctx);
+      this.rowDetail = new LQ.RowDetail(ctx, Dom.qs('#lqDetail'));
       this.progressCard = new LQ.ProgressCard(ctx, Dom.qs('#lqMain'));
       this.shell = new LQ.Shell(ctx, this.panels);
       this.worksets = new LQ.Worksets(this);
@@ -1156,33 +1157,47 @@
       if (notes.length) this.toasts.show({ type: 'warn', title: '確認してください', message: notes.join('\n') });
     }
 
-    /** 結果の i 行目（表示順）の判定根拠。振り分け・独立のときは、ほかに該当した抽出条件も返す */
+    /**
+     * 結果の i 行目（表示順）の判定根拠。抽出条件ごとに、② のすべての行と照らした結果（一致した行／惜しかった行）を返す。
+     * status：assigned（この行の抽出条件）／shadow（該当したが優先順位が上に振り分け）／also（それぞれに出力で別の行として出力）／miss（出力されない）
+     */
     explainRow(i) {
       const view = this.main.resultView();
       if (!view) return null;
       const s = this.state;
+      const src = s.datasets.source;
       const pair = view.pairAt(i);
-      const part = pair.prof >= 0 ? view.parts[pair.prof] : null;
-      const profile = part ? s.profiles.find(part.id) : null;
-      let explanation = null;
-      if (part && profile) {
-        explanation = this.engine.explain({ source: s.datasets.source, condition: part.condition || profile.condition, query: profile.query, rules: s.rulesFor(profile) },
-          pair.src, pair.cond);
-      }
-      const others = [];
-      view.parts.forEach((q, j) => {
-        if (j !== pair.prof && s.result.members[j][pair.src]) others.push({ name: view.partName(j), priority: q.priority });
+      const res = s.result;
+      const mode = res.stats.mode;
+      const cards = view.parts.map((part, j) => {
+        const profile = s.profiles.find(part.id);
+        const inOutput = !!res.members[j][pair.src];
+        let status = 'miss';
+        if (j === pair.prof) status = 'assigned';
+        else if (inOutput) status = mode === 'assign' ? 'shadow' : 'also';
+        const condition = part.condition || (profile ? profile.condition : null);
+        const explanation = profile && src ? this.engine.explainBest({ source: src, condition: condition, query: profile.query, rules: s.rulesFor(profile) },
+          pair.src, j === pair.prof ? pair.cond : -1) : null;
+        return {
+          index: j,
+          priority: part.priority,
+          name: view.partName(j),
+          status: status,
+          joinKind: part.joinKind || (part.stats && part.stats.joinKind),
+          missing: !profile,
+          explanation: explanation,
+          condRowNumber: explanation && explanation.r >= 0 && condition ? condition.rowNumber(explanation.r) : null
+        };
       });
       return {
+        index: i,
         pair: pair,
-        part: part,
-        partName: part ? view.partName(pair.prof) : null,
+        sourceRowNumber: src ? src.rowNumber(pair.src) : null,
         multi: view.multi,
-        explanation: explanation,
-        missing: !!part && !profile,
+        unmatched: pair.prof < 0,
         stale: s.isStale(),
-        mode: s.result.stats.mode,
-        others: others
+        mode: mode,
+        cards: cards
       };
     }
 

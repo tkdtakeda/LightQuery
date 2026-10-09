@@ -1,0 +1,266 @@
+/* =========================================================================
+ * LightQuery - lq-detail.css
+ * 判定の根拠パネル（画面の右）：抽出条件ごとのカード・組み合わせの式の色分け・結果を決めた条件の強調・表の今の行
+ * ========================================================================= */
+
+.lq-detail {
+  grid-area: detail;
+  display: flex;
+  flex-direction: column;
+  width: var(--w-detail);
+  min-height: 0;
+  background: var(--color-surface);
+  border-left: var(--border-width) solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-panel);
+  animation: lq-detail-in var(--dur-normal) var(--ease-out);
+}
+
+.lq-detail[hidden] {
+  display: none;
+}
+
+@keyframes lq-detail-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--shift-md));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lq-detail__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--h-tabbar);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6);
+  border-bottom: var(--border-width) solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.lq-detail__icon {
+  color: var(--color-primary);
+  font-size: var(--icon-lg);
+}
+
+.lq-detail__title {
+  margin-left: var(--space-2);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+.lq-detail__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.lq-detail__foot {
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-6);
+  border-top: var(--border-width) solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+/* 結論（この行がどこに入ったか） */
+.lq-detail__verdict {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
+}
+
+.lq-detail__verdict.is-ok {
+  background: var(--color-success-soft);
+  color: var(--color-success-strong);
+}
+
+.lq-detail__verdict.is-ng {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-strong);
+}
+
+/* 抽出条件ごとのカード */
+.lq-detail__card {
+  border: var(--border-width) solid var(--color-border);
+  border-left-width: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.lq-detail__card.is-assigned {
+  border-left-color: var(--color-success);
+}
+
+.lq-detail__card.is-shadow,
+.lq-detail__card.is-also {
+  border-left-color: var(--color-success-line);
+}
+
+.lq-detail__card.is-miss {
+  border-left-color: var(--color-danger-line);
+}
+
+.lq-detail__card > .lq-stack {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.lq-detail__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+}
+
+.lq-detail__name {
+  font-weight: var(--fw-bold);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lq-detail__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.lq-detail__status.is-ok {
+  color: var(--color-success-strong);
+}
+
+.lq-detail__status.is-sub {
+  color: var(--color-success);
+}
+
+.lq-detail__status.is-ng {
+  color: var(--color-danger-strong);
+}
+
+.lq-detail__reason {
+  color: var(--color-text);
+  font-size: var(--fs-sm);
+}
+
+/* 組み合わせの式の色分け（A✓ かつ B✗ → 満たさない） */
+.lq-xpr {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  font-size: var(--fs-sm);
+}
+
+.lq-xpr__label {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-weight: var(--fw-bold);
+  border: var(--border-width) solid transparent;
+}
+
+.lq-xpr__label.is-true {
+  background: var(--color-success-soft);
+  border-color: var(--color-success-line);
+  color: var(--color-success-strong);
+}
+
+.lq-xpr__label.is-false,
+.lq-xpr__label.is-incomparable,
+.lq-xpr__label.is-none {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger-line);
+  color: var(--color-danger-strong);
+}
+
+.lq-xpr__label.is-ignored {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-meta);
+}
+
+.lq-xpr__op,
+.lq-xpr__paren {
+  color: var(--color-text-sub);
+}
+
+.lq-xpr__arrow {
+  color: var(--color-text-muted);
+}
+
+.lq-xpr__result {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-weight: var(--fw-bold);
+}
+
+.lq-xpr__result.is-true {
+  background: var(--color-success);
+  color: var(--color-text-inverse);
+}
+
+.lq-xpr__result.is-false {
+  background: var(--color-danger);
+  color: var(--color-text-inverse);
+}
+
+.lq-xpr__result.is-ignored {
+  background: var(--color-meta);
+  color: var(--color-text-inverse);
+}
+
+/* 結果を決めた条件は強調し、ほかは控えめにする */
+.lq-detail .lq-explain__item.is-key {
+  box-shadow: inset var(--space-1) 0 0 currentColor;
+}
+
+.lq-detail .lq-explain__item--true.is-key {
+  background: var(--color-success-soft);
+  color: var(--color-success-strong);
+}
+
+.lq-detail .lq-explain__item--false.is-key,
+.lq-detail .lq-explain__item--incomparable.is-key,
+.lq-detail .lq-explain__item--none.is-key {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-strong);
+}
+
+.lq-detail .lq-explain__item.is-dim {
+  opacity: var(--opacity-sub);
+}
+
+/* 表の今の行（根拠を表示している行） */
+.lq-grid tbody tr.is-current td,
+.lq-grid tbody tr.is-current .lq-grid__rowhead {
+  background: var(--color-primary-faint);
+  box-shadow: inset 0 calc(var(--border-width) * -1) 0 var(--color-primary-line), inset 0 var(--border-width) 0 var(--color-primary-line);
+}
+
+/* 狭い画面では表の上に重ねる（表の幅を確保する） */
+@media (max-width: 1100px) {
+  .lq-detail {
+    position: fixed;
+    top: var(--h-topbar);
+    right: 0;
+    bottom: 0;
+  }
+}

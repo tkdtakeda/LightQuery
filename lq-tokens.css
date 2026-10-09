@@ -196,6 +196,7 @@
   --w-panel-grip: 6px;
   --w-panel-md: 440px;
   --w-panel-lg: 620px;
+  --w-detail: 420px;
   --w-popover: 360px;
   --w-popover-lg: 460px;
   --w-popover-xl: 840px;
@@ -338,6 +339,7 @@
   :root {
     --w-panel-lg: 580px;
     --w-panel-md: 400px;
+    --w-detail: 380px;
     --w-col-max: 260px;
     --w-status-max: 520px;
     --w-toast: 360px;
