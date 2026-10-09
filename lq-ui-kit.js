@@ -174,8 +174,20 @@
         role: 'dialog'
       }, content);
       this.root.appendChild(el);
-      this.current = { el: el, anchor: anchor, key: opt.key || null, onClose: opt.onClose || null };
-      this._position(el, anchor, opt.placement || 'bottom-end');
+      const placement = opt.placement || 'bottom-end';
+      this.current = { el: el, anchor: anchor, key: opt.key || null, onClose: opt.onClose || null, observer: null };
+      this._position(el, anchor, placement);
+      /* 中身を開いて高さが変わっても（「条件で絞る」など）画面からはみ出さないよう、大きさが変わったら置き直す */
+      if (global.ResizeObserver) {
+        let size = el.offsetWidth + 'x' + el.offsetHeight;
+        this.current.observer = new ResizeObserver(() => {
+          const next = el.offsetWidth + 'x' + el.offsetHeight;
+          if (next === size) return;
+          size = next;
+          this._position(el, anchor, placement);
+        });
+        this.current.observer.observe(el);
+      }
       return { el: el, close: () => this.close() };
     }
 
@@ -183,6 +195,7 @@
       if (!this.current) return false;
       const c = this.current;
       this.current = null;
+      if (c.observer) c.observer.disconnect();
       c.el.remove();
       if (c.onClose) c.onClose();
       return true;

@@ -847,6 +847,26 @@ td.is-toggle .lq-th__caret {
   gap: var(--space-1);
 }
 
+.lq-colmenu__sorts--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  padding-bottom: var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.lq-colmenu__sorts--row .lq-colmenu__sort {
+  flex: 1 1 0;
+  justify-content: center;
+  border: var(--border-width) solid var(--color-border);
+}
+
+.lq-colmenu__where {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-primary-strong);
+}
+
 .lq-colmenu__sort {
   display: flex;
   align-items: center;

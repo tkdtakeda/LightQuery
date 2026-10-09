@@ -550,6 +550,29 @@
 
     labelsIn(node) {
       return Array.from(new Set(collectLabels(node, [])));
+    },
+
+    /**
+     * 式の結果を 3 値で求める（1：満たす／0：満たさない／-1：判定しない）。照合と同じく「判定しない」は AND / OR から除く。
+     * @param {object} node 構文木
+     * @param {function(string):number} valueOf 条件の記号 → 1 / 0 / -1
+     */
+    evaluate(node, valueOf) {
+      if (!node) return -1;
+      if (node.type === 'cond') return valueOf(node.label);
+      let seen = false;
+      for (let i = 0; i < node.children.length; i++) {
+        const v = Logic.evaluate(node.children[i], valueOf);
+        if (node.type === 'and') {
+          if (v === 0) return 0;
+          if (v === 1) seen = true;
+        } else {
+          if (v === 1) return 1;
+          if (v === 0) seen = true;
+        }
+      }
+      if (node.type === 'and') return seen ? 1 : -1;
+      return seen ? 0 : -1;
     }
   };
 
@@ -1223,7 +1246,56 @@
       const check = this.validate(ctx.query, ctx.source, ctx.condition);
       if (!check.ok || !ctx.source) return null;
       const norm = new Normalizer(ctx.rules);
-      const items = Logic.labelsIn(check.ast).map((label) => {
+      const items = this._explainItems(ctx, check, norm, x, r);
+      return { items: items, exprJa: Logic.toJapanese(check.ast), ast: check.ast, value: QueryEngine.verdict(check.ast, items) };
+    }
+
+    /**
+     * ① の x 行目を、抽出条件の ② のすべての行と照らした根拠（行の詳細表示用）。
+     *   一致する ② の行があれば最初の行（preferR が一致していればその行）を、なければ満たす条件が最も多い行（惜しかった行）を返す。
+     * @param {number} [preferR] 結果でひも付いている ② の行
+     * @returns {{items:Array, exprJa:string, ast:object, value:number, r:number, matches:number, nearest:boolean, needsCondition:boolean}|null}
+     */
+    explainBest(ctx, x, preferR) {
+      const check = this.validate(ctx.query, ctx.source, ctx.condition);
+      if (!check.ok || !ctx.source) return null;
+      const norm = new Normalizer(ctx.rules);
+      const base = { exprJa: Logic.toJapanese(check.ast), ast: check.ast, needsCondition: !!check.needsCondition };
+      const judge = (r) => {
+        const items = this._explainItems(ctx, check, norm, x, r);
+        return { items: items, value: QueryEngine.verdict(check.ast, items), r: r };
+      };
+      if (!check.needsCondition) {
+        const one = judge(-1);
+        return Object.assign(base, one, { matches: one.value === 1 ? 1 : 0, nearest: false });
+      }
+      const M = ctx.condition.rowCount;
+      let first = null;
+      let best = null;
+      let bestScore = -Infinity;
+      let matches = 0;
+      for (let r = 0; r < M; r++) {
+        const j = judge(r);
+        if (j.value === 1) {
+          matches++;
+          if (!first || r === preferR) first = j;
+          continue;
+        }
+        if (first) continue;
+        /* 惜しかった行：満たす条件が多い → 満たさない条件が少ない → 上の行 */
+        const score = j.items.reduce((t, it) => t + (it.state === 'true' ? 1000 : 0) - (it.state === 'false' || it.state === 'incomparable' ? 1 : 0), 0);
+        if (score > bestScore) {
+          bestScore = score;
+          best = j;
+        }
+      }
+      const pick = first || best || judge(-1);
+      return Object.assign(base, pick, { matches: matches, nearest: !first && pick.r >= 0 });
+    }
+
+    /** 条件ごとの判定（状態・比べた値・言い回し） */
+    _explainItems(ctx, check, norm, x, r) {
+      return Logic.labelsIn(check.ast).map((label) => {
         const c = ctx.query.conditions.find((k) => k.label === label);
         const op = Operators.get(c.op);
         const leftValue = ctx.source.cell(x, ctx.source.findColumn(c.left));
@@ -1250,7 +1322,13 @@
         base.state = res === null ? 'incomparable' : (res ? 'true' : 'false');
         return base;
       });
-      return { items: items, exprJa: Logic.toJapanese(check.ast) };
+    }
+
+    /** 条件ごとの判定から、組み合わせの式の結果（1：満たす／0：満たさない／-1：判定しない）を求める（照合と同じ考え方） */
+    static verdict(ast, items) {
+      const STATE = { true: 1, false: 0, incomparable: 0, none: 0, ignored: -1 };
+      const byLabel = new Map(items.map((it) => [it.label, STATE[it.state] === undefined ? 0 : STATE[it.state]]));
+      return Logic.evaluate(ast, (label) => (byLabel.has(label) ? byLabel.get(label) : 0));
     }
 
     /** 範囲の判定根拠（開始・終了の値を「〜」でつなぐ。空欄の側は「指定なし」） */

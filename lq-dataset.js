@@ -714,8 +714,10 @@
       if (col < 0) return { test: null, message: '列「' + f.col + '」がないため、この絞り込みは使っていません' };
       const norm = normalizer();
       if (f.mode === 'values') {
+        /* exclude：値の一覧を「除く値」として使う（抽出結果の見出しで外した値。新しく出てきた値は残す） */
         const set = new Set((f.values || []).map((v) => norm.text(v)));
-        return { test: (r) => set.has(norm.text(at(r, col))) };
+        const exclude = !!f.exclude;
+        return { test: (r) => set.has(norm.text(at(r, col))) !== exclude };
       }
       const op = LQ.Operators.get(f.op);
       if (!op) return { test: null, message: '比較方法を選んでください' };
@@ -746,7 +748,7 @@
     describe(f, isDate) {
       if (f.mode === 'values') {
         const shown = f.values.slice(0, 3).map((v) => (v === '' ? '（空欄）' : v));
-        return f.col + '：' + shown.join('・') + (f.values.length > 3 ? ' ほか ' + (f.values.length - 3) + ' 件' : '');
+        return f.col + '：' + shown.join('・') + (f.values.length > 3 ? ' ほか ' + (f.values.length - 3) + ' 件' : '') + (f.exclude ? ' 以外' : '');
       }
       const op = LQ.Operators.get(f.op);
       if (!op) return f.col;

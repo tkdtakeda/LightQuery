@@ -111,11 +111,11 @@ ol {
 /* ---------- 骨組み ---------- */
 .lq-app {
   display: grid;
-  grid-template-columns: var(--w-rail) auto minmax(0, 1fr);
+  grid-template-columns: var(--w-rail) auto minmax(0, 1fr) auto;
   grid-template-rows: var(--h-topbar) minmax(0, 1fr);
   grid-template-areas:
-    "top top top"
-    "rail panel main";
+    "top top top top"
+    "rail panel main detail";
   height: 100dvh;
   min-height: 0;
 }

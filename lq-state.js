@@ -366,6 +366,22 @@
       this._afterDatasetChange(role);
     }
 
+    /**
+     * 複数の表の絞り込みをまとめて置き換える（抽出結果の見出しから。② は抽出条件ごと）
+     * @param {'source'|'condition'} role
+     * @param {Array<{profileId:string|null, filters:Array}>} changes
+     */
+    setFiltersOf(role, changes) {
+      changes.forEach((c) => {
+        const p = role === 'source' ? null : this.profiles.find(c.profileId);
+        const ds = role === 'source' ? this.datasets.source : (p ? p.condition : null);
+        if (!ds) return;
+        ds.setFilters(c.filters);
+        if (this.keepsUserSettings) LQ.LoadMemory.rememberFilters(LQ.LoadMemory.keyOf(role, c.profileId), ds);
+      });
+      this._afterDatasetChange(role);
+    }
+
     /** 年度の始まり（月）を変える。期間の条件・ピボット・グラフに使うため、結果は未反映になり、ピボット・グラフは作り直す */
     setFiscalStart(month) {
       if (month === LQ.Fiscal.start()) return;

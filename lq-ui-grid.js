@@ -233,6 +233,7 @@
      * @param {HTMLElement} root スクロールする入れ物
      * @param {{onSort:Function, onMove:Function, onRowHead:Function, onColHead:Function, onRowOpen?:Function}} handlers
      *        onRowOpen(ri, tr)：model.openable のとき、行のダブルクリック・Enter で呼ぶ（ri は表示中の何行目か）
+     *        onRowStep(ri, delta)：model.openable のとき、行にフォーカスがある状態の ↑↓ で呼ぶ
      */
     constructor(ctx, root, handlers) {
       this.ctx = ctx;
@@ -252,6 +253,7 @@
       root.addEventListener('dblclick', (e) => this._onRowOpen(e));
       root.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.isComposing) this._onRowOpen(e);
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') this._onRowStep(e, e.key === 'ArrowUp' ? -1 : 1);
       });
     }
 
@@ -262,6 +264,15 @@
       if (!tr) return;
       e.preventDefault();
       this.handlers.onRowOpen(Number(tr.dataset.ri), tr);
+    }
+
+    /** 開ける行にフォーカスがあるときの ↑↓（onRowStep があるときだけ。ないときはふつうに表を送る） */
+    _onRowStep(e, delta) {
+      if (!this.model || !this.model.openable || !this.handlers.onRowStep || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const tr = e.target.closest ? e.target.closest('tr[data-ri]') : null;
+      if (!tr || e.target !== tr) return;
+      e.preventDefault();
+      this.handlers.onRowStep(Number(tr.dataset.ri), delta);
     }
 
     /** 表示中の ri 行目の行（フォーカスを戻すため） */
@@ -414,8 +425,9 @@
       const sortText = col.sortDir === 'asc' ? '昇順' : (col.sortDir === 'desc' ? '降順' : '');
       const sortIcon = col.sortDir ? '<i class="fa-solid fa-' + SORT_ICON[col.sortDir] + ' lq-th__sort" aria-hidden="true"></i>' : '';
       return '<th class="' + cls.join(' ') + '"' + style + ' data-key="' + esc(col.key) + '" draggable="true" title="' +
-        esc(col.label) + '：押すと一覧（並べ替え・出力する）・ドラッグで列を移動' + (sortText ? '（今は ' + sortText + '）' : '') + '">' +
+        esc(col.label) + '：押すと一覧（並べ替え・絞り込み・出力する）・ドラッグで列を移動' + (sortText ? '（今は ' + sortText + '）' : '') + (col.filtered ? '・元データで絞り込み中' : '') + '">' +
         '<div class="lq-th">' + (BADGE[col.kind] || '') + '<span class="lq-th__name">' + esc(col.label) + '</span>' + sortIcon +
+        (col.filtered ? '<i class="fa-solid fa-filter lq-th__filtered" aria-hidden="true"></i>' : '') +
         '<i class="fa-solid fa-caret-down lq-th__caret" aria-hidden="true"></i></div>' + grip + '</th>';
     }
 

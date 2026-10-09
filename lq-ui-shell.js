@@ -394,6 +394,7 @@
           this.app.manual.close();
           return;
         }
+        if (!e.defaultPrevented && this.app.rowDetail && this.app.rowDetail.close()) return;
         if (this.state.panel && !e.defaultPrevented) this.state.closePanel();
         return;
       }

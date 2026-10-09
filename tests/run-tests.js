@@ -251,6 +251,144 @@ check('抽出：一致しなかった ② の行', async (browser) => {
   });
 });
 
+check('抽出結果の絞り込み：見出しの一覧で外した値を元の表（① / ②）にも掛けて抽出し直す・タグで外す', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.evaluate(async () => {
+      await LQ.app.profiles.loadSample('idlist');
+      await LQ.app.run();
+    });
+    const before = await page.evaluate(() => LQ.app.state.result.length);
+    /* ① の列：見出しの一覧で 1 つ目の値を外して OK */
+    await page.click('th[data-key="s:地域"]');
+    const dropped = await page.evaluate(() => {
+      const label = document.querySelector('.lq-popover .lq-filter__values .lq-filter__value');
+      const box = label.querySelector('input');
+      box.click();
+      return label.querySelector('.lq-filter__label').textContent;
+    });
+    await page.click('.lq-popover .lq-popover__foot .lq-btn--primary');
+    await page.waitForFunction(() => LQ.app.state.result && !LQ.app.state.busy);
+    await page.waitForSelector('th[data-key="s:地域"] .lq-th__filtered', { timeout: 3000 }).catch(() => null);
+    const r1 = await page.evaluate((v) => {
+      const S = LQ.app.state;
+      const view = LQ.app.main.resultView();
+      const def = view.resolve('s:地域');
+      let left = 0;
+      for (let i = 0; i < view.length; i++) if (view.value(def, i) === v) left++;
+      const f = S.datasets.source.filters[0];
+      return { rows: view.length, left: left, filter: { col: f.col, exclude: !!f.exclude, values: f.values },
+        tag: !!document.querySelector('.lq-filterbar .lq-ftag'), mark: !!document.querySelector('th[data-key="s:地域"] .lq-th__filtered') };
+    }, dropped);
+    ok(r1.rows < before, '外した値の行が結果から消える（' + before + ' → ' + r1.rows + ' 行）');
+    eq(r1.left, 0, '外した値の行は残らない');
+    eq(r1.filter, { col: '地域', exclude: true, values: [dropped] }, '① には「外した値を除く」絞り込みが掛かる');
+    ok(r1.tag && r1.mark, '結果の上に絞り込みのタグ、見出しに漏斗が出る');
+    /* ① の見出しの一覧では、外した値だけ選ばれていない */
+    const unchecked = await page.evaluate((v) => {
+      LQ.app.columnMenu.open(document.body, 'source', '地域');
+      const labels = Array.from(document.querySelectorAll('.lq-popover .lq-filter__values .lq-filter__value'));
+      const off = labels.filter((l) => !l.querySelector('input').checked).map((l) => l.querySelector('.lq-filter__label').textContent);
+      LQ.app.popovers.close();
+      return off;
+    }, dropped);
+    eq(unchecked, [dropped], '① の一覧では外した値だけが未選択');
+    /* ② の列：外した値は ② の絞り込みになる */
+    const memo = await page.evaluate(() => {
+      const view = LQ.app.main.resultView();
+      return LQ.ResultFilter.distinct(view, 'c:メモ').list.map((v) => v.value);
+    });
+    await page.click('th[data-key="c:メモ"]');
+    await page.evaluate(() => document.querySelector('.lq-popover .lq-filter__values .lq-filter__value input').click());
+    await page.click('.lq-popover .lq-popover__foot .lq-btn--primary');
+    await page.waitForFunction(() => LQ.app.state.result && !LQ.app.state.busy && document.querySelectorAll('.lq-filterbar .lq-ftag').length === 2, null, { timeout: 3000 }).catch(() => null);
+    const r2 = await page.evaluate(() => {
+      const c = LQ.app.state.datasets.condition;
+      return { filters: c.filters.map((f) => ({ col: f.col, exclude: !!f.exclude, n: f.values.length })), tags: document.querySelectorAll('.lq-filterbar .lq-ftag').length };
+    });
+    eq(r2, { filters: [{ col: 'メモ', exclude: true, n: 1 }], tags: 2 }, '② にも絞り込みが掛かり、タグが 2 つになる');
+    ok(memo.length > 1, '② の列の値の一覧が出る');
+    /* タグの × で外すと元の行数に戻る */
+    for (let i = 0; i < 2; i++) {
+      await page.click('.lq-filterbar .lq-ftag__x');
+      await page.waitForFunction((n) => LQ.app.state.result && !LQ.app.state.busy && document.querySelectorAll('.lq-filterbar .lq-ftag').length === n, 1 - i);
+    }
+    eq(await page.evaluate(() => [LQ.app.state.datasets.source.filters.length, LQ.app.state.datasets.condition.filters.length]), [0, 0], '① / ② の絞り込みが外れる');
+    eq(await page.evaluate(() => LQ.app.state.result.length), before, 'タグの × で外すと元の行数に戻る');
+  });
+});
+
+check('貼り付け：読み込むたびに、値が Excel の表示どおり（丸めた値）だと知らせる', async (browser) => {
+  await withPage(browser, async (page) => {
+    const n = await page.evaluate(async () => {
+      const count = () => Array.from(document.querySelectorAll('.lq-toast')).filter((t) => t.textContent.indexOf('Excel の表示どおり') !== -1).length;
+      LQ.app.loadText('source', '品目\t率\nA\t0\nB\t1');
+      const first = count();
+      LQ.app.loadText('source', '品目\t率\nA\t0\nB\t1');
+      return [first, count()];
+    });
+    eq(n, [1, 2], '貼り付けるたびに通知が出る');
+  });
+});
+
+check('判定の根拠：行のダブルクリックで右に開き、↑↓ で前後の行（ページもまたぐ）・Esc で閉じる', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.evaluate(async () => {
+      await LQ.app.profiles.loadSample('priority');
+      await LQ.app.run();
+    });
+    await page.waitForSelector('tr[data-ri="2"]');
+    await page.dblclick('tr[data-ri="2"] td:nth-of-type(3)');
+    const r1 = await page.evaluate(() => {
+      const d = LQ.app.rowDetail;
+      const info = LQ.app.explainRow(d.displayIndex());
+      return { open: d.isOpen(), shown: !document.getElementById('lqDetail').hidden, i: d.displayIndex(), cards: document.querySelectorAll('.lq-detail__card').length,
+        unmatched: info.unmatched, statuses: info.cards.map((c) => c.status), current: document.querySelector('tr.is-current').dataset.ri };
+    });
+    eq(r1, { open: true, shown: true, i: 2, cards: 3, unmatched: true, statuses: ['miss', 'miss', 'miss'], current: '2' }, '該当なしの行：3 つの抽出条件すべてが「該当しない」と理由つきで並ぶ');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    eq(await page.evaluate(() => [LQ.app.rowDetail.displayIndex(), document.querySelector('tr.is-current').dataset.ri]), [0, '0'], '↑ で前の行へ移り、表の印も移る');
+    const r2 = await page.evaluate(async () => {
+      const d = LQ.app.rowDetail;
+      d.open(99);
+      d.move(1);
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      return [d.displayIndex(), LQ.app.state.view.pages.result];
+    });
+    eq(r2, [100, 1], '↓ でページをまたぐと次のページへ送る');
+    await page.keyboard.press('Escape');
+    eq(await page.evaluate(() => [LQ.app.rowDetail.isOpen(), !!document.querySelector('tr.is-current')]), [false, false], 'Esc で閉じる');
+  });
+});
+
+check('判定の根拠：抽出条件ごとの「該当する／しない」が抽出結果と食い違わない（式・② の比較・一致しなかった行）', async (browser) => {
+  await withPage(browser, async (page) => {
+    const bad = await page.evaluate(async () => {
+      const A = LQ.app;
+      const out = [];
+      for (const id of ['priority', 'logic', 'threshold', 'exclude', 'ngword', 'wildcard', 'dates', 'independent']) {
+        await A.profiles.loadSample(id);
+        if (!A.validationAll().ok) continue;
+        await A.run();
+        const view = A.main.resultView();
+        const n = Math.min(view.length, 60);
+        for (let i = 0; i < n; i++) {
+          const info = A.explainRow(i);
+          info.cards.forEach((c) => {
+            const e = c.explanation;
+            if (!e) return out.push(id + ' ' + i + '：根拠なし');
+            const expected = c.joinKind === 'anti' ? e.matches === 0 : (c.joinKind === 'left' ? true : e.matches > 0);
+            if ((c.status !== 'miss') !== expected) out.push(id + ' ' + i + '「' + c.name + '」：' + c.status + ' / 一致 ' + e.matches);
+            if (e.matches > 0 && e.value !== 1) out.push(id + ' ' + i + '：一致した行の式が満たすになっていない');
+          });
+        }
+      }
+      return out;
+    });
+    eq(bad.slice(0, 5), [], '根拠の判定と抽出結果が一致する');
+  });
+});
+
 check('ピボット：重複を除いた件数（総計も重複を除く）と年度の始まり', async (browser) => {
   await withPage(browser, async (page) => {
     const r = await page.evaluate(async () => {

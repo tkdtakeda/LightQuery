@@ -554,7 +554,7 @@
           notes.push('列「' + f.col + '」がないため、その絞り込みは使っていません');
           return;
         }
-        if (f.mode !== 'values') return;
+        if (f.mode !== 'values' || f.exclude) return;
         const known = new Set((f.known || f.values || []).map((v) => norm.text(v)));
         const fresh = new Set();
         for (let r = 0; r < ds.baseRowCount; r++) {
