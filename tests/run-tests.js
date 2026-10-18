@@ -626,9 +626,12 @@ check('処理中：本物の進み具合で 5 秒以上更新がないと、時�
   });
 });
 
-check('通知：表の下の帯に新しい 1 件だけを出し、前の通知は「ほか N 件」で広げる', async (browser) => {
+check('通知：表とページ送りの間の行に新しい 1 件だけを出し、前の通知は「ほか N 件」で広げる', async (browser) => {
   await withPage(browser, async (page) => {
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
+      await LQ.app.profiles.loadSample('idlist');
+      await LQ.app.run();
+      document.querySelectorAll('.lq-toast').forEach((t) => t.remove());
       const T = LQ.app.toasts;
       T.show({ type: 'info', title: '一つ目' });
       T.show({ type: 'success', title: '二つ目', actions: [{ label: '元に戻す', onClick: () => {} }] });
@@ -638,16 +641,22 @@ check('通知：表の下の帯に新しい 1 件だけを出し、前の通知�
       const visible = () => Array.from(document.querySelectorAll('.lq-toast')).filter((t) => t.offsetParent !== null).map((t) => t.querySelector('.lq-toast__title').textContent);
       const main = document.querySelector('#lqMain').getBoundingClientRect();
       const bar = document.querySelector('.lq-toast:last-child').getBoundingClientRect();
+      const grid = document.querySelector('.lq-gridwrap').getBoundingClientRect();
+      const pager = document.querySelector('.lq-pager').getBoundingClientRect();
       const out = { inMain: !!document.querySelector('#lqMain #lqToasts'), first: visible(), more: document.querySelector('.lq-toasts__more').textContent,
-        bottom: Math.round(main.bottom - bar.bottom), right: bar.right <= main.right };
+        noOverlap: bar.top >= grid.bottom - 1 && bar.bottom <= pager.top + 1, right: bar.right <= main.right };
       document.querySelector('.lq-toasts__more').click();
       out.expanded = visible();
+      document.querySelector('.lq-toasts__more').click();
+      document.querySelector('.lq-toast.is-current .lq-btn[title="閉じる"]').click();
+      out.afterClose = visible().filter((t) => t === '一つ目');
       return out;
     });
-    ok(r.inMain && r.right && r.bottom >= 0 && r.bottom < 20, '表の領域の下端に置く（右のパネルを覆わない）：' + JSON.stringify(r));
+    ok(r.inMain && r.right && r.noOverlap, '表とページ送りの間に置き、どちらにも重ならない：' + JSON.stringify(r));
     eq(r.first, ['二つ目'], '新しい 1 件だけ');
     ok(r.more.indexOf('ほか 1 件') >= 0, '前の通知の数：' + r.more);
     eq(r.expanded, ['一つ目', '二つ目'], '広げると前の通知も見られる');
+    eq(r.afterClose, ['一つ目'], '新しい通知を閉じると、消える途中から前の通知が見える');
   });
 });
 

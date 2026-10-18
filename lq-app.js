@@ -544,8 +544,8 @@
       this.density = new LQ.Density(ctx);
       this.commands = new LQ.CommandPalette(ctx);
       this.main = new LQ.MainView(ctx);
-      /* 通知は表の下の帯の上に重ねる（表の領域の中に置くので、画面の右の判定の根拠を覆わない） */
-      this.main.root.appendChild(Dom.qs('#lqToasts'));
+      /* 通知は表とページ送りの帯の間の行に置く（何も覆わない。画面の右の判定の根拠にも掛からない） */
+      this.main.root.insertBefore(Dom.qs('#lqToasts'), this.main.pager);
       this.rowDetail = new LQ.RowDetail(ctx, Dom.qs('#lqDetail'));
       this.progressBand = new LQ.ProgressBand(ctx, this.main.root, this.main.gridwrap);
       this.shell = new LQ.Shell(ctx, this.panels);

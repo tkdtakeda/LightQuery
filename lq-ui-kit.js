@@ -82,7 +82,7 @@
   };
 
   /* ---------------------------------------------------------------------
-   * ToastHost：通知。表の下の帯（ページ送り）の上に 1 行で重ね、表のデータや画面の右のパネルを覆わない
+   * ToastHost：通知。表とページ送りの帯の間の行に 1 行で出し、何も覆わない（表の下端が少し上がるだけ）
    *   ・見せるのは新しい 1 件だけ。前の通知は「ほか N 件」にまとめ、押すと上へ広げて全部を見られる
    *   ・取り消しなどの操作ボタンを付けられる。文が長いときは 2 行まで出し、全文はマウスを乗せると見られる
    *   ・マウスを乗せている間は消えない
@@ -111,6 +111,7 @@
         if (!el || el.classList.contains('is-leaving')) return;
         clearTimeout(timer);
         el.classList.add('is-leaving');
+        this._sync();
         el.addEventListener('animationend', () => {
           el.remove();
           this._sync();
@@ -154,7 +155,9 @@
 
     /** 「ほか N 件」の数と、広げた状態をそろえる */
     _sync() {
-      const live = Array.prototype.filter.call(this.list.children, (t) => !t.classList.contains('is-leaving')).length;
+      const liveEls = Array.prototype.filter.call(this.list.children, (t) => !t.classList.contains('is-leaving'));
+      const live = liveEls.length;
+      Array.prototype.forEach.call(this.list.children, (t) => t.classList.toggle('is-current', t === liveEls[live - 1]));
       const hidden = Math.max(0, live - 1);
       if (!hidden) this.root.classList.remove('is-expanded');
       this.more.hidden = !hidden;
@@ -162,7 +165,7 @@
       const open = this.root.classList.contains('is-expanded');
       Dom.append(this.more, [Dom.icon(open ? 'chevron-down' : 'chevron-up'), open ? 'たたむ' : 'ほか ' + hidden + ' 件']);
       this.more.title = open ? '新しい通知だけを表示する' : '前の通知も表示する';
-      this.root.classList.toggle('has-toast', live > 0);
+      this.root.classList.toggle('has-toast', this.list.children.length > 0);
     }
 
     _toggle() {
