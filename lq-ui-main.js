@@ -276,7 +276,8 @@
       const sourceFilters = LQ.ResultFilterBar.render(this.ctx, view);
       if (sourceFilters) this.info.appendChild(sourceFilters);
       this._renderFilterBar(view);
-      if (s.isStale()) {
+      /* 抽出中は、終われば結果が入れ替わるため出さない（右上のボタンは「中止する」で、文と食い違うため） */
+      if (s.isStale() && !(s.busy && s.busy.kind === 'run')) {
         this.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
           '表示中の結果は変更前のものです。右上のボタンで再抽出すると反映されます。'])));
       }

@@ -229,8 +229,8 @@
       this.actions = h('div', { class: 'lq-panel__actions' });
       this.head = h('div', { class: 'lq-panel__head' }, [this.icon, this.title, this.actions]);
       this.body = h('div', { class: 'lq-panel__body' });
-      this.lock = h('div', { class: 'lq-panel__lock', role: 'status', hidden: true }, [Dom.icon('lock'),
-        h('span', { text: '処理中のため、ここの設定は変更できません（見ることはできます）。完了するか、右上の「中止する」で止めると変更できます。' })]);
+      this.lockText = h('span');
+      this.lock = h('div', { class: 'lq-panel__lock', role: 'status', hidden: true }, [Dom.icon('lock'), this.lockText]);
       this.grip = h('div', { class: 'lq-panel__grip', title: 'ドラッグで幅を変更（ダブルクリックで初期の幅に戻す）', 'aria-hidden': 'true' });
       Dom.append(root, [this.head, this.lock, this.body, this.grip]);
       this._bindResize();
@@ -245,6 +245,11 @@
       const locked = !!this.state.busy && LOCK_WHILE_BUSY.has(this.state.panel);
       this.root.classList.toggle('is-locked', locked);
       this.lock.hidden = !locked;
+      if (locked) {
+        const busy = this.state.busy;
+        this.lockText.textContent = '処理中のため、ここの設定は変更できません（見ることはできます）。' + (busy.cancelling ? '中止処理が終わると変更できます。'
+          : busy.cancellable ? '完了するか、右上の「中止する」で止めると変更できます。' : '完了すると変更できます。');
+      }
       /* 中身だけを操作できなくし、入れ物（スクロールする側）はそのままにして見られるようにする */
       Object.keys(this.panels).forEach((id) => {
         const el = this.panels[id].el;

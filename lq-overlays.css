@@ -1143,3 +1143,25 @@
   font-size: var(--fs-xs);
   color: var(--color-text-muted);
 }
+
+/* 判定の根拠（画面の右）を開いている間は、通知をその左に寄せて根拠を覆わない */
+body:has(#lqDetail:not([hidden])) .lq-toasts {
+  right: calc(var(--w-detail) + var(--space-7));
+}
+
+/* ゆったりで画面が狭いとき（1440px 以下）：タブの右のボタンはアイコンだけにし（名前はツールチップ）、
+   上部バーの直前の処理はアイコンだけにして、タブの帯と上部バーを 1 行に収める（基本設計 §3） */
+@media (max-width: 1440px) {
+  :root[data-density="comfortable"] .lq-tabbar__tools .lq-btn {
+    font-size: 0;
+    gap: 0;
+  }
+
+  :root[data-density="comfortable"] .lq-tabbar__tools .lq-btn .fa-solid {
+    font-size: var(--icon-md);
+  }
+
+  :root[data-density="comfortable"] .lq-jobstatus:not([data-kind="busy"]):not([data-kind="warn"]) .lq-jobstatus__text {
+    display: none;
+  }
+}

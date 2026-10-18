@@ -1366,6 +1366,10 @@
   font-size: var(--fs-sm);
 }
 
+
+/* 処理中に止めたパネルは、中身を薄くして「操作できない」の形のポインターにする（押せそうに見せない。1-4） */
 .lq-panel-host.is-locked .lq-panel__body {
-  opacity: var(--opacity-sub);
+  opacity: var(--opacity-stale);
+  filter: grayscale(1);
+  cursor: not-allowed;
 }

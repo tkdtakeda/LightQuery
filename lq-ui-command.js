@@ -103,7 +103,7 @@
     _render() {
       Dom.clear(this.listEl);
       if (!this._hits.length) {
-        this.listEl.appendChild(h('li', { class: 'lq-cmd__empty', text: '当てはまる機能がありません' }));
+        this.listEl.appendChild(h('li', { class: 'lq-cmd__empty', text: '当てはまる機能がありません。別の言葉（例：集計 → ピボット、見た目 → 表示密度）で探すか、左のアイコン列・右上の ⋮ メニューも見てください。' }));
         return;
       }
       this._hits.forEach((c, i) => {
