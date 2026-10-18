@@ -914,6 +914,19 @@
       ]);
     }
 
+    /**
+     * 条件の署名（読み込んだデータの番号を含まず、開き直しても同じになる）。
+     * 実行履歴から抽出し直すとき、条件が当時から変わったかを見分けるのに使う（② は名前と行数で見る）
+     */
+    conditionSignature() {
+      return JSON.stringify([
+        this.profiles.enabled().map((p) => [p.name, p.condition ? p.condition.name + ':' + p.condition.rowCount : '', QueryOps.signature(p.query),
+          Normalizer.signatureOf(this.rulesFor(p))]),
+        this.effectiveCombine(),
+        LQ.Fiscal.start()
+      ]);
+    }
+
     /** signature：抽出を始めた時点の署名（実行中に条件が変わっても「未反映」と判定できる） */
     setResult(result, signature) {
       this.result = result;

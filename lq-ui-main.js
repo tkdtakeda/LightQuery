@@ -367,7 +367,9 @@
           h('span', { class: 'lq-summary__item lq-num', text: '① ' + fmt(st.sourceRows) + ' 行中 ' +
             Util.formatPercent((anti ? ps.outputRows : ps.matchedSources) / Math.max(1, st.sourceRows)) }),
           shown,
-          h('span', { class: 'lq-summary__item', title: '条件の組み合わせ' }, [Dom.icon('code-branch'), h('span', { class: 'lq-summary__expr', text: part.snapshot.exprJa })]),
+          /* 要約は 1 行に保ち、条件の読み下し（A：① 商品コード が ② 列A で始まる）はマウスを乗せると出す */
+          h('span', { class: 'lq-summary__item', title: '条件の組み合わせ：' + part.snapshot.exprJa + '\n' + part.snapshot.conditions.join('\n') },
+            [Dom.icon('code-branch'), h('span', { class: 'lq-summary__expr', text: part.snapshot.exprJa })]),
           h('span', { class: 'lq-summary__item', text: join.label + (ps.needsCondition && !anti ? '・' + match.label : '') }),
           time
         ];
@@ -633,6 +635,9 @@
         h('span', { class: 'lq-summary__item', text: (set.hasHeader ? 'ヘッダー ' + set.headerRow + ' 行目' : 'ヘッダーなし') + '・範囲 ' + ds.stats.rangeText }),
         ds.stats.skippedEmpty ? h('span', { class: 'lq-summary__item lq-num', text: '空行 ' + Util.formatInt(ds.stats.skippedEmpty) + ' 行を除外' }) : null
       ];
+      /* 毎月の差し替えの入口：ファイル名のすぐ右に置く（「このファイルを差し替える」と読める）。
+         そのパネルを開いているときはパネルに同じボタンがあるので出さない */
+      if (this.state.panel !== ds.role) items.splice(1, 0, this._replaceButton(ds.role));
       this.info.appendChild(h('div', { class: 'lq-summary' }, items));
       if (raw) {
         this.info.appendChild(UI.note('tip', h('span', { title: '行番号をクリックするとヘッダー行・データ開始行・終了行を、列記号をクリックすると開始列を指定できます。ヘッダー行の列名を押すと、その列の一覧（値で絞り込む・出力する）が開きます（出力しない列は薄く表示）。' },
@@ -641,6 +646,15 @@
         if (ds.fileCount > 1) this.info.appendChild(UI.note('info', '縦に結合しているため、基準（1 つ目）のファイル「' + ds.name + '」を表示しています。ここで決めた読み込み範囲を、ほかのファイルにも当てはめます。'));
       }
       if (!ds.rowCount) this.info.appendChild(UI.note('warn', 'データ行がありません。「読み込み範囲」でヘッダー行・データ開始行を確認してください。'));
+    }
+
+    _replaceButton(role) {
+      const busy = !!this.state.busy;
+      return h('button', { class: 'lq-btn lq-btn--xs', type: 'button', disabled: busy,
+        title: busy ? '処理中のため差し替えられません（完了するか中止すると使えます）'
+          : (role === 'source' ? '別のファイルを ① 元データとして読み込み、今の ① と置き換えます（元に戻せます。読み込み範囲などの設定は列の名前で引き継ぎます）'
+            : '選択中の抽出条件の ② 照合表を、別のファイルに置き換えます（元に戻せます）'),
+        onclick: () => this.app.pickFile(role) }, [Dom.icon('arrow-right-arrow-left'), role === 'source' ? '① を差し替える' : '② を差し替える']);
     }
 
     /** 出力列の表示状態（キー → 表示するか。まだ一覧にない列は ① を表示・② を非表示とみなす） */

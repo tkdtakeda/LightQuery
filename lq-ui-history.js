@@ -4,6 +4,7 @@
  *   ・状態はアイコン＋文字＋色（完了・完了（警告あり）・失敗・中止）
  *   ・いちばん新しい記録は中身（入力・条件・出力先・警告）を開いておき、ほかは押して開く
  *   ・作業セットで絞れる。履歴を消すときは「元に戻す」で戻せる
+ *   ・抽出の記録からは、その作業セットを開いて今の ① で抽出し直せる
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -30,7 +31,7 @@
         this.list
       ]);
       ctx.bus.on('change', (e) => {
-        if (e && (e.topic === 'jobs' || e.topic === 'worksets') && this.state.panel === 'history') this.render();
+        if (e && (e.topic === 'jobs' || e.topic === 'worksets' || e.topic === 'busy') && this.state.panel === 'history') this.render();
       });
     }
 
@@ -87,9 +88,21 @@
       if (e.workset) rows.push(h('div', { class: 'lq-job__row' }, [h('dt', { text: '作業セット' }), h('dd', { text: e.workset })]));
       const body = h('div', { class: 'lq-job__body' }, [
         rows.length ? h('dl', { class: 'lq-job__details' }, rows) : null,
-        e.warnings.length ? h('ul', { class: 'lq-job__warnings' }, e.warnings.map((w) => h('li', {}, [Dom.icon('triangle-exclamation'), h('span', { text: w })]))) : null
+        e.warnings.length ? h('ul', { class: 'lq-job__warnings' }, e.warnings.map((w) => h('li', {}, [Dom.icon('triangle-exclamation'), h('span', { text: w })]))) : null,
+        e.kind === 'run' && e.ref ? this._rerun(e) : null
       ]);
       return h('li', { class: 'lq-job', dataset: { status: e.status } }, h('details', { open: open || null }, [head, body]));
+    }
+
+    /** 「この作業セットで抽出し直す」（押せないときは理由を添える。1-4） */
+    _rerun(e) {
+      const reason = this.app.rerunBlocker(e);
+      return h('div', { class: 'lq-job__actions' }, [
+        h('button', { class: 'lq-btn lq-btn--sm', type: 'button', disabled: !!reason,
+          title: '作業セット「' + e.workset + '」を開き、今読み込んでいる ① で抽出し直します（条件が当時から変わっていれば先に知らせます）',
+          onclick: () => this.app.rerunJob(e) }, [Dom.icon('arrows-rotate'), 'この作業セットで抽出し直す']),
+        reason ? h('span', { class: 'lq-field__hint', text: reason }) : null
+      ]);
     }
 
     _clear() {

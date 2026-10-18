@@ -602,6 +602,99 @@ check('判定の根拠：1366px で左のパネルが開いていたら閉じて
   });
 });
 
+check('処理中：本物の進み具合で 5 秒以上更新がないと、時刻つきで知らせる', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.evaluate(() => {
+      window.__pr = LQ.app.startProgress({ kind: 'read', label: '読み込み中…', title: '読み込んでいます', steps: [{ id: 'a', label: 'セルの読み取り' }, { id: 'b', label: '表の準備' }] });
+      window.__pr.begin('a', true);
+      window.__pr.update(0.2, '1,000 / 5,000 行');
+    });
+    await page.waitForTimeout(1000);
+    const early = await page.textContent('.lq-busyband');
+    await page.waitForTimeout(5000);
+    const r = await page.evaluate(() => {
+      const out = { band: document.querySelector('.lq-busyband').textContent, top: document.querySelector('.lq-jobstatus').textContent, phase: document.querySelector('.lq-busyband').dataset.phase };
+      window.__pr.close();
+      out.hidden = document.querySelector('.lq-busyband').hidden;
+      return out;
+    });
+    ok(early.indexOf('更新されていません') < 0 && early.indexOf('工程 1 / 2：セルの読み取り') >= 0, 'はじめは工程を示し、止まっているとは言わない：' + early);
+    eq(r.phase, 'stalled', '5 秒以上で更新なしの状態になる');
+    ok(/\d\d:\d\d:\d\d から進捗が更新されていません/.test(r.band), '帯：時刻つきの事実：' + r.band);
+    ok(/読み込み中.*から更新なし/.test(r.top), '上部バー：' + r.top);
+    ok(r.hidden, '終われば帯を消す');
+  });
+});
+
+check('通知：表の下の帯に新しい 1 件だけを出し、前の通知は「ほか N 件」で広げる', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.evaluate(() => {
+      const T = LQ.app.toasts;
+      T.show({ type: 'info', title: '一つ目' });
+      T.show({ type: 'success', title: '二つ目', actions: [{ label: '元に戻す', onClick: () => {} }] });
+    });
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => {
+      const visible = () => Array.from(document.querySelectorAll('.lq-toast')).filter((t) => t.offsetParent !== null).map((t) => t.querySelector('.lq-toast__title').textContent);
+      const main = document.querySelector('#lqMain').getBoundingClientRect();
+      const bar = document.querySelector('.lq-toast:last-child').getBoundingClientRect();
+      const out = { inMain: !!document.querySelector('#lqMain #lqToasts'), first: visible(), more: document.querySelector('.lq-toasts__more').textContent,
+        bottom: Math.round(main.bottom - bar.bottom), right: bar.right <= main.right };
+      document.querySelector('.lq-toasts__more').click();
+      out.expanded = visible();
+      return out;
+    });
+    ok(r.inMain && r.right && r.bottom >= 0 && r.bottom < 20, '表の領域の下端に置く（右のパネルを覆わない）：' + JSON.stringify(r));
+    eq(r.first, ['二つ目'], '新しい 1 件だけ');
+    ok(r.more.indexOf('ほか 1 件') >= 0, '前の通知の数：' + r.more);
+    eq(r.expanded, ['一つ目', '二つ目'], '広げると前の通知も見られる');
+  });
+});
+
+check('① タブのファイル名の右の「① を差し替える」と、要約の式にマウスを乗せると出る条件の読み下し', async (browser) => {
+  await withPage(browser, async (page) => {
+    const r = await page.evaluate(async () => {
+      const A = LQ.app;
+      await A.profiles.loadSample('report');
+      await A.run();
+      await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 50)));
+      const expr = document.querySelector('.lq-summary__expr').parentElement.title;
+      A.state.setTab('source');
+      await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 50)));
+      const btn = Array.from(document.querySelectorAll('.lq-infobar .lq-summary .lq-btn')).find((b) => b.textContent.indexOf('① を差し替える') >= 0);
+      return { expr: expr, btn: !!btn, disabled: btn ? btn.disabled : null };
+    });
+    ok(/A：① .+ が .+/.test(r.expr), '式のツールチップに読み下し：' + r.expr);
+    eq([r.btn, r.disabled], [true, false], '① タブのファイル名の右に差し替えのボタン');
+  });
+});
+
+check('実行履歴：抽出の記録から、その作業セットで抽出し直す（条件が変わっていれば先に知らせる）', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.waitForFunction(() => LQ.app.worksets.available);
+    const r = await page.evaluate(async () => {
+      const A = LQ.app;
+      const S = A.state;
+      await A.profiles.loadSample('idlist');
+      await A.run();
+      const entry = A.jobs.latest();
+      const runsBefore = A.jobs.items.filter((e) => e.kind === 'run').length;
+      await A.rerunJob(entry);
+      const runsAfter = A.jobs.items.filter((e) => e.kind === 'run').length;
+      const c = S.query.conditions[0];
+      S.updateCondition(c.id, { op: c.op === 'contains' ? 'eq' : 'contains' });
+      await A.rerunJob(entry);
+      const warned = Array.from(document.querySelectorAll('.lq-toast')).some((t) => t.textContent.indexOf('条件が当時') >= 0);
+      const runsLast = A.jobs.items.filter((e) => e.kind === 'run').length;
+      S.openPanel('history');
+      const btn = document.querySelector('.lq-job__actions .lq-btn');
+      return { ref: !!entry.ref, again: runsAfter - runsBefore, warned: warned, notRun: runsLast === runsAfter, btn: btn ? btn.textContent : '' };
+    });
+    eq([r.ref, r.again, r.warned, r.notRun], [true, 1, true, true], '同じ条件なら抽出し直し、変わっていれば知らせて止まる');
+    ok(r.btn.indexOf('この作業セットで抽出し直す') >= 0, '履歴にボタン');
+  });
+});
+
 check('速さ：10 万行 × ② 1,000 行の抽出が 3 秒以内', async (browser) => {
   await withPage(browser, async (page) => {
     const r = await page.evaluate(async () => {
@@ -622,7 +715,17 @@ async function launch() {
   const opts = {};
   if (process.env.LQ_BROWSER_PATH) opts.executablePath = process.env.LQ_BROWSER_PATH;
   else if (process.env.LQ_BROWSER) opts.channel = process.env.LQ_BROWSER;
-  return chromium.launch(opts);
+  try {
+    return await chromium.launch(opts);
+  } catch (err) {
+    /* ブラウザが見つからないときは、次にすることを日本語で示して終える */
+    console.error('ブラウザを起動できませんでした：' + String(err.message || err).split('\n')[0]);
+    console.error('次のどれかで指定してください：');
+    console.error('  ・npx playwright install chromium（確認用のブラウザを入れる）');
+    console.error('  ・LQ_BROWSER=msedge（入っている Edge を使う）');
+    console.error('  ・LQ_BROWSER_PATH=ブラウザの実行ファイルの場所（例：/opt/pw-browsers/chromium）');
+    process.exit(2);
+  }
 }
 
 (async () => {

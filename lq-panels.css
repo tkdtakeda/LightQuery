@@ -1373,3 +1373,10 @@
   filter: grayscale(1);
   cursor: not-allowed;
 }
+
+.lq-job__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+}

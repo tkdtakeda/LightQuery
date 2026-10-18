@@ -82,15 +82,21 @@
   };
 
   /* ---------------------------------------------------------------------
-   * ToastHost：画面右下の通知。取り消しなどの操作ボタンを付けられる
+   * ToastHost：通知。表の下の帯（ページ送り）の上に 1 行で重ね、表のデータや画面の右のパネルを覆わない
+   *   ・見せるのは新しい 1 件だけ。前の通知は「ほか N 件」にまとめ、押すと上へ広げて全部を見られる
+   *   ・取り消しなどの操作ボタンを付けられる。文が長いときは 2 行まで出し、全文はマウスを乗せると見られる
+   *   ・マウスを乗せている間は消えない
    * ------------------------------------------------------------------- */
   const TOAST_ICON = { success: 'circle-check', info: 'circle-info', warn: 'triangle-exclamation', error: 'circle-exclamation' };
   const TOAST_MS = { base: 5000, action: 10000, error: 9000, resume: 2500 };
-  const TOAST_MAX = 3;
+  const TOAST_MAX = 5;
 
   class ToastHost {
     constructor(root) {
       this.root = root;
+      this.list = h('div', { class: 'lq-toasts__list' });
+      this.more = h('button', { class: 'lq-btn lq-btn--xs lq-toasts__more', type: 'button', hidden: true, onclick: () => this._toggle() });
+      Dom.append(root, [this.list, this.more]);
     }
 
     /**
@@ -105,26 +111,37 @@
         if (!el || el.classList.contains('is-leaving')) return;
         clearTimeout(timer);
         el.classList.add('is-leaving');
-        el.addEventListener('animationend', () => el.remove(), { once: true });
+        el.addEventListener('animationend', () => {
+          el.remove();
+          this._sync();
+        }, { once: true });
+        global.setTimeout(() => {
+          if (el.isConnected) {
+            el.remove();
+            this._sync();
+          }
+        }, 600);
       };
-      el = h('div', { class: 'lq-toast lq-toast--' + type, role: type === 'error' ? 'alert' : 'status' }, [
+      const full = opt.title + (opt.message ? '\n' + opt.message : '');
+      el = h('div', { class: 'lq-toast lq-toast--' + type, role: type === 'error' ? 'alert' : 'status', title: full }, [
         Dom.icon(TOAST_ICON[type] || TOAST_ICON.info, 'lq-toast__icon'),
         h('div', { class: 'lq-toast__body' }, [
-          h('div', { class: 'lq-toast__title', text: opt.title }),
-          opt.message ? h('div', { class: 'lq-toast__msg', text: opt.message }) : null,
-          actions.length ? h('div', { class: 'lq-toast__actions' }, actions.map((a) => h('button', {
-            class: 'lq-btn lq-btn--sm' + (a.primary ? ' lq-btn--primary' : ''),
-            type: 'button',
-            onclick: () => {
-              close();
-              a.onClick();
-            }
-          }, [a.icon ? Dom.icon(a.icon) : null, a.label]))) : null
+          h('span', { class: 'lq-toast__title', text: opt.title }),
+          opt.message ? h('span', { class: 'lq-toast__msg', text: opt.message }) : null
         ]),
+        actions.length ? h('div', { class: 'lq-toast__actions' }, actions.map((a) => h('button', {
+          class: 'lq-btn lq-btn--sm' + (a.primary ? ' lq-btn--primary' : ''),
+          type: 'button',
+          onclick: () => {
+            close();
+            a.onClick();
+          }
+        }, [a.icon ? Dom.icon(a.icon) : null, a.label]))) : null,
         h('button', { class: 'lq-btn lq-btn--ghost lq-btn--icon lq-btn--sm', type: 'button', title: '閉じる', onclick: close }, Dom.icon('xmark'))
       ]);
-      this.root.appendChild(el);
-      while (this.root.children.length > TOAST_MAX) this.root.firstElementChild.remove();
+      this.list.appendChild(el);
+      while (this.list.children.length > TOAST_MAX) this.list.firstElementChild.remove();
+      this._sync();
       const ms = opt.duration || (actions.length ? TOAST_MS.action : (type === 'error' ? TOAST_MS.error : TOAST_MS.base));
       timer = setTimeout(close, ms);
       el.addEventListener('mouseenter', () => clearTimeout(timer));
@@ -133,6 +150,24 @@
         timer = setTimeout(close, TOAST_MS.resume);
       });
       return { close: close };
+    }
+
+    /** 「ほか N 件」の数と、広げた状態をそろえる */
+    _sync() {
+      const live = Array.prototype.filter.call(this.list.children, (t) => !t.classList.contains('is-leaving')).length;
+      const hidden = Math.max(0, live - 1);
+      if (!hidden) this.root.classList.remove('is-expanded');
+      this.more.hidden = !hidden;
+      Dom.clear(this.more);
+      const open = this.root.classList.contains('is-expanded');
+      Dom.append(this.more, [Dom.icon(open ? 'chevron-down' : 'chevron-up'), open ? 'たたむ' : 'ほか ' + hidden + ' 件']);
+      this.more.title = open ? '新しい通知だけを表示する' : '前の通知も表示する';
+      this.root.classList.toggle('has-toast', live > 0);
+    }
+
+    _toggle() {
+      this.root.classList.toggle('is-expanded');
+      this._sync();
     }
   }
 

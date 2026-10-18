@@ -4,6 +4,7 @@
  *   ・ブラウザ全体で新しい順に 100 件まで（ブラウザに保存。行のデータは残さず、件数・条件の要約・出力先・警告だけ）
  *   ・各記録に作業セットの名前を書き、作業セットで絞り込める
  *   ・状態は「完了・完了（警告あり）・失敗・中止」の 4 つ（アイコン＋文字＋色で表す。色だけで伝えない）
+ *   ・抽出の記録には作業セットと条件の署名（ref）を残し、「この作業セットで抽出し直す」に使う
  * ========================================================================= */
 (function (global) {
   'use strict';
@@ -78,7 +79,10 @@
         result: entry.result || '',
         details: (entry.details || []).filter((d) => d && d.text).map((d) => ({ label: String(d.label || ''), text: String(d.text) })),
         warnings: (entry.warnings || []).filter(Boolean).map(String).slice(0, 20),
-        workset: entry.workset || ''
+        workset: entry.workset || '',
+        /* 抽出し直すための手がかり（作業セットと条件の署名。行のデータは持たない） */
+        ref: entry.ref && typeof entry.ref.worksetId === 'string'
+          ? { worksetId: entry.ref.worksetId, conditions: String(entry.ref.conditions || '') } : null
       };
       this.items.unshift(e);
       if (this.items.length > LIMIT) this.items.length = LIMIT;
