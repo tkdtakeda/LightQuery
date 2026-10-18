@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 E 表最大・文脈操作</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="mock-common.css">
+<style>
+/* 案 E：表を画面いっぱいにし、常に見える部品を最小にする。設定は上部の「札」（① ② 条件）から小窓で開き、列の設定は見出しのメニューで行う。コマンド検索（Ctrl+K）で全機能へ */
+.app { display: grid; grid-template-rows: var(--bar-h) 3px auto 1fr; height: 100dvh; }
+.top { display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--color-surface); border-bottom: 1px solid var(--color-line); }
+.logo { display: flex; align-items: center; font-weight: 700; color: var(--c-blue-900); }
+.logo i { background: var(--color-primary); color: #fff; width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: var(--control-height); padding: 0 10px; border: 1px solid var(--color-line-strong); border-radius: 999px; background: var(--color-surface); cursor: pointer; white-space: nowrap; }
+.chip.on { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.chip.todo { border-style: dashed; color: var(--color-text-muted); }
+.search { display: inline-flex; align-items: center; gap: 6px; height: var(--control-height); padding: 0 10px; border-radius: var(--radius-md); background: var(--c-gray-100); color: var(--color-text-muted); min-width: 200px; }
+.kbd { border: 1px solid var(--color-line-strong); border-radius: 3px; padding: 0 4px; font-size: 10px; background: #fff; }
+.line { background: transparent; }
+.line.run { background: linear-gradient(90deg, var(--color-primary) 34%, var(--c-blue-100) 34%); }
+.line.warn { background: linear-gradient(90deg, var(--color-warn) 34%, var(--color-warn-soft) 34%); }
+.strip { display: flex; align-items: center; gap: 14px; padding: 6px 12px; font-size: var(--font-size-small); color: var(--color-text-sub); }
+.grid { padding: 0 12px 8px; min-height: 0; display: grid; }
+.pop { position: fixed; z-index: 30; width: 440px; background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.pop header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--color-line); font-weight: 700; }
+.pop .body { padding: 12px; display: grid; gap: 8px; max-height: 60vh; overflow: auto; }
+.pop select { height: var(--control-height); border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); padding: 0 6px; width: 100%; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-small); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top" id="top"></header>
+  <div class="line" id="line"></div>
+  <div class="strip" id="strip"></div>
+  <main class="grid" id="grid"></main>
+</div>
+<div class="pop" id="pop" hidden></div>
+<script src="mock-common.js"></script>
+<script>
+(function () {
+  const $ = (s) => document.querySelector(s);
+  function render(st) {
+    const empty = st === 'empty';
+    const running = st === 'running' || st === 'stalled';
+    $('#top').innerHTML = '<span class="logo" title="LightQuery"><i class="fa-solid fa-magnifying-glass"></i></span>' +
+      '<button class="chip"><i class="fa-regular fa-folder-open"></i>作業セット 1</button><span class="muted">/</span>' +
+      (empty ? '<button class="chip todo on"><span class="badge badge--src">①</span>元データを読み込む</button><button class="chip todo"><span class="badge badge--cond">②</span>照合表</button><button class="chip todo"><i class="fa-solid fa-code-compare"></i>条件</button>'
+        : '<button class="chip"><span class="badge badge--src">①</span>売上帳票.xlsx <span class="muted num">48</span><i class="fa-solid fa-caret-down muted"></i></button>' +
+          '<button class="chip"><span class="badge badge--cond">②</span>コード一覧 <span class="muted num">3</span><i class="fa-solid fa-caret-down muted"></i></button>' +
+          '<button class="chip' + (st === 'edit' ? ' on' : '') + '"><i class="fa-solid fa-code-compare"></i>条件 A<i class="fa-solid fa-caret-down muted"></i></button>') +
+      '<span style="flex:1"></span>' +
+      (running ? '<span class="status"><i class="fa-solid ' + (st === 'stalled' ? 'fa-triangle-exclamation" style="color:var(--color-warn)' : 'fa-spinner fa-spin" style="color:var(--color-primary)') + '"></i>抽出中 照合 34%<button class="btn btn--ghost">中止</button></span>' : '') +
+      '<span class="search"><i class="fa-solid fa-magnifying-glass"></i>機能を探す <span class="kbd">Ctrl</span><span class="kbd">K</span></span>' +
+      '<button class="icon-btn" title="実行履歴"><i class="fa-solid fa-clock-rotate-left"></i></button>' +
+      (empty ? '<button class="btn btn--primary"><i class="fa-solid fa-file-import"></i>① を読み込む</button>'
+        : running ? '<button class="btn btn--primary" disabled>抽出する</button>' : st === 'edit' ? '<button class="btn btn--primary"><i class="fa-solid fa-play"></i>抽出する</button>' : '<button class="btn btn--primary"><i class="fa-solid fa-file-export"></i>39 行を出力</button>') +
+      '<button class="icon-btn" title="メニュー（照合ルール・表示密度・サンプル・使い方）"><i class="fa-solid fa-ellipsis-vertical"></i></button>';
+    $('#line').className = 'line' + (running ? (st === 'stalled' ? ' warn' : ' run') : '');
+    $('#strip').innerHTML = empty ? '' : running
+      ? (st === 'stalled' ? '<b style="color:var(--color-warn)"><i class="fa-solid fa-triangle-exclamation"></i> 14:32:18 から進捗が更新されていません。停止している可能性があります</b>' : '<span><i class="fa-solid fa-spinner fa-spin"></i> 工程 2 / 3：照合 3,420 / 10,000 行 ・ 経過 00:18</span>') + '<span class="muted">前回の結果（14:20）を表示中</span>'
+      : '<b style="color:var(--color-text)"><i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i> 39 行が一致</b><span>① 48 行中 81.3%</span><span>一致しなかった ② の行：なし</span><span>前回との違い：増 2・減 0・変 1</span><span style="flex:1"></span><a>表</a><a class="muted">ピボット</a><a class="muted">グラフ</a>';
+    $('#grid').innerHTML = empty
+      ? '<div class="empty"><div><h2>ファイルをどこにでもドロップしてください</h2><p class="sub">① 元データ → ② 照合表 の順に読み込みます。Ctrl+V で貼り付けもできます</p><button class="btn"><i class="fa-solid fa-flask"></i>サンプルで試す</button></div></div>'
+      : '<div class="tbl-wrap"' + (running ? ' style="opacity:.55"' : '') + '>' + MOCK.table({ selected: st === 'result' ? 2 : -1 }) + '</div>';
+    const pop = $('#pop');
+    pop.hidden = !(st === 'edit' || st === 'history');
+    if (st === 'edit') {
+      pop.style.cssText = 'top:46px;left:330px';
+      pop.innerHTML = '<header><i class="fa-solid fa-code-compare"></i>条件　<span class="small muted">コードの頭文字</span><span style="flex:1"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header><div class="body">' +
+        '<select><option>① 商品コード</option></select><select><option>② 列A</option></select><select><option>で始まる（前方一致）</option></select><button class="btn"><i class="fa-solid fa-plus"></i>条件を追加</button><div class="small muted">詳細設定 2 件を適用中 ▸</div></div>';
+    } else if (st === 'history') {
+      pop.style.cssText = 'top:46px;right:120px';
+      pop.innerHTML = '<header><i class="fa-solid fa-clock-rotate-left"></i>実行履歴<span style="flex:1"></span><span class="small muted">新しい順・100 件まで</span></header><div class="body" style="padding:0">' + MOCK.history() + '</div>';
+    }
+  }
+  MOCK.boot(MOCK.STATES, render);
+})();
+</script>
+</body>
+</html>

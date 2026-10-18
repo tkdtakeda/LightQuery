@@ -275,6 +275,7 @@
       this.result = null;
       this.resultSignature = null;
       this.busy = null;
+      this.lastJob = null;
       this.panel = null;
       this._ensureProfile();
     }

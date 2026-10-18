@@ -269,6 +269,14 @@
       } catch (e) {
         /* 保存できない環境では記憶しないだけで動作は継続する */
       }
+    },
+
+    remove(key) {
+      try {
+        global.localStorage.removeItem(PREFIX + key);
+      } catch (e) {
+        /* 同上 */
+      }
     }
   };
 
@@ -352,6 +360,7 @@
       this._last = 0;
       this._pending = 0;
       this.closed = false;
+      this.cancelling = false;
       this.plan(spec.steps || [{ id: 'work', label: spec.title }]);
     }
 
@@ -419,6 +428,21 @@
       this._emit(r >= 1);
     }
 
+    /**
+     * 処理の結果（実行履歴に残す中身）。close() の前に呼ぶ。呼ばずに close() したものは記録しない。
+     * @param {{status:'done'|'warn'|'failed'|'cancelled', result:string, details?:{label:string,text:string}[], warnings?:string[], title?:string}} outcome
+     */
+    finish(outcome) {
+      this.outcome = outcome;
+    }
+
+    /** 中止を受け付けた（すぐには止まらない処理の「中止処理中」を表示するため） */
+    markCancelling() {
+      if (this.cancelling) return;
+      this.cancelling = true;
+      this._emit(true);
+    }
+
     setDetail(text) {
       this.detail = text || '';
       this._emit(true);
@@ -447,6 +471,7 @@
         title: this.title,
         detail: this.detail,
         cancellable: this.cancellable,
+        cancelling: this.cancelling,
         steps: steps,
         step: active,
         stepRatio: active && active.determinate ? this._ratio : null,

@@ -1236,3 +1236,136 @@
 .lq-fxhint__example code {
   font-family: var(--font-mono);
 }
+
+/* ---------- 実行履歴（新しい順。状態はアイコン＋文字＋色） ---------- */
+.lq-jobs__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lq-jobs {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.lq-jobs__empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-7) var(--space-4);
+  color: var(--color-text-muted);
+}
+
+.lq-job {
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.lq-job__head {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4) var(--space-2);
+  cursor: pointer;
+}
+
+.lq-job__head:hover {
+  background: var(--color-surface-hover);
+}
+
+.lq-job__status,
+.lq-job__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  font-weight: var(--fw-medium);
+}
+
+.lq-job__status--ok { color: var(--color-success-strong); }
+.lq-job__status--warn { color: var(--color-warning-strong); }
+.lq-job__status--error { color: var(--color-danger-strong); }
+.lq-job__status--muted { color: var(--color-text-muted); }
+
+.lq-job__kind {
+  color: var(--color-text-sub);
+  font-weight: var(--fw-regular);
+}
+
+.lq-job__when {
+  justify-self: end;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.lq-job__result {
+  grid-column: 1 / -1;
+  color: var(--color-text);
+}
+
+.lq-job__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-5) var(--space-7);
+}
+
+.lq-job__details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.lq-job__row {
+  display: contents;
+}
+
+.lq-job__details dt {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.lq-job__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-sub);
+}
+
+.lq-job__warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-warning-strong);
+  font-size: var(--fs-sm);
+}
+
+.lq-job__warnings li {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* ---------- 処理中に変更できないパネル（見ることはできる） ---------- */
+.lq-panel__lock {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width) solid var(--color-info-line);
+  background: var(--color-info-soft);
+  color: var(--color-info-strong);
+  font-size: var(--fs-sm);
+}
+
+.lq-panel-host.is-locked .lq-panel__body {
+  opacity: var(--opacity-sub);
+}

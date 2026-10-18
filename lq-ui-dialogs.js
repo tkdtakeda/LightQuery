@@ -48,6 +48,11 @@
       const own = s.userProfiles().filter((p) => !p.isBlank()).length;
       const hasAny = !!(s.datasets.source || own || s.profiles.items.some((p) => !p.isBlank()));
       const menu = h('div', { class: 'lq-menu' }, [
+        h('div', { class: 'lq-menu__block' }, [
+          h('div', { class: 'lq-menu__label' }, [LQ.Dom.icon('text-height'), h('span', { text: '表示密度' }), h('span', { class: 'lq-field__hint', text: '文字・余白・ボタンの高さを一緒に変えます' })]),
+          this.app.density.segmented('lq-seg--block')
+        ]),
+        h('div', { class: 'lq-menu__sep' }),
         this._item('flask', 'サンプルデータを読み込む…', LQ.Samples.list().length + ' 種類のパターンで動作を確認', () => this.openSamples(anchor, 'bottom-end')),
         this._item('file-export', '抽出条件を書き出す（.json）…', '1 件だけ・すべてを選べます（② のデータも含められます）', () => this.app.profileDialogs.openJsonExport(anchor)),
         this._item('folder-open', '抽出条件を読み込む（.json）…', '書き出した .json を追加・置き換え（ドラッグ＆ドロップも可）', () => this.app.pickFile('settings')),

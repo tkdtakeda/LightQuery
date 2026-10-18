@@ -34,7 +34,8 @@
 
   /* 最初からすべて開く抽出条件の数の上限（これより多いときは、この行の抽出条件と該当なしの行だけ開く） */
   const OPEN_ALL_MAX = 3;
-  const SKIP_TOPICS = { busy: true, library: true, progress: true };
+  const SKIP_TOPICS = { busy: true, library: true, progress: true, jobs: true };
+  const NARROW_PX = 1440;
 
   class RowDetail {
     /**
@@ -69,11 +70,25 @@
     open(i) {
       const view = this._view();
       if (!view || i < 0 || i >= view.length) return;
+      const opening = !this.isOpen();
       this.k = view.rowAt(i);
       this.result = this.state.result;
       this.host.hidden = false;
+      if (opening) this._makeRoom();
       this._render(i);
       this._markRow(i, false);
+    }
+
+    /**
+     * 画面が狭い（1440px 以下）ときに左のパネルも開いていると、表が狭くなりすぎる（1366px で約 400px）。
+     * 左のパネルを閉じて表の幅を確保し、閉じたことを知らせて戻せるようにする
+     */
+    _makeRoom() {
+      const panel = this.state.panel;
+      if (!panel || global.innerWidth > NARROW_PX) return;
+      this.state.closePanel();
+      this.ctx.toasts.show({ type: 'info', title: '表の幅を確保するため、左のパネルを閉じました', message: '判定の根拠を開いている間も、左のアイコンからパネルを開けます。',
+        actions: [{ label: 'パネルを開き直す', icon: 'rotate-left', onClick: () => this.state.openPanel(panel) }] });
     }
 
     close() {

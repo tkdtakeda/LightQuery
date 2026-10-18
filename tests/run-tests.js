@@ -481,6 +481,127 @@ check('記憶：重複の削除の掛け直し・作業セットへの保存（�
   });
 });
 
+check('表示密度：3 段階を画面全体に掛け、開き直しても残る・以前の 3 つの設定を移す', async (browser) => {
+  await withPage(browser, async (page) => {
+    eq(await page.evaluate(() => document.documentElement.dataset.density), 'standard', '初期値は標準');
+    const h0 = await page.evaluate(() => document.querySelector('.lq-cta').getBoundingClientRect().height);
+    await page.evaluate(() => LQ.app.density.set('compact'));
+    const h1 = await page.evaluate(() => document.querySelector('.lq-cta').getBoundingClientRect().height);
+    ok(h1 < h0, 'コンパクトでボタンの高さも小さくなる（' + h0 + ' → ' + h1 + '）');
+    await page.reload();
+    await page.waitForFunction(() => window.LQ && LQ.app && LQ.app.worksets);
+    eq(await page.evaluate(() => document.documentElement.dataset.density), 'compact', '開き直しても残る');
+    await page.evaluate(() => {
+      localStorage.removeItem('lightquery.v1.ui.density');
+      localStorage.setItem('lightquery.v1.grid.display', JSON.stringify({ pad: 'l', row: 'l', font: 'm' }));
+    });
+    await page.reload();
+    await page.waitForFunction(() => window.LQ && LQ.app && LQ.app.worksets);
+    eq(await page.evaluate(() => [document.documentElement.dataset.density, localStorage.getItem('lightquery.v1.grid.display')]), ['comfortable', null],
+      '以前の設定（2 つが「広い」）はゆったりに移し、古い記憶は消す');
+  });
+});
+
+check('実行履歴：読み込み・抽出の結果が新しい順に残り、上部バーに直前の処理・消しても元に戻せる', async (browser) => {
+  await withPage(browser, async (page) => {
+    const r = await page.evaluate(async () => {
+      const A = LQ.app;
+      A.jobs.clear();
+      await A.profiles.loadSample('idlist');
+      await A.run();
+      A.state.openPanel('history');
+      const items = Array.from(document.querySelectorAll('.lq-job'));
+      return {
+        kinds: A.jobs.items.map((e) => e.kind + ':' + e.status),
+        open: items.map((li) => li.querySelector('details').open),
+        status: document.querySelector('.lq-jobstatus').textContent,
+        saved: JSON.parse(localStorage.getItem('lightquery.v1.jobs.history')).length
+      };
+    });
+    eq(r.kinds, ['run:done', 'sample:done'], '新しい順に抽出・サンプル');
+    eq(r.open, [true, false], 'いちばん新しい記録だけ中身を開いておく');
+    ok(r.status.indexOf('抽出 完了') >= 0, '上部バーに直前の処理：' + r.status);
+    eq(r.saved, 2, 'ブラウザに保存する');
+    await page.click('.lq-panel__actions .lq-btn[title^="履歴をすべて消す"]');
+    eq(await page.evaluate(() => LQ.app.jobs.items.length), 0, '消せる');
+    await page.click('.lq-toast:has-text("実行履歴を消しました") .lq-btn:has-text("元に戻す")');
+    eq(await page.evaluate(() => LQ.app.jobs.items.length), 2, '元に戻せる');
+  });
+});
+
+check('処理中：表を覆わず、上部バーと帯で様子を示し、更新がなければ時刻つきで知らせ、ぶつかる設定だけ止める', async (browser) => {
+  await withPage(browser, async (page) => {
+    const r = await page.evaluate(async () => {
+      const A = LQ.app;
+      const S = A.state;
+      await A.profiles.loadSample('idlist');
+      await A.run();
+      const now = performance.now();
+      const step = { id: 'run', label: '照合', weight: 1, state: 'active', determinate: true };
+      S.setBusy({ kind: 'run', label: '抽出中…', title: '抽出しています', detail: '', cancellable: true, cancelling: false, steps: [step], step: step,
+        stepRatio: 0.3, ratio: 0.3, note: '', item: null, startedAt: now - 20000, stepStartedAt: now - 20000, advancedAt: now - 8000 });
+      await new Promise((res) => setTimeout(res, 400));
+      const grid = document.querySelector('.lq-gridwrap').getBoundingClientRect();
+      const hit = document.elementFromPoint(grid.left + 40, grid.top + grid.height / 2);
+      S.openPanel('query');
+      const queryLocked = document.querySelector('.lq-panel-host').classList.contains('is-locked') && A.panels.query.el.hasAttribute('inert');
+      S.openPanel('output');
+      const outputLocked = A.panels.output.el.hasAttribute('inert');
+      const out = {
+        tableReachable: !!hit && !!hit.closest('.lq-gridwrap'),
+        band: document.querySelector('.lq-busyband').textContent,
+        top: document.querySelector('.lq-jobstatus').textContent,
+        cta: A.cta().label,
+        queryLocked: queryLocked,
+        outputLocked: outputLocked
+      };
+      S.setBusy(null);
+      out.unlocked = !A.panels.output.el.hasAttribute('inert') && !A.panels.query.el.hasAttribute('inert');
+      out.bandHidden = document.querySelector('.lq-busyband').hidden;
+      return out;
+    });
+    ok(r.tableReachable, '処理中も表を操作できる（画面を覆わない）');
+    ok(/\d\d:\d\d:\d\d から進捗が更新されていません/.test(r.band) && r.band.indexOf('停止している可能性') >= 0, '帯：時刻つきの事実と可能性：' + r.band);
+    ok(/抽出中.*から更新なし/.test(r.top), '上部バー：処理名と更新なし：' + r.top);
+    eq(r.cta, '中止する', '中止は主要動作の 1 か所');
+    eq([r.queryLocked, r.outputLocked, r.unlocked, r.bandHidden], [true, false, true, true], '抽出条件だけ止め、出力列は使える・終われば戻る');
+  });
+});
+
+check('機能を探す（Ctrl+K）：名前で探して開く・押せない機能は理由を出す', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.keyboard.press('Control+k');
+    ok(await page.evaluate(() => LQ.app.commands.isOpen()), 'Ctrl+K で開く');
+    await page.keyboard.type('ぴぼっとのぱねる');
+    await page.keyboard.press('Enter');
+    eq(await page.evaluate(() => [LQ.app.commands.isOpen(), LQ.app.state.panel]), [false, 'aggregate'], 'ひらがなでもピボットのパネルが開く');
+    await page.keyboard.press('Control+k');
+    await page.keyboard.type('標準');
+    const reason = await page.textContent('.lq-cmd__item.is-disabled .lq-cmd__reason');
+    ok(reason.indexOf('今の表示密度') >= 0, '押せない機能は理由を出す：' + reason);
+    await page.keyboard.press('Escape');
+    eq(await page.evaluate(() => LQ.app.commands.isOpen()), false, 'Esc で閉じる');
+  });
+});
+
+check('判定の根拠：1366px で左のパネルが開いていたら閉じて表の幅を確保し、戻せる', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    const r = await page.evaluate(async () => {
+      const A = LQ.app;
+      await A.profiles.loadSample('idlist');
+      await A.run();
+      A.state.openPanel('query');
+      A.rowDetail.open(0);
+      return { panel: A.state.panel, toast: Array.from(document.querySelectorAll('.lq-toast')).map((t) => t.textContent).join('|') };
+    });
+    eq(r.panel, null, '左のパネルを閉じる');
+    ok(r.toast.indexOf('左のパネルを閉じました') >= 0, '閉じたことを知らせる');
+    await page.click('.lq-toast .lq-btn:has-text("パネルを開き直す")');
+    eq(await page.evaluate(() => LQ.app.state.panel), 'query', '開き直せる');
+  });
+});
+
 check('速さ：10 万行 × ② 1,000 行の抽出が 3 秒以内', async (browser) => {
   await withPage(browser, async (page) => {
     const r = await page.evaluate(async () => {

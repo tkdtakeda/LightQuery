@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 B 工程ステッパー</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="mock-common.css">
+<style>
+/* 案 B：工程ごとの画面。上部の工程の帯（ステッパー）で今どこかを示し、1 画面には 1 工程の仕事だけを置く。下の帯に「戻る／次へ」 */
+.app { display: grid; grid-template-rows: var(--bar-h) 1fr auto; height: 100dvh; }
+.top { display: flex; align-items: center; gap: 12px; padding: 0 12px; background: var(--color-surface); border-bottom: 1px solid var(--color-line); }
+.logo { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--c-blue-900); }
+.logo i { background: var(--color-primary); color: #fff; width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; }
+.stepper { flex: 1; display: flex; justify-content: center; gap: 4px; }
+.step { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; color: var(--color-text-muted); }
+.step .no { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--color-line-strong); font-weight: 700; font-size: 12px; }
+.step.done { color: var(--color-text-sub); }
+.step.done .no { background: var(--color-ok); border-color: var(--color-ok); color: #fff; }
+.step.cur { background: var(--color-primary-soft); color: var(--color-primary); font-weight: 700; }
+.step.cur .no { border-color: var(--color-primary); background: var(--color-primary); color: #fff; }
+.step .sum { font-size: var(--font-size-small); font-weight: 400; color: var(--color-text-muted); }
+.arrow { color: var(--color-line-strong); align-self: center; }
+.page { min-height: 0; padding: 12px 16px; display: grid; gap: 10px; grid-template-rows: auto auto 1fr; }
+.page h1 { font-size: 1.15em; margin: 0; display: flex; gap: 10px; align-items: center; }
+.subtabs { display: inline-flex; border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); overflow: hidden; }
+.subtabs a { padding: 4px 12px; text-decoration: none; color: var(--color-text-sub); }
+.subtabs a.on { background: var(--color-primary); color: #fff; }
+.foot { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--color-surface); border-top: 1px solid var(--color-line); }
+.foot .why { font-size: var(--font-size-small); color: var(--color-text-sub); }
+.card { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-lg); padding: 14px; }
+.run { display: grid; gap: 8px; border-color: var(--c-blue-200); }
+.run.warn { border-color: var(--color-warn); background: var(--color-warn-soft); }
+.edit { display: grid; grid-template-columns: 1fr 360px; gap: 12px; min-height: 0; }
+.cond { display: flex; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--color-line); border-radius: var(--radius-md); margin-bottom: 8px; }
+.cond select { height: var(--control-height); border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); padding: 0 6px; }
+.drawer { position: fixed; top: var(--bar-h); right: 0; bottom: 0; width: 420px; background: var(--color-surface); border-left: 1px solid var(--color-line); box-shadow: var(--shadow-md); z-index: 30; display: flex; flex-direction: column; }
+.drawer header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--color-line); font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="logo"><i class="fa-solid fa-magnifying-glass"></i>LightQuery</span>
+    <button class="btn"><i class="fa-regular fa-folder-open"></i>作業セット 1<i class="fa-solid fa-chevron-down small"></i></button>
+    <nav class="stepper" id="stepper"></nav>
+    <button class="icon-btn" title="実行履歴"><i class="fa-solid fa-clock-rotate-left"></i></button>
+    <button class="btn btn--ghost"><i class="fa-solid fa-circle-question"></i>使い方</button>
+    <button class="icon-btn" title="メニュー（照合ルール・サンプル・書き出し）"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+  </header>
+  <main class="page" id="page"></main>
+  <footer class="foot" id="foot"></footer>
+</div>
+<aside class="drawer" id="drawer" hidden></aside>
+<script src="mock-common.js"></script>
+<script>
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const STEPS = [['① 元データ', '48 行'], ['② 照合表', '3 行'], ['条件', 'A'], ['抽出・確かめる', '39 行'], ['出力', '']];
+  function stepper(cur, doneUpTo) {
+    $('#stepper').innerHTML = STEPS.map((s, i) => (i ? '<i class="fa-solid fa-chevron-right arrow small"></i>' : '') +
+      '<span class="step ' + (i === cur ? 'cur' : i <= doneUpTo ? 'done' : '') + '"><span class="no">' + (i <= doneUpTo && i !== cur ? '<i class="fa-solid fa-check"></i>' : i + 1) + '</span>' +
+      s[0] + (i <= doneUpTo && s[1] ? ' <span class="sum">' + s[1] + '</span>' : '') + '</span>').join('');
+  }
+  function render(st) {
+    const running = st === 'running' || st === 'stalled';
+    const cur = st === 'empty' ? 0 : st === 'edit' ? 2 : 3;
+    stepper(cur, st === 'empty' ? -1 : st === 'edit' ? 3 : running ? 2 : 3);
+    let html = '';
+    if (st === 'empty') {
+      html = '<h1><span class="badge badge--src">①</span>元データを読み込む</h1><p class="sub" style="margin:0">抽出・集計する側のデータです。まだファイルを読み込んでいません。</p>' +
+        '<div class="empty"><div class="drop" style="padding:48px 80px"><i class="fa-solid fa-table fa-3x" style="color:var(--color-src)"></i><h2>ここにドロップ／クリックして選択／Ctrl+V</h2><div class="small">Excel・CSV・TSV・TXT</div>' +
+        '<p><button class="btn"><i class="fa-solid fa-flask"></i>サンプルで試す</button></p></div></div>';
+    } else if (st === 'edit') {
+      html = '<h1>条件を決める <span class="small muted">① のどの列を ② のどの列と、どう比べるか</span></h1><div class="small sub">抽出条件：コードの頭文字（1 件）　<a href="#">抽出条件を追加</a></div>' +
+        '<div class="edit"><div class="card"><div class="cond"><span class="badge badge--muted">A</span><select><option>① 商品コード</option></select>が<select><option>② 列A</option></select><select><option>で始まる（前方一致）</option></select><i class="fa-regular fa-trash-can muted"></i></div>' +
+        '<button class="btn"><i class="fa-solid fa-plus"></i>条件を追加</button><p class="small muted">出力する行：一致した行（内部結合）・詳細設定 2 件を適用中 ▸</p></div>' +
+        '<div class="card"><b class="small sub">② 照合表の中身（3 行）</b><div class="tbl-wrap" style="margin-top:6px"><table class="tbl"><thead><tr><th>#</th><th>列A</th></tr></thead><tbody><tr><td>1</td><td>A-1</td></tr><tr><td>2</td><td>B-2</td></tr><tr><td>3</td><td>D-4</td></tr></tbody></table></div></div></div>';
+    } else {
+      html = '<h1>抽出・確かめる <span class="subtabs"><a class="on">表</a><a>ピボット</a><a>グラフ</a></span><span class="spacer" style="flex:1"></span><span class="small muted">表示密度</span>' + MOCK.density() + '</h1>';
+      if (running) {
+        html += '<div class="card run' + (st === 'stalled' ? ' warn' : '') + '"><div style="display:flex;gap:10px;align-items:center"><i class="fa-solid ' + (st === 'stalled' ? 'fa-triangle-exclamation' : 'fa-spinner fa-spin') + '"></i><b>抽出中</b><span class="sub">工程 2 / 3：照合</span><span class="spacer" style="flex:1"></span><span class="num small">3,420 / 10,000 行 ・ 34% ・ 経過 00:18</span><button class="btn"><i class="fa-solid fa-stop"></i>中止</button></div>' +
+          '<div class="meter"><span style="flex:1"></span><span class="cur" style="flex:2"></span><span class="todo" style="flex:1"></span></div><div class="steps-inline"><span class="done">✓ 準備</span><span class="cur">● 照合</span><span class="todo">○ 振り分け</span></div>' +
+          (st === 'stalled' ? '<div><b>14:32:18 から進捗が更新されていません。</b>停止している可能性があります。<a href="#">詳細</a></div>' : '') + '</div>';
+      } else {
+        html += '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><b><i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i> 39 行が一致</b><span class="sub">① 48 行中 81.3%</span><span class="sub">一致しなかった ② の行：なし</span><span class="sub">前回との違い：増 2・減 0・変 1</span><span class="spacer" style="flex:1"></span><button class="btn">抽出の内容</button></div>';
+      }
+      html += '<div class="tbl-wrap"' + (running ? ' style="opacity:.5"' : '') + '>' + MOCK.table({ selected: st === 'result' ? 2 : -1 }) + '</div>';
+    }
+    $('#page').innerHTML = html;
+    /* 下の帯：戻る・次へ（主要動作は右下の 1 つ） */
+    const next = st === 'empty' ? ['次へ：② 照合表', true, '① を読み込むと進めます'] : st === 'edit' ? ['抽出する', false, ''] : running ? ['次へ：出力', true, '抽出中のため進めません（結果は見られます）'] : ['次へ：39 行を出力する', false, ''];
+    $('#foot').innerHTML = (st === 'empty' ? '' : '<button class="btn"><i class="fa-solid fa-arrow-left"></i>戻る</button>') + '<span style="flex:1"></span>' +
+      (next[2] ? '<span class="why"><i class="fa-solid fa-circle-info"></i> ' + next[2] + '</span>' : '') +
+      '<button class="btn btn--primary btn--lg"' + (next[1] ? ' disabled' : '') + '>' + next[0] + '<i class="fa-solid fa-arrow-right"></i></button>';
+    const d = $('#drawer');
+    d.hidden = st !== 'history';
+    if (st === 'history') d.innerHTML = '<header><i class="fa-solid fa-clock-rotate-left"></i>実行履歴<span style="flex:1"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header><div style="overflow:auto">' + MOCK.history() + '</div>';
+  }
+  MOCK.boot(MOCK.STATES, render);
+})();
+</script>
+</body>
+</html>

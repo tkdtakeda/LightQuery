@@ -160,8 +160,10 @@
         await Async.paint();
         const table = LQ.CompareTable.fromDataset(new LQ.Dataset('compare', source));
         if (!table.rows.length) throw new Error('データ行がありません');
+        progress.finish({ status: 'done', result: '比べるファイル「' + file.name + '」を読み込みました（' + Util.formatInt(table.rows.length) + ' 行）' });
         return table;
       } catch (err) {
+        progress.finish({ status: 'failed', result: '比べるファイルを読み込めませんでした', details: [{ label: 'ファイル', text: file.name }], warnings: [app._friendlyError(err)] });
         this.toasts.show({ type: 'error', title: '比べるファイルを読み込めませんでした', message: file.name + '：' + app._friendlyError(err) });
         return null;
       } finally {

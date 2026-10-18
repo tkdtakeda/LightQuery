@@ -49,7 +49,6 @@
         onColHead: (col, anchor) => this.app.dialogs.openRawColMenu(anchor, this.state.view.tab, col),
         onColumnMenu: (name, anchor) => this.app.columnMenu.open(anchor, this.state.view.tab, name)
       });
-      this.display = new LQ.GridDisplay(ctx, this.gridwrap);
       this._allRows = null;
       this._drill = null;
       this.aggregate = new LQ.AggregateTab(this);
@@ -85,6 +84,7 @@
         this._refreshVisibility();
         return;
       }
+      if (e && e.topic === 'jobs') return;
       if (e && e.topic === 'busy') {
         const kind = this.state.busy ? this.state.busy.kind : null;
         if (kind === this._busyKind) return;
@@ -180,7 +180,6 @@
       else if (tab === 'aggregate') this.aggregate.render();
       else if (tab === 'chart') this.chart.render();
       else this._renderDataset(tab);
-      if (tab !== 'chart') this.tools.appendChild(this.display.button());
       if (focusKey) this._restoreFocus(focusKey);
     }
 
@@ -369,7 +368,7 @@
           shown,
           h('span', { class: 'lq-summary__item', title: '条件の組み合わせ' }, [Dom.icon('code-branch'), h('span', { class: 'lq-summary__expr', text: part.snapshot.exprJa })]),
           h('span', { class: 'lq-summary__item', text: join.label + (ps.needsCondition && !anti ? '・' + match.label : '') }),
-          time, actions
+          time
         ];
       } else {
         const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
@@ -382,10 +381,13 @@
           unmatched ? h('span', { class: 'lq-summary__item lq-num', title: 'どの抽出条件にも該当しなかった行も、「該当なし」として表示・出力します' },
             [Dom.icon('circle-plus'), '該当なし ' + fmt(unmatched) + ' 行も出力']) : null,
           h('span', { class: 'lq-summary__item', title: mode.desc }, [Dom.icon(mode.icon), '抽出条件 ' + res.parts.length + ' 件・' + mode.short]),
-          shown, time, actions
+          shown, time
         ];
       }
-      this.info.appendChild(h('div', { class: 'lq-summary' }, items));
+      /* 要約は 1 行に固定する（パネルを開いて狭くなっても表の上端が動かないように）。入りきらない項目は隠し、全文はツールチップで見られる */
+      const facts = h('span', { class: 'lq-summary__facts' }, items);
+      this.info.appendChild(h('div', { class: 'lq-summary lq-summary--line' }, [facts, actions]));
+      facts.title = items.filter(Boolean).map((el) => el.textContent.trim()).join('　｜　');
     }
 
     /** ① の前処理（縦に結合・絞り込み・重複の削除）を使っているときは、抽出に使った行までの流れを出す */

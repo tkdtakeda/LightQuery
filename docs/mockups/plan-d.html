@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 D 処理の流れ</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="mock-common.css">
+<style>
+/* 案 D：処理の流れの図（① → 前処理 → ② → 条件 → 抽出 → 出力）を 1 本の帯にし、道案内・状態・行数の根拠を兼ねる。押した段の中身と設定を下に出す */
+.app { display: grid; grid-template-rows: var(--bar-h) auto 1fr; height: 100dvh; }
+.top { display: flex; align-items: center; gap: 12px; padding: 0 12px; background: var(--color-surface); border-bottom: 1px solid var(--color-line); }
+.logo { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--c-blue-900); }
+.logo i { background: var(--color-primary); color: #fff; width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; }
+.flow { display: flex; align-items: stretch; gap: 0; padding: 8px 12px; background: var(--color-surface); border-bottom: 1px solid var(--color-line); }
+.node { flex: 1; min-width: 0; display: grid; grid-template-columns: 22px 1fr; gap: 0 6px; padding: 6px 10px; border: 1px solid var(--color-line); border-radius: var(--radius-md); cursor: pointer; background: var(--color-surface); }
+.node .n { font-weight: 700; }
+.node .c { grid-column: 2; font-size: var(--font-size-small); color: var(--color-text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node.sel { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--c-blue-100); background: var(--color-primary-soft); }
+.node.todo { border-style: dashed; color: var(--color-text-muted); }
+.node.run { border-color: var(--color-primary); }
+.node.warn { border-color: var(--color-warn); background: var(--color-warn-soft); }
+.node .meter { grid-column: 2; margin-top: 3px; }
+.link { width: 22px; display: grid; place-items: center; color: var(--color-line-strong); }
+.work { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
+.view { display: grid; grid-template-rows: auto 1fr auto; gap: 8px; padding: 8px 12px; min-width: 0; min-height: 0; }
+.insp { width: 360px; background: var(--color-surface); border-left: 1px solid var(--color-line); display: flex; flex-direction: column; min-height: 0; }
+.insp header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--color-line); font-weight: 700; }
+.insp .scroll { padding: 12px; overflow: auto; display: grid; gap: 10px; align-content: start; }
+.insp select, .insp input { height: var(--control-height); border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); padding: 0 6px; width: 100%; }
+.seg { display: inline-flex; border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); overflow: hidden; }
+.seg a { padding: 4px 12px; text-decoration: none; color: var(--color-text-sub); }
+.seg a.on { background: var(--color-primary); color: #fff; }
+.cta-why { font-size: var(--font-size-small); color: var(--color-text-sub); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="logo"><i class="fa-solid fa-magnifying-glass"></i>LightQuery</span>
+    <button class="btn"><i class="fa-regular fa-folder-open"></i>作業セット 1<i class="fa-solid fa-chevron-down small"></i></button>
+    <span style="flex:1"></span>
+    <span id="why" class="cta-why"></span>
+    <span id="cta"></span>
+    <button class="btn btn--ghost"><i class="fa-solid fa-circle-question"></i>使い方</button>
+    <button class="icon-btn" title="メニュー（照合ルール・サンプル・表示密度・書き出し）"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+  </header>
+  <nav class="flow" id="flow"></nav>
+  <div class="work"><main class="view" id="view"></main><aside class="insp" id="insp" hidden></aside></div>
+</div>
+<script src="mock-common.js"></script>
+<script>
+(function () {
+  const $ = (s) => document.querySelector(s);
+  function node(icon, color, name, cap, cls, extra) {
+    return '<div class="node ' + (cls || '') + '"><i class="fa-solid fa-' + icon + '" style="color:var(--color-' + color + ');align-self:center"></i><span class="n">' + name + '</span><span class="c">' + cap + '</span>' + (extra || '') + '</div>';
+  }
+  const LINK = '<span class="link"><i class="fa-solid fa-chevron-right"></i></span>';
+  function render(st) {
+    const empty = st === 'empty';
+    const running = st === 'running' || st === 'stalled';
+    const sel = st === 'edit' ? 'cond' : st === 'history' ? 'hist' : 'res';
+    $('#flow').innerHTML = empty
+      ? node('table', 'src', '① 元データ', 'まだ読み込んでいません', 'sel') + LINK + node('filter', 'text-muted', '前処理', '—', 'todo') + LINK + node('list-check', 'text-muted', '② 照合表', '未読み込み', 'todo') + LINK +
+        node('code-compare', 'text-muted', '条件', '未設定', 'todo') + LINK + node('play', 'text-muted', '抽出', '未実行', 'todo') + LINK + node('file-export', 'text-muted', '出力', '—', 'todo') + LINK + node('clock-rotate-left', 'text-muted', '履歴', '5 件', '')
+      : node('table', 'src', '① 元データ', '48 行 ・ 売上帳票.xlsx', '') + LINK + node('filter', 'text-sub', '前処理', '絞り込み −0 ・ 重複 −0', '') + LINK +
+        node('list-check', 'cond', '② 照合表', '3 行 ・ コード一覧.txt', '') + LINK + node('code-compare', 'primary', '条件', 'A：商品コード で始まる', sel === 'cond' ? 'sel' : '') + LINK +
+        (running ? node(st === 'stalled' ? 'triangle-exclamation' : 'spinner fa-spin', st === 'stalled' ? 'warn' : 'primary', '抽出中', st === 'stalled' ? '14:32:18 から更新なし' : '照合 3,420 / 10,000 行', st === 'stalled' ? 'warn sel' : 'run sel', '<span class="meter"><span style="flex:1"></span><span class="cur" style="flex:2"></span><span class="todo" style="flex:1"></span></span>')
+          : node('circle-check', 'ok', '抽出', '39 行が一致（81.3%）', sel === 'res' ? 'sel' : '')) + LINK +
+        node('file-export', 'text-sub', '出力', '前回 14:33 Excel 39 行', '') + LINK + node('clock-rotate-left', 'text-sub', '履歴', '5 件', sel === 'hist' ? 'sel' : '');
+    $('#cta').innerHTML = empty ? '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-import"></i>① 元データを読み込む</button>'
+      : running ? '<button class="btn btn--primary btn--lg" disabled><i class="fa-solid fa-play"></i>抽出する</button>'
+        : st === 'edit' ? '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-play"></i>抽出する</button>' : '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>39 行を出力する</button>';
+    $('#why').textContent = running ? '抽出中のため押せません' : '';
+    let v = '';
+    if (empty) {
+      v = '<div></div><div class="empty"><div><h2>① 元データを読み込みます</h2><p class="sub">上の流れの左から順に進みます。まだファイルを読み込んでいません</p><div class="drop" style="display:inline-block"><i class="fa-solid fa-table fa-2x" style="color:var(--color-src)"></i><div>ドロップ／クリック／Ctrl+V</div></div><p><button class="btn"><i class="fa-solid fa-flask"></i>サンプルで試す</button></p></div></div><div></div>';
+    } else if (sel === 'hist') {
+      v = '<div style="display:flex;gap:10px;align-items:center"><b><i class="fa-solid fa-clock-rotate-left"></i> 実行履歴</b><span class="small muted">新しい順・100 件まで・行データは保存しません</span></div><div class="tbl-wrap" style="padding:0">' + MOCK.history() + '</div><div></div>';
+    } else {
+      v = '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><span class="seg"><a class="on">表</a><a>ピボット</a><a>グラフ</a></span>' +
+        (running ? '<span class="muted"><i class="fa-solid fa-hourglass-half"></i> 前回の結果（14:20）を表示中 ・ 閲覧と絞り込みはできます</span>' + (st === 'stalled' ? '<span><b>停止している可能性があります</b> <button class="btn">中止</button> <button class="btn">詳細</button></span>' : '<button class="btn"><i class="fa-solid fa-stop"></i>中止</button>')
+          : '<b>39 行が一致</b><span class="sub">① 48 行中 81.3% ・ 一致しなかった ② の行：なし ・ 前回との違い：増 2・減 0・変 1</span>') +
+        '<span style="flex:1"></span>' + MOCK.density() + '</div><div class="tbl-wrap"' + (running ? ' style="opacity:.55"' : '') + '>' + MOCK.table({ selected: st === 'result' ? 2 : -1 }) + '</div><div class="small muted">1–39 行目 ／ 全 39 行</div>';
+    }
+    $('#view').innerHTML = v;
+    const insp = $('#insp');
+    insp.hidden = st !== 'edit';
+    if (st === 'edit') insp.innerHTML = '<header><i class="fa-solid fa-code-compare"></i>条件　<span class="small muted">コードの頭文字</span><span style="flex:1"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header><div class="scroll">' +
+      '<label class="small sub">A</label><select><option>① 商品コード</option></select><select><option>② 列A</option></select><select><option>で始まる（前方一致）</option></select>' +
+      '<button class="btn"><i class="fa-solid fa-plus"></i>条件を追加</button><div class="small muted">出力する行：一致した行 ・ 詳細設定 2 件を適用中 ▸</div></div>';
+  }
+  MOCK.boot(MOCK.STATES, render);
+})();
+</script>
+</body>
+</html>

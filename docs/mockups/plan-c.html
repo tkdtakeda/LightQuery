@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 C 条件と結果の並置</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="mock-common.css">
+<style>
+/* 案 C：左に「作業の設計図」（① ② 条件 出力 の要約カード）を常に出し、右の結果と並べる。原因（設定）と結果を同時に見て、覚えておく量を減らす */
+.app { display: grid; grid-template-rows: var(--bar-h) 1fr; height: 100dvh; }
+.top { display: flex; align-items: center; gap: 12px; padding: 0 12px; background: var(--color-surface); border-bottom: 1px solid var(--color-line); }
+.logo { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--c-blue-900); }
+.logo i { background: var(--color-primary); color: #fff; width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; }
+.body { display: grid; grid-template-columns: 380px 1fr; min-height: 0; }
+.plan { display: grid; grid-template-rows: 1fr auto; min-height: 0; background: var(--c-gray-50); border-right: 1px solid var(--color-line); }
+.plan .cards { overflow: auto; padding: 10px; display: grid; gap: 8px; align-content: start; }
+.pc { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-lg); }
+.pc > .head { display: grid; grid-template-columns: 26px 1fr auto; gap: 2px 8px; align-items: center; padding: 10px; cursor: pointer; }
+.pc > .head .t { font-weight: 700; }
+.pc > .head .s { grid-column: 2 / 4; font-size: var(--font-size-small); color: var(--color-text-sub); }
+.pc.open { border-color: var(--c-blue-200); box-shadow: var(--shadow-sm); }
+.pc .inner { border-top: 1px solid var(--color-line); padding: 10px; display: grid; gap: 8px; }
+.pc.todo { border-style: dashed; }
+.sentence { padding: 6px 8px; border-radius: var(--radius-md); background: var(--c-gray-50); }
+.sentence b { color: var(--color-src); }
+.sentence b.c { color: var(--color-cond); }
+.inner select, .inner input { height: var(--control-height); border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); padding: 0 6px; width: 100%; }
+.go { padding: 10px; border-top: 1px solid var(--color-line); background: var(--color-surface); display: grid; gap: 6px; }
+.go .btn { justify-content: center; width: 100%; }
+.go .why { font-size: var(--font-size-small); color: var(--color-text-sub); }
+.res { display: grid; grid-template-rows: auto auto 1fr auto; gap: 8px; padding: 8px 12px; min-width: 0; min-height: 0; }
+.views { display: flex; align-items: center; gap: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); overflow: hidden; }
+.seg a { padding: 4px 12px; text-decoration: none; color: var(--color-text-sub); display: flex; gap: 6px; align-items: center; }
+.seg a.on { background: var(--color-primary); color: #fff; }
+.drawer { position: fixed; top: var(--bar-h); right: 0; bottom: 0; width: 420px; background: var(--color-surface); border-left: 1px solid var(--color-line); box-shadow: var(--shadow-md); z-index: 30; display: flex; flex-direction: column; }
+.drawer header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--color-line); font-weight: 700; }
+.runbox { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--c-blue-200); border-radius: var(--radius-md); background: var(--color-primary-soft); }
+.runbox.warn { border-color: var(--color-warn); background: var(--color-warn-soft); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="logo"><i class="fa-solid fa-magnifying-glass"></i>LightQuery</span>
+    <button class="btn"><i class="fa-regular fa-folder-open"></i>作業セット 1<i class="fa-solid fa-chevron-down small"></i></button>
+    <span style="flex:1"></span>
+    <span class="small muted">表示密度</span><span id="dens"></span>
+    <button class="btn btn--ghost"><i class="fa-solid fa-clock-rotate-left"></i>履歴</button>
+    <button class="btn btn--ghost"><i class="fa-solid fa-circle-question"></i>使い方</button>
+    <button class="icon-btn" title="メニュー（照合ルール・サンプル・書き出し）"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+  </header>
+  <div class="body">
+    <aside class="plan"><div class="cards" id="cards"></div><div class="go" id="go"></div></aside>
+    <main class="res" id="res"></main>
+  </div>
+</div>
+<aside class="drawer" id="drawer" hidden></aside>
+<script src="mock-common.js"></script>
+<script>
+(function () {
+  const $ = (s) => document.querySelector(s);
+  function card(icon, color, title, sum, state, open, inner) {
+    const mark = state === 'ok' ? '<i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i>' : state === 'todo' ? '<span class="badge badge--muted">未</span>' : '<i class="fa-solid fa-chevron-' + (open ? 'up' : 'down') + ' muted"></i>';
+    return '<section class="pc' + (open ? ' open' : '') + (state === 'todo' ? ' todo' : '') + '"><div class="head"><i class="fa-solid fa-' + icon + '" style="color:var(--color-' + color + ')"></i><span class="t">' + title + '</span>' + mark +
+      '<span class="s">' + sum + '</span></div>' + (open ? '<div class="inner">' + inner + '</div>' : '') + '</section>';
+  }
+  function render(st) {
+    const empty = st === 'empty';
+    const running = st === 'running' || st === 'stalled';
+    $('#dens').innerHTML = MOCK.density();
+    $('#cards').innerHTML = empty
+      ? card('table', 'src', '① 元データ', 'まだ読み込んでいません。ドロップ／クリック／Ctrl+V', 'todo', true, '<div class="drop" style="text-align:center"><i class="fa-solid fa-file-import fa-2x" style="color:var(--color-src)"></i><div class="small">ファイルをここへ</div></div>') +
+        card('list-check', 'cond', '② 照合表', '① のあとに読み込みます', 'todo') + card('code-compare', 'text-sub', '条件', '② のあとに決めます', 'todo') + card('file-export', 'text-sub', '出力', '抽出のあとに出せます', 'todo')
+      : card('table', 'src', '① 元データ', '売上帳票.xlsx ・ 48 行 × 5 列 ・ ヘッダー 4 行目', 'ok') +
+        card('list-check', 'cond', '② 照合表', 'コード一覧.txt ・ 3 行 × 1 列', 'ok') +
+        card('code-compare', 'primary', '条件　<span class="small muted">コードの頭文字</span>', 'A：① 商品コード が ② 列A で始まる ・ 一致した行', '', st === 'edit',
+          '<div class="sentence"><span class="badge badge--muted">A</span> <b>① 商品コード</b> が <b class="c">② 列A</b> で始まる</div>' +
+          '<select><option>① 商品コード</option></select><select><option>② 列A</option></select><select><option>で始まる（前方一致）</option></select>' +
+          '<button class="btn"><i class="fa-solid fa-plus"></i>条件を追加</button><div class="small muted">詳細設定 2 件を適用中 ▸</div>') +
+        card('file-export', 'text-sub', '出力', '6 列 ・ Excel ・ シート分けなし', '') +
+        '<div class="small muted" style="padding:2px 4px"><i class="fa-solid fa-spell-check"></i> 照合ルール：標準（全角半角・空白をそろえる）</div>';
+    $('#go').innerHTML = empty
+      ? '<button class="btn btn--primary btn--lg" disabled>抽出する</button><span class="why"><i class="fa-solid fa-circle-info"></i> ① と ② を読み込むと押せます</span>'
+      : running
+        ? '<div class="runbox' + (st === 'stalled' ? ' warn' : '') + '"><div style="display:flex;gap:8px;align-items:center"><i class="fa-solid ' + (st === 'stalled' ? 'fa-triangle-exclamation' : 'fa-spinner fa-spin') + '"></i><b>抽出中</b><span class="small sub">工程 2 / 3：照合</span><span style="flex:1"></span><button class="btn">中止</button></div>' +
+          '<div class="meter"><span style="flex:1"></span><span class="cur" style="flex:2"></span><span class="todo" style="flex:1"></span></div><span class="num small">3,420 / 10,000 行 ・ 34% ・ 経過 00:18</span>' +
+          (st === 'stalled' ? '<span class="small"><b>14:32:18 から進捗が更新されていません。</b>停止している可能性があります</span>' : '') + '</div><span class="why">抽出中は条件を変更できません（結果は見られます）</span>'
+        : st === 'edit' ? '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-play"></i>抽出する</button><span class="why">条件を変えました。抽出し直すと右の結果に反映します</span>'
+          : '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>39 行を出力する</button>';
+    $('#res').innerHTML = empty
+      ? '<div></div><div></div><div class="empty"><div><i class="fa-solid fa-table-list fa-3x muted"></i><h2>結果はここに表示します</h2><p class="sub">左の ① から順に読み込んでください</p><button class="btn"><i class="fa-solid fa-flask"></i>サンプルで試す</button></div></div><div></div>'
+      : '<div class="views"><span class="seg"><a class="on"><i class="fa-solid fa-table-list"></i>抽出結果</a><a><i class="fa-solid fa-table-cells"></i>ピボット</a><a><i class="fa-solid fa-chart-column"></i>グラフ</a><a><i class="fa-solid fa-table"></i>① の中身</a><a><i class="fa-solid fa-list-check"></i>② の中身</a></span></div>' +
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">' + (running ? '<span class="muted"><i class="fa-solid fa-hourglass-half"></i> 前回の結果（14:20）を表示中</span>' :
+          (st === 'edit' ? '<span class="badge badge--warn"><i class="fa-solid fa-pen"></i>条件を変更済み・未反映</span>' : '') + '<b><i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i> 39 行が一致</b><span class="sub">① 48 行中 81.3%</span><span class="sub">一致しなかった ② の行：なし</span><span class="sub">前回との違い：増 2・減 0・変 1</span><span style="flex:1"></span><button class="btn">抽出の内容</button>') + '</div>' +
+        '<div class="tbl-wrap"' + (running ? ' style="opacity:.55"' : '') + '>' + MOCK.table({ selected: st === 'result' ? 2 : -1 }) + '</div><div class="small muted" style="display:flex;justify-content:space-between"><span>1 / 1 ページ</span><span>1–39 行目 ／ 全 39 行</span></div>';
+    const d = $('#drawer');
+    d.hidden = st !== 'history';
+    if (st === 'history') d.innerHTML = '<header><i class="fa-solid fa-clock-rotate-left"></i>実行履歴<span style="flex:1"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header><div style="overflow:auto">' + MOCK.history() + '</div>';
+  }
+  MOCK.boot(MOCK.STATES, render);
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 /* =========================================================================
  * LightQuery - lq-ui-shell.js
- * 画面の外枠：上部バー（次の一歩・主要動作）、左のアイコン列（入力・抽出・出力・設定の区切り）、設定パネルの入れ物、
+ * 画面の外枠：上部バー（処理の要約・次の一歩・主要動作・機能を探す）、左のアイコン列（入力・抽出・結果・設定の区切り＋履歴・サンプル）、設定パネルの入れ物、
  *   画面全体へのドラッグ＆ドロップ、Ctrl+V の貼り付け、キーボード操作
  * ========================================================================= */
 (function (global) {
@@ -31,9 +31,12 @@
       this.ctaIcon = Dom.icon('file-import');
       this.ctaLabel = h('span');
       this.cta = h('button', { class: 'lq-btn lq-btn--primary lq-cta', type: 'button', onclick: () => this.app.runCta(this.cta) }, [this.ctaIcon, this.ctaLabel]);
+      this.job = new LQ.JobStatus(ctx, () => this.state.openPanel('history'));
+      this.searchBtn = h('button', { class: 'lq-btn lq-btn--ghost lq-topbar__search', type: 'button', title: '機能を名前で探して開く（Ctrl+K）',
+        onclick: () => this.app.commands.open() }, [Dom.icon('magnifying-glass'), h('span', { class: 'lq-topbar__search-label', text: '機能を探す' }), h('kbd', { class: 'lq-kbd', text: 'Ctrl+K' })]);
       this.helpBtn = h('button', { class: 'lq-btn lq-btn--ghost', type: 'button', title: '使い方（取扱説明書）を表示／非表示', onclick: () => this.app.manual.toggle() },
         [Dom.icon('circle-question'), '使い方']);
-      this.menuBtn = h('button', { class: 'lq-btn lq-btn--ghost lq-btn--icon', type: 'button', title: 'その他の操作（サンプル・保存・クリア）', 'aria-label': 'その他の操作',
+      this.menuBtn = h('button', { class: 'lq-btn lq-btn--ghost lq-btn--icon', type: 'button', title: 'その他の操作（表示密度・サンプル・保存・クリア）', 'aria-label': 'その他の操作',
         onclick: () => this.app.dialogs.openAppMenu(this.menuBtn) }, Dom.icon('ellipsis-vertical'));
       Dom.append(root, [
         h('div', { class: 'lq-brand' }, [
@@ -41,9 +44,10 @@
           h('div', {}, [h('div', { class: 'lq-brand__name', text: 'LightQuery' }), h('div', { class: 'lq-brand__sub', text: '簡易クエリ' })])
         ]),
         h('div', { class: 'lq-topbar__spacer' }),
+        this.job.el,
         this.status,
         this.cta,
-        h('div', { class: 'lq-topbar__tools' }, [this.helpBtn, this.menuBtn])
+        h('div', { class: 'lq-topbar__tools' }, [this.searchBtn, this.helpBtn, this.menuBtn])
       ]);
       ctx.bus.on('change', () => this.render());
       this.render();
@@ -64,6 +68,8 @@
         this.cta.classList.add('is-attn');
       }
       this._ctaId = c.id;
+      /* 処理中の様子は左の要約（JobStatus）が出すので、ここは隠して同じことを 2 回書かない */
+      this.status.hidden = !!this.state.busy;
       const st = c.status || { kind: 'info', text: '' };
       this.status.className = 'lq-topbar__status lq-status lq-status--' + st.kind;
       this.statusIcon.className = 'fa-solid fa-' + (STATUS_ICON[st.kind] || STATUS_ICON.info);
@@ -76,7 +82,8 @@
 
   /* ---------------------------------------------------------------------
    * Rail：機能ごとの設定パネルを開くアイコン（アイコン＋短いラベル＋状態の印）
-   *   処理の順に「入力 → 抽出 → 出力」で区切って上に並べ、使う頻度の低い「設定」（照合ルール）とサンプルは下に置く
+   *   処理の順に「入力 → 抽出 → 結果」で区切って上に並べ、使う頻度の低い「設定」（照合ルール）は下に、
+   *   作業の流れの外にある「履歴」「サンプル」は区切り線の下に置く。ツールチップには今の中身の要約を添える（覚えておかなくてよいように）
    * ------------------------------------------------------------------- */
   const RAIL_GROUPS = [
     { label: '入力', items: [
@@ -86,7 +93,7 @@
     { label: '抽出', items: [
       { id: 'query', icon: 'code-compare', label: '抽出条件', title: '抽出条件：一覧（名前・優先順位）と、① と ② の対応・比較方法・組み合わせ・出力する行' }
     ] },
-    { label: '出力', items: [
+    { label: '結果', items: [
       { id: 'output', icon: 'table-columns', label: '出力列', title: '出力列：表示・出力する列の選択と並べ替え' },
       { id: 'aggregate', icon: 'table-cells', label: 'ピボット', title: 'ピボット：抽出結果または ① の全行を、行 × 列 × 値（件数・合計・平均など）で集計' },
       { id: 'chart', icon: 'chart-column', label: 'グラフ', title: 'グラフ：比較（棒）・推移（折れ線）・構成（ドーナツ）・分布（ヒストグラム・箱ひげ・バイオリン）・関係（散布図）' }
@@ -95,6 +102,8 @@
   const RAIL_SETTINGS = { label: '設定', items: [
     { id: 'rules', icon: 'spell-check', label: '照合ルール', title: '照合ルール：値のそろえ方（空白・全角半角・大文字小文字・数値・日付・表記ゆれ）。全体の設定／抽出条件ごとの設定。年度の始まり（すべてに共通）もここで設定します' }
   ] };
+
+  const RAIL_HISTORY = { id: 'history', icon: 'clock-rotate-left', label: '履歴', title: '実行履歴：読み込み・抽出・出力の結果（時刻・件数・条件・出力先・警告）をあとから確かめる' };
 
   class Rail {
     constructor(ctx, root) {
@@ -106,8 +115,9 @@
         class: 'lq-rail__item', type: 'button', title: 'サンプルデータで動作を確認する',
         onclick: () => this.app.dialogs.openSamples(sampleBtn, 'right-end')
       }, [Dom.icon('flask'), h('span', { class: 'lq-rail__label', text: 'サンプル' })]);
+      const history = this._item(RAIL_HISTORY);
       Dom.append(root, RAIL_GROUPS.map((g) => this._group(g)).concat([
-        h('div', { class: 'lq-rail__spacer' }), this._group(RAIL_SETTINGS), h('div', { class: 'lq-rail__divider' }), sampleBtn
+        h('div', { class: 'lq-rail__spacer' }), this._group(RAIL_SETTINGS), h('div', { class: 'lq-rail__divider' }), history, sampleBtn
       ]));
       ctx.bus.on('change', () => this.render());
       this.render();
@@ -116,17 +126,27 @@
     /** 区切りの見出しと、その中のアイコン */
     _group(group) {
       const el = h('div', { class: 'lq-rail__group', role: 'group', 'aria-label': group.label }, [h('span', { class: 'lq-rail__heading', text: group.label })]);
-      group.items.forEach((item) => {
-        const mark = h('span', { class: 'lq-rail__mark', hidden: true });
-        const btn = h('button', {
-          class: 'lq-rail__item', type: 'button', title: item.title, 'aria-label': item.title,
-          dataset: item.role ? { role: item.role } : null,
-          onclick: () => this.state.togglePanel(item.id)
-        }, [Dom.icon(item.icon), h('span', { class: 'lq-rail__label', text: item.label }), mark]);
-        this.items.set(item.id, { btn: btn, mark: mark });
-        el.appendChild(btn);
-      });
+      group.items.forEach((item) => el.appendChild(this._item(item)));
       return el;
+    }
+
+    _item(item) {
+      const mark = h('span', { class: 'lq-rail__mark', hidden: true });
+      const btn = h('button', {
+        class: 'lq-rail__item', type: 'button', title: item.title, 'aria-label': item.title,
+        dataset: item.role ? { role: item.role } : null,
+        onclick: () => this.state.togglePanel(item.id)
+      }, [Dom.icon(item.icon), h('span', { class: 'lq-rail__label', text: item.label }), mark]);
+      this.items.set(item.id, { btn: btn, mark: mark, title: item.title });
+      return btn;
+    }
+
+    /** ツールチップ＝機能の説明＋今の中身（例：「今：売上.xlsx・48 行」） */
+    _summary(id, text) {
+      const item = this.items.get(id);
+      const title = item.title + (text ? '\n今：' + text : '');
+      item.btn.title = title;
+      item.btn.setAttribute('aria-label', title);
     }
 
     render() {
@@ -148,6 +168,17 @@
       this._mark('aggregate', placed ? { kind: 'count', text: String(placed), title: 'ピボット：' + LQ.Aggregator.describe(agg) } : null);
       const charts = s.charts.items.filter((c) => LQ.ChartSettings.isConfigured(c));
       this._mark('chart', charts.length ? { kind: 'count', text: String(charts.length), title: 'グラフ ' + charts.length + ' 枚：' + charts.map((c) => LQ.ChartSettings.title(c)).join('、') } : null);
+      const ds = (d) => (d ? d.name + '・' + Util.formatInt(d.rowCount) + ' 行' : '未読み込み');
+      this._summary('source', ds(s.datasets.source));
+      this._summary('condition', ds(s.datasets.condition));
+      this._summary('query', '抽出条件 ' + s.profiles.length + ' 件（有効 ' + s.profiles.enabled().length + ' 件）');
+      this._summary('output', s.output.columns.length ? '表示する列 ' + visible + ' 列' : '');
+      this._summary('aggregate', placed ? LQ.Aggregator.describe(agg) : '未設定');
+      this._summary('chart', charts.length ? 'グラフ ' + charts.length + ' 枚' : '未設定');
+      const last = this.app.jobs.latest();
+      this._summary('history', last ? LQ.JobLog.formatWhen(last.endedAt) + ' ' + LQ.JobLog.kindOf(last).label + '・' + LQ.JobLog.statusOf(last).label : '記録なし');
+      this._mark('history', last && (last.status === 'failed' || last.status === 'warn')
+        ? { kind: 'warn', icon: 'exclamation', title: '直前の記録：' + LQ.JobLog.statusOf(last).label } : null);
     }
 
     /** 抽出条件の印：要設定の件数（警告）／整っていれば有効な件数（複数のとき）かチェック */
@@ -184,6 +215,8 @@
    *   右端のつまみをドラッグすると幅を変えられる（パネルごとにブラウザへ記憶。ダブルクリックで初期の幅に戻す）
    * ------------------------------------------------------------------- */
   const PANEL_MAX_RATIO = 0.6;
+  /* 処理中に変えると結果とデータの対応が崩れるパネル（ほかのパネルは処理中も使える。基本設計 1-18） */
+  const LOCK_WHILE_BUSY = new Set(['source', 'condition', 'query', 'rules']);
   class PanelHost {
     constructor(ctx, root, panels) {
       this.ctx = ctx;
@@ -196,13 +229,28 @@
       this.actions = h('div', { class: 'lq-panel__actions' });
       this.head = h('div', { class: 'lq-panel__head' }, [this.icon, this.title, this.actions]);
       this.body = h('div', { class: 'lq-panel__body' });
+      this.lock = h('div', { class: 'lq-panel__lock', role: 'status', hidden: true }, [Dom.icon('lock'),
+        h('span', { text: '処理中のため、ここの設定は変更できません（見ることはできます）。完了するか、右上の「中止する」で止めると変更できます。' })]);
       this.grip = h('div', { class: 'lq-panel__grip', title: 'ドラッグで幅を変更（ダブルクリックで初期の幅に戻す）', 'aria-hidden': 'true' });
-      Dom.append(root, [this.head, this.body, this.grip]);
+      Dom.append(root, [this.head, this.lock, this.body, this.grip]);
       this._bindResize();
       LQ.FormNav.attach(this.body);
       ctx.bus.on('panel', () => this.render());
       ctx.bus.on('profiles', () => this.render());
+      ctx.bus.on('busy', () => this._applyLock());
       this.render();
+    }
+
+    _applyLock() {
+      const locked = !!this.state.busy && LOCK_WHILE_BUSY.has(this.state.panel);
+      this.root.classList.toggle('is-locked', locked);
+      this.lock.hidden = !locked;
+      /* 中身だけを操作できなくし、入れ物（スクロールする側）はそのままにして見られるようにする */
+      Object.keys(this.panels).forEach((id) => {
+        const el = this.panels[id].el;
+        if (locked && id === this.state.panel) el.setAttribute('inert', '');
+        else el.removeAttribute('inert');
+      });
     }
 
     render() {
@@ -233,6 +281,7 @@
         this._shown = id;
         if (panel.onShow) panel.onShow();
       }
+      this._applyLock();
     }
 
     _widthKey(id) {
@@ -388,7 +437,13 @@
     }
 
     _onKey(e) {
+      if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.isComposing) {
+        e.preventDefault();
+        this.app.commands.toggle();
+        return;
+      }
       if (e.key === 'Escape') {
+        if (this.app.commands.close()) return;
         if (this.ctx.popovers.close()) return;
         if (this.app.manual.isOpen()) {
           this.app.manual.close();

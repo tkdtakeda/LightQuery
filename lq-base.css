@@ -339,11 +339,18 @@ ol {
   position: relative;
   grid-area: main;
   display: grid;
-  grid-template-rows: minmax(var(--h-tabbar), auto) auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(var(--h-tabbar), auto) auto auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
   background: var(--color-bg);
 }
+
+/* 行を固定する（処理中の帯や情報の帯が出ても消えても、表と下の帯の位置が崩れない） */
+.lq-main > .lq-tabbar { grid-row: 1; }
+.lq-main > .lq-infobar { grid-row: 2; }
+.lq-main > .lq-busyband { grid-row: 3; }
+.lq-main > .lq-gridwrap { grid-row: 4; }
+.lq-main > .lq-pager { grid-row: 5; }
 
 /* ---------- 左のアイコン列の項目（アイコン＋短いラベル） ---------- */
 .lq-rail__item {
@@ -1000,4 +1007,27 @@ input[type="radio"] {
 
 .lq-note--tip > .fa-solid {
   color: var(--color-accent);
+}
+
+/* ---------- 上部バーの「機能を探す」（補助の入口） ---------- */
+.lq-topbar__search {
+  gap: var(--space-3);
+  color: var(--color-text-sub);
+}
+
+.lq-kbd {
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface);
+  font-family: var(--font-family);
+  font-size: var(--fs-2xs);
+  color: var(--color-text-muted);
+}
+
+/* 画面が狭い PC では言葉を隠してアイコンとキーだけにする */
+@media (max-width: 1440px) {
+  .lq-topbar__search-label {
+    display: none;
+  }
 }

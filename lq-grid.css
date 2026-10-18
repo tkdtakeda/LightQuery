@@ -179,6 +179,26 @@
   min-width: 0;
 }
 
+.lq-summary--line {
+  flex-wrap: nowrap;
+}
+
+/* 要約の項目：1 行に収め、入りきらない（折り返した）項目は隠す。大事なものから順に並べている */
+.lq-summary__facts {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-5);
+  min-width: 0;
+  max-height: var(--h-control-sm);
+  overflow: hidden;
+}
+
+.lq-summary__facts > * {
+  min-height: var(--h-control-sm);
+}
+
 .lq-summary__main {
   display: inline-flex;
   align-items: center;
@@ -225,6 +245,7 @@
 /* 結果についての操作（抽出の内容・前回と比べる）は右端にまとめる */
 .lq-summary__actions {
   display: inline-flex;
+  flex: 0 0 auto;
   gap: var(--space-2);
 }
 
@@ -241,19 +262,6 @@
   transition: opacity var(--dur-normal) var(--ease-standard);
 }
 
-.lq-gridwrap {
-  --grid-pad: var(--grid-pad-m);
-  --grid-row: var(--grid-row-m);
-  --grid-font: var(--grid-font-m);
-}
-
-.lq-gridwrap[data-pad="s"] { --grid-pad: var(--grid-pad-s); }
-.lq-gridwrap[data-pad="l"] { --grid-pad: var(--grid-pad-l); }
-.lq-gridwrap[data-row="s"] { --grid-row: var(--grid-row-s); }
-.lq-gridwrap[data-row="l"] { --grid-row: var(--grid-row-l); }
-.lq-gridwrap[data-font="s"] { --grid-font: var(--grid-font-s); }
-.lq-gridwrap[data-font="l"] { --grid-font: var(--grid-font-l); }
-
 .lq-gridwrap.is-stale {
   opacity: var(--opacity-stale);
 }
@@ -267,13 +275,13 @@
 .lq-grid {
   border-collapse: separate;
   border-spacing: 0;
-  font-size: var(--grid-font);
+  font-size: var(--table-font-size);
 }
 
 .lq-grid th,
 .lq-grid td {
-  height: var(--grid-row);
-  padding: 0 var(--grid-pad);
+  height: var(--table-row-height);
+  padding: 0 var(--table-cell-padding-x);
   border-bottom: var(--border-width) solid var(--color-border);
   border-right: var(--border-width) solid var(--color-border-soft);
   white-space: nowrap;
