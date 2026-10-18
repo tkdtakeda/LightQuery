@@ -144,6 +144,7 @@
             failed.push(f.name + '：' + app._friendlyError(err));
           }
         }
+        progress.finish(LQ.JobLog.readOutcome(ROLE_LABEL.source, files, out.length, failed));
       } finally {
         progress.close();
       }

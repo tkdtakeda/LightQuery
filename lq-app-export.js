@@ -105,7 +105,10 @@
           : fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列';
         this.toasts.show({ type: 'success', title: '出力しました', message: fileName + '（' + size + '・' + Util.formatBytes(out.blob.size) + '）' });
         out.warnings.forEach((w) => this.toasts.show({ type: 'warn', title: '文字の置き換えがあります', message: w }));
+        progress.finish({ status: out.warnings.length ? 'warn' : 'done', result: format.label + '：' + size,
+          details: [{ label: '出力先', text: fileName + '（ダウンロード・' + Util.formatBytes(out.blob.size) + '）' }].concat(this._jobInputs()), warnings: out.warnings });
       } catch (err) {
+        progress.finish({ status: 'failed', result: '出力できませんでした：' + err.message, details: this._jobInputs() });
         this.toasts.show({ type: 'error', title: '出力できませんでした', message: err.message });
       } finally {
         progress.close();
@@ -117,11 +120,24 @@
       if (!prepared) return;
       const text = LQ.Exporters.toClipboardText(prepared.table);
       const ok = await LQ.Exporters.copyText(text);
+      this.app.recordJob({ kind: 'copy', title: 'クリップボードへのコピー', status: ok ? 'done' : 'failed',
+        result: ok ? fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列をコピーしました' : 'ブラウザがクリップボードへの書き込みを許可していません',
+        details: [{ label: '出力先', text: 'クリップボード' }].concat(this._jobInputs()) });
       if (ok) {
         this.toasts.show({ type: 'success', title: 'クリップボードにコピーしました', message: fmt(prepared.table.rowCount) + ' 行 × ' + prepared.defs.length + ' 列（見出し付き）。Excel に貼り付けられます。' });
       } else {
         this.toasts.show({ type: 'error', title: 'コピーできませんでした', message: 'ブラウザがクリップボードへの書き込みを許可していません。Excel 形式で出力してください。' });
       }
+    }
+
+    /** 実行履歴に残す入力の要約（① と条件） */
+    _jobInputs() {
+      const s = this.state;
+      const src = s.datasets.source;
+      const out = [];
+      if (src) out.push({ label: '① 元データ', text: src.name + '（' + fmt(src.rowCount) + ' 行）' });
+      if (s.result) out.push({ label: '抽出結果', text: fmt(s.result.length) + ' 行' + (s.isStale() ? '（条件の変更は未反映）' : '') });
+      return out;
     }
 
     /** 既定のファイル名（絞り込み中はその抽出条件の名前を入れる） */

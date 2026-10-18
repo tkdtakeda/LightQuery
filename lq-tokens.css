@@ -175,16 +175,10 @@
   --h-control: 32px;
   --h-control-lg: 40px;
   --h-row: 30px;
-  /* 表の見た目（3 段階）：列の間隔・行の高さ・文字サイズ */
-  --grid-pad-s: var(--space-3);
-  --grid-pad-m: var(--space-5);
-  --grid-pad-l: var(--space-7);
-  --grid-row-s: 24px;
-  --grid-row-m: var(--h-row);
-  --grid-row-l: 38px;
-  --grid-font-s: var(--fs-xs);
-  --grid-font-m: var(--fs-sm);
-  --grid-font-l: var(--fs-lg);
+  /* 表のセル：表示密度（下の data-density）で文字・行の高さと一緒に切り替わる */
+  --table-cell-padding-x: var(--space-5);
+  --table-row-height: var(--h-row);
+  --table-font-size: var(--fs-sm);
   --w-col-grip: 7px;
   --h-colpick: 260px;
   --h-fxcols: 120px;
@@ -222,6 +216,7 @@
   --w-empty-lead: 680px;
   --w-step-text: 210px;
   --w-progress: 160px;
+  --w-progress-sm: 72px;
   --w-rank-input: 40px;
   --w-switch-sm: 30px;
   --h-switch-sm: 16px;
@@ -240,8 +235,8 @@
   --icon-xl: 28px;
   --icon-2xl: 40px;
   --progress-height: 6px;
-  --progress-height-lg: 12px;
-  --w-busy-card: 520px;
+  --w-jobstatus-max: 420px;
+  --w-cmd: 560px;
   --w-stripe: 16px;
   --h-combo-list: 320px;
   --w-combo-list-min: 240px;
@@ -342,7 +337,43 @@
     --w-detail: 380px;
     --w-col-max: 260px;
     --w-status-max: 520px;
+    --w-jobstatus-max: 300px;
     --w-toast: 360px;
     --brand-sub-display: none;
   }
+}
+
+/* ---------- 表示密度（基本設計 1-9）----------
+ * ルート要素の data-density で、文字・行の高さ・セルの余白・入力欄とボタンの高さを一体で切り替える。
+ * 標準（standard）は上の既定値。部品はこれらのトークンを参照するだけで密度に追従する。 */
+:root[data-density="compact"] {
+  --fs-2xs: 9.5px;
+  --fs-xs: 10.5px;
+  --fs-sm: 11px;
+  --fs-md: 12px;
+  --fs-lg: 13px;
+  --fs-xl: 15px;
+  --lh-normal: 1.4;
+  --h-control-xs: 20px;
+  --h-control-sm: 24px;
+  --h-control: 28px;
+  --h-control-lg: 36px;
+  --h-row: 24px;
+  --table-cell-padding-x: var(--space-3);
+}
+
+:root[data-density="comfortable"] {
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13.5px;
+  --fs-md: 14.5px;
+  --fs-lg: 15.5px;
+  --fs-xl: 17.5px;
+  --lh-normal: 1.6;
+  --h-control-xs: 26px;
+  --h-control-sm: 32px;
+  --h-control: 38px;
+  --h-control-lg: 46px;
+  --h-row: 38px;
+  --table-cell-padding-x: var(--space-7);
 }

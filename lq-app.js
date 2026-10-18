@@ -430,8 +430,11 @@
         s.setTab(built.tab || 'result');
         if (built.compare) this.app.compare.useSample(built.compare);
         else this.app.compare.leaveSample();
+        progress.finish({ kind: 'sample', status: 'done', result: 'サンプル「' + built.title + '」を読み込みました',
+          details: [{ label: '① 元データ', text: s.datasets.source.name + '（' + Util.formatInt(s.datasets.source.rowCount) + ' 行）' }, { label: '抽出条件', text: profiles.length + ' 件' }] });
       } catch (err) {
         built = null;
+        progress.finish({ kind: 'sample', status: 'failed', result: 'サンプルを読み込めませんでした：' + err.message });
         this.toasts.show({ type: 'error', title: 'サンプルを読み込めませんでした', message: err.message });
       } finally {
         progress.close();
@@ -484,6 +487,7 @@
   const Async = LQ.Async;
   const fmt = Util.formatInt;
 
+
   const ROLE_LABEL = { source: '① 元データ', condition: '② 照合表' };
   /* 読み込みの最後の段階（読み込んだ表を画面の表にする。割合は測れない） */
   const TABLE_STEP = { id: 'table', label: '表の準備', weight: 1 };
@@ -497,6 +501,7 @@
       this.engine = new LQ.QueryEngine();
       this.batch = new LQ.BatchRunner(this.engine);
       this.toasts = new LQ.ToastHost(Dom.qs('#lqToasts'));
+      this.jobs = new LQ.JobLog(() => this.bus.emit('change', { topic: 'jobs' }));
       this.popovers = new LQ.PopoverHost(Dom.qs('#lqPopovers'));
       this.store = new LQ.ProfileStore(this.state, this.bus);
       this.profiles = new LQ.ProfileActions(this);
@@ -533,11 +538,16 @@
         rules: new LQ.RulesPanel(ctx),
         output: new LQ.OutputPanel(ctx),
         aggregate: new LQ.AggregatePanel(ctx),
-        chart: new LQ.ChartPanel(ctx)
+        chart: new LQ.ChartPanel(ctx),
+        history: new LQ.HistoryPanel(ctx)
       };
+      this.density = new LQ.Density(ctx);
+      this.commands = new LQ.CommandPalette(ctx);
       this.main = new LQ.MainView(ctx);
+      /* 通知は表とページ送りの帯の間の行に置く（何も覆わない。画面の右の判定の根拠にも掛からない） */
+      this.main.root.insertBefore(Dom.qs('#lqToasts'), this.main.pager);
       this.rowDetail = new LQ.RowDetail(ctx, Dom.qs('#lqDetail'));
-      this.progressCard = new LQ.ProgressCard(ctx, Dom.qs('#lqMain'));
+      this.progressBand = new LQ.ProgressBand(ctx, this.main.root, this.main.gridwrap);
       this.shell = new LQ.Shell(ctx, this.panels);
       this.worksets = new LQ.Worksets(this);
       this.worksetButton = new LQ.WorksetButton(ctx, Dom.qs('#lqTopbar'), this.worksets);
@@ -601,6 +611,7 @@
       const busy = s.busy;
       if (busy) {
         const status = { kind: 'info', text: busy.title + '… ' + Util.formatPercent(busy.ratio || 0, 0) + (busy.step && busy.steps.length > 1 ? '（' + busy.step.label + '）' : '') };
+        if (busy.cancelling) return { id: 'busy', label: '中止処理中…', icon: 'spinner', spin: true, disabled: true, status: status };
         if (busy.cancellable) return { id: 'cancel', label: '中止する', icon: 'stop', variant: 'stop', progress: busy.ratio || 0, status: status };
         return { id: 'busy', label: busy.label, icon: 'spinner', spin: true, disabled: true, progress: busy.ratio || 0, status: status };
       }
@@ -774,7 +785,21 @@
      * @returns {LQ.Progress}
      */
     startProgress(spec) {
-      return new LQ.Progress(spec, (snap) => this.state.setBusy(snap));
+      const startedAt = Date.now();
+      const progress = new LQ.Progress(spec, (snap) => {
+        this.state.setBusy(snap);
+        if (!snap && progress.outcome) this.recordJob(Object.assign({ kind: spec.kind, title: spec.title, startedAt: startedAt }, progress.outcome));
+      });
+      return progress;
+    }
+
+    /** 実行履歴に 1 件残し、上部バーの「直前の処理」に出す（基本設計 1-14・1-22） */
+    recordJob(entry) {
+      const ws = this.worksets && this.worksets.active;
+      const e = this.jobs.add(Object.assign({ workset: ws ? ws.name : '' }, entry));
+      this.state.lastJob = e;
+      this.bus.emit('change', { topic: 'jobs' });
+      return e;
     }
 
     /** 処理中は、結果とデータの対応が崩れる操作を止めて理由を知らせる */
@@ -841,8 +866,11 @@
         const source = await LQ.SourceFile.fromFile(file, progress);
         progress.begin(TABLE_STEP.id, false);
         await Async.paint();
-        this._putDataset(role, new LQ.Dataset(role, source));
+        const ds = new LQ.Dataset(role, source);
+        this._putDataset(role, ds);
+        progress.finish({ status: 'done', result: ROLE_LABEL[role] + '「' + file.name + '」を読み込みました（' + fmt(ds.rowCount) + ' 行）', details: [{ label: 'ファイル', text: file.name + '（' + Util.formatBytes(file.size) + '）' }] });
       } catch (err) {
+        progress.finish({ status: 'failed', result: ROLE_LABEL[role] + 'を読み込めませんでした', details: [{ label: 'ファイル', text: file.name }], warnings: [this._friendlyError(err)] });
         this.toasts.show({ type: 'error', title: ROLE_LABEL[role] + 'を読み込めませんでした', message: file.name + '：' + this._friendlyError(err) });
       } finally {
         progress.close();
@@ -882,6 +910,7 @@
             failed.push(list[i].name + '：' + this._friendlyError(err));
           }
         }
+        progress.finish(LQ.JobLog.readOutcome(ROLE_LABEL.condition, list, tables.length, failed));
       } finally {
         progress.close();
       }
@@ -1094,6 +1123,11 @@
       const ctx = { source: s.datasets.source, rules: Util.clone(s.rules), combine: s.effectiveCombine(), profiles: profiles };
       const progress = this.startProgress({ kind: 'run', label: '抽出中…', title: '抽出しています', detail: this._runSummary(), cancellable: true,
         steps: [{ id: 'run', label: '照合' }] });
+      this._runProgress = progress;
+      const summary = this._runSummary();
+      const ws = this.worksets && this.worksets.active;
+      const ref = ws ? { worksetId: ws.id, conditions: s.conditionSignature() } : null;
+      const inputs = [{ label: '① 元データ', text: ctx.source.name + '（' + fmt(ctx.source.rowCount) + ' 行）' }, { label: '条件', text: summary }];
       progress.begin('run', true);
       progress.update(0, '準備中');
       await Async.paint();
@@ -1103,6 +1137,7 @@
           onProgress: (p) => progress.update(p.ratio, p.done !== undefined ? p.label + ' ' + fmt(p.done) + ' / ' + fmt(p.total) + ' 行' : p.label)
         });
         if (result.cancelled) {
+          progress.finish({ status: 'cancelled', result: '中止しました' + (s.result ? '（表示中の結果は前回のもの）' : ''), details: inputs, ref: ref });
           this.toasts.show({ type: 'info', title: '抽出を中止しました', message: s.result ? '表示中の結果は前回のものです。' : '' });
           return;
         }
@@ -1111,42 +1146,92 @@
           return !!cur && cur.condition !== p.condition;
         });
         if (changed) {
+          progress.finish({ status: 'failed', result: '抽出中にデータが変わったため、結果を破棄しました', details: inputs });
           this.toasts.show({ type: 'warn', title: '抽出中にデータが変わったため、結果を破棄しました', message: 'もう一度抽出してください。' });
           return;
         }
         s.setResult(result, signature);
         this.compare.remember();
         if (s.view.tab !== 'aggregate') s.setTab('result');
-        this._announce(result);
+        const told = this._announce(result);
+        progress.finish({ status: told.notes.length ? 'warn' : 'done', result: told.title, details: inputs.concat([{ label: '内訳', text: told.message }]), warnings: told.notes, ref: ref });
       } catch (err) {
+        progress.finish({ status: 'failed', result: '抽出できませんでした：' + err.message, details: inputs, ref: ref });
         this.toasts.show({ type: 'error', title: '抽出できませんでした', message: err.message });
       } finally {
         this._token = null;
+        this._runProgress = null;
         progress.close();
       }
     }
 
+    /** 抽出し直せない理由（実行履歴のボタン用。押せるなら ''） */
+    rerunBlocker(entry) {
+      if (!entry.ref) return 'この記録には作業セットの手がかりがありません';
+      if (this.state.busy) return '処理中のため使えません';
+      if (!this.worksets || !this.worksets.sets.some((x) => x.id === entry.ref.worksetId)) return '作業セット「' + entry.workset + '」は削除されています';
+      return '';
+    }
+
+    /**
+     * 実行履歴の抽出を、その作業セットで今の ① に対してやり直す（毎月 ① を差し替える使い方）。
+     * 条件が当時から変わっていれば、すぐには抽出せずに知らせて選んでもらう。
+     */
+    async rerunJob(entry) {
+      const reason = this.rerunBlocker(entry);
+      if (reason) {
+        this.toasts.show({ type: 'warn', title: '抽出し直せません', message: reason });
+        return;
+      }
+      const ws = this.worksets;
+      if (!ws.active || ws.active.id !== entry.ref.worksetId) await ws.switchTo(entry.ref.worksetId);
+      if (!ws.active || ws.active.id !== entry.ref.worksetId) return;
+      const s = this.state;
+      if (!s.datasets.source) {
+        this.toasts.show({ type: 'info', title: '① 元データを読み込むと抽出できます', message: '作業セット「' + entry.workset + '」を開きました。',
+          actions: [{ label: '① を選ぶ', icon: 'file-import', onClick: () => this.pickFile('source') }] });
+        return;
+      }
+      if (s.conditionSignature() !== entry.ref.conditions) {
+        this.toasts.show({ type: 'warn', title: '条件が当時（' + LQ.JobLog.formatWhen(entry.endedAt) + '）から変わっています', message: '今の条件で抽出するか、抽出条件を確かめてください。',
+          actions: [{ label: '今の条件で抽出する', icon: 'play', onClick: () => this.run() }, { label: '抽出条件を見る', icon: 'code-compare', onClick: () => s.openPanel('query') }] });
+        return;
+      }
+      if (!this.validationAll().ok) {
+        s.openPanel('query');
+        this.toasts.show({ type: 'warn', title: '抽出条件に設定の足りないところがあります', message: '左の「抽出条件」で直してください（② の読み込みが必要な場合があります）。' });
+        return;
+      }
+      await this.run();
+    }
+
     cancel() {
-      if (this._token) this._token.cancel();
+      if (!this._token) return;
+      this._token.cancel();
+      if (this._runProgress) this._runProgress.markCancelling();
     }
 
     _announce(result) {
       const st = result.stats;
       const parts = result.parts;
       const time = '処理時間 ' + Util.formatSeconds(st.elapsedMs);
+      const told = { title: '', message: '', notes: [] };
       if (parts.length === 1 && !st.includeUnmatched) {
         const ps = parts[0].stats;
         const pct = Util.formatPercent(ps.matchedSources / Math.max(1, ps.sourceRows));
         const title = ps.joinKind === 'anti'
           ? fmt(ps.outputRows) + ' 行が一致しませんでした（除外後）'
           : fmt(ps.matchedSources) + ' 行が一致しました（' + pct + '）';
-        this.toasts.show({ type: st.outputRows ? 'success' : 'warn', title: title, message: '出力 ' + fmt(st.outputRows) + ' 行・' + time });
+        told.title = title;
+        told.message = '出力 ' + fmt(st.outputRows) + ' 行・' + time;
       } else {
         const pct = Util.formatPercent(st.matchedSources / Math.max(1, st.sourceRows));
         const detail = parts.map((p) => p.priority + ' 位「' + p.name + '」' + fmt(p.rows) + ' 行').join('・') +
           (st.includeUnmatched ? '・該当なし ' + fmt(st.unmatchedRows) + ' 行' : '');
-        this.toasts.show({ type: st.outputRows ? 'success' : 'warn', title: fmt(st.matchedSources) + ' 行が抽出条件に該当しました（' + pct + '）', message: detail + '。' + time });
+        told.title = fmt(st.matchedSources) + ' 行が抽出条件に該当しました（' + pct + '）';
+        told.message = detail + '。' + time;
       }
+      this.toasts.show({ type: st.outputRows ? 'success' : 'warn', title: told.title, message: told.message });
       const notes = [];
       if (st.truncated) notes.push('組み合わせが 1,000,000 行に達したため、途中で打ち切りました。');
       parts.forEach((part) => {
@@ -1155,6 +1240,8 @@
         });
       });
       if (notes.length) this.toasts.show({ type: 'warn', title: '確認してください', message: notes.join('\n') });
+      told.notes = notes;
+      return told;
     }
 
     /**

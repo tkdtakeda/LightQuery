@@ -192,16 +192,16 @@
 }
 
 .lq-pivot thead th {
-  padding: 0 var(--grid-pad);
-  height: var(--grid-row);
+  padding: 0 var(--table-cell-padding-x);
+  height: var(--table-row-height);
   border-bottom: var(--border-width) solid var(--color-border);
   border-right: var(--border-width) solid var(--color-border-soft);
   white-space: nowrap;
 }
 
 /* 見出しは段ごとに上からの位置をずらして、すべての段をスクロールしても見えるようにする */
-.lq-pivot thead tr:nth-child(2) th { top: var(--grid-row); }
-.lq-pivot thead tr:nth-child(3) th { top: calc(var(--grid-row) * 2); }
+.lq-pivot thead tr:nth-child(2) th { top: var(--table-row-height); }
+.lq-pivot thead tr:nth-child(3) th { top: calc(var(--table-row-height) * 2); }
 
 .lq-pivot .lq-pivot__col,
 .lq-pivot .lq-pivot__value {
@@ -229,7 +229,7 @@
 
 .lq-pivot tbody .lq-pivot__label {
   max-width: var(--w-pvlabel-max);
-  padding: 0 var(--grid-pad);
+  padding: 0 var(--table-cell-padding-x);
   overflow: hidden;
   border-bottom: var(--border-width) solid var(--color-border);
   border-right: var(--border-width) solid var(--color-border-soft);

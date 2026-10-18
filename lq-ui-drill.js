@@ -20,7 +20,7 @@
   const NUMERIC_RATIO = 0.8;
   const NUMERIC_SAMPLE = 200;
   /* 閉じずに描き直すだけの話題（表示中の内訳と関係しない変化） */
-  const KEEP_TOPICS = new Set(['busy', 'panel', 'library', 'start', 'worksets', 'aggregate-ready', 'chart-library']);
+  const KEEP_TOPICS = new Set(['busy', 'jobs', 'panel', 'library', 'start', 'worksets', 'aggregate-ready', 'chart-library']);
   /* 内訳を開いたまま表示を変えてよいタブ */
   const DRILL_TABS = ['aggregate', 'chart', 'source', 'condition', 'result'];
 

@@ -1,13 +1,13 @@
 /* =========================================================================
  * LightQuery - lq-ui-grid.js
- * 表：見た目の調整（3 段階・列幅）と描画
+ * 表：表示密度・列幅と描画
  * （下の区切りごとに独立した部品。読み込み順どおりに並べている）
  * ========================================================================= */
 
 /* =========================================================================
  * ── 表の見た目と列幅 ──
- * 表の見た目の調整：
- *   GridDisplay … 列の間隔・行の間隔・文字サイズ（各 3 段階）。表の入れ物に data 属性で付け、値は CSS のトークンで決める
+ * 表示密度と列幅：
+ *   Density     … 表示密度（コンパクト・標準・ゆったり）。画面全体に掛け、値は CSS のトークンで決める
  *   ColumnSizer … 見出しの右端をドラッグして列幅を変える（ダブルクリックで中身に合わせた幅に戻す）
  *   どちらもブラウザに記憶する（列幅は列の名前ごと）。
  * ========================================================================= */
@@ -21,97 +21,80 @@
   const Prefs = LQ.Prefs;
   const h = Dom.h;
 
-  const DISPLAY_KEY = 'grid.display';
+  const DENSITY_KEY = 'ui.density';
+  const OLD_DISPLAY_KEY = 'grid.display';
   const WIDTH_KEY = 'grid.widths';
   const WIDTH_LIMIT = 300;
   const MIN_WIDTH = 40;
   const MAX_WIDTH = 1200;
-  const LEVELS = ['s', 'm', 'l'];
-  const SETTINGS = [
-    { key: 'pad', label: '列の間隔', icon: 'arrows-left-right', names: ['狭い', '標準', '広い'], hint: 'セルの左右の余白' },
-    { key: 'row', label: '行の間隔', icon: 'arrows-up-down', names: ['狭い', '標準', '広い'], hint: '1 行の高さ' },
-    { key: 'font', label: '文字サイズ', icon: 'text-height', names: ['小', '標準', '大'], hint: '表の文字の大きさ' }
+  const DENSITIES = [
+    { value: 'compact', label: 'コンパクト', hint: '一覧性を優先（文字・行・ボタンを小さく）' },
+    { value: 'standard', label: '標準', hint: '' },
+    { value: 'comfortable', label: 'ゆったり', hint: '読みやすさ・押しやすさを優先' }
   ];
-  const DEFAULT_DISPLAY = Object.freeze({ pad: 'm', row: 'm', font: 'm' });
+  const DEFAULT_DENSITY = 'standard';
 
-  class GridDisplay {
-    /**
-     * @param {object} ctx
-     * @param {HTMLElement} target 表の入れ物（data-pad / data-row / data-font を付ける）
-     */
-    constructor(ctx, target) {
+  /**
+   * Density：表示密度（基本設計 1-9）。コンパクト・標準・ゆったりの 3 段階を画面全体（ルート要素の data-density）に掛ける。
+   *   文字・行の高さ・セルの余白・入力欄とボタンの高さは CSS のトークンが一体で切り替えるので、ここは値を決めて覚えるだけ。
+   *   CSS だけの切り替えのため、選択行・スクロール位置・入力内容・絞り込みはそのまま残る。
+   *   以前の「列の間隔・行の間隔・文字サイズ」別々の設定が残っていれば、近い段階に移して消す。
+   */
+  class Density {
+    constructor(ctx) {
       this.ctx = ctx;
-      this.target = target;
-      this.value = GridDisplay.clean(Prefs.get(DISPLAY_KEY, null));
+      this.value = Density.clean(Prefs.get(DENSITY_KEY, null)) || Density.migrate(Prefs.get(OLD_DISPLAY_KEY, null)) || DEFAULT_DENSITY;
+      Prefs.set(DENSITY_KEY, this.value);
+      Prefs.remove(OLD_DISPLAY_KEY);
       this._apply();
+    }
+
+    static get LEVELS() {
+      return DENSITIES;
     }
 
     static clean(raw) {
-      const out = Object.assign({}, DEFAULT_DISPLAY);
-      if (raw && typeof raw === 'object') {
-        SETTINGS.forEach((s) => {
-          if (LEVELS.indexOf(raw[s.key]) !== -1) out[s.key] = raw[s.key];
-        });
-      }
-      return out;
+      return DENSITIES.some((d) => d.value === raw) ? raw : null;
     }
 
-    get isDefault() {
-      return SETTINGS.every((s) => this.value[s.key] === DEFAULT_DISPLAY[s.key]);
+    /** 以前の 3 つの設定（s / m / l）→ 多い方の段階（2 つ以上が小さければコンパクト、2 つ以上が大きければゆったり） */
+    static migrate(old) {
+      if (!old || typeof old !== 'object') return null;
+      const vals = ['pad', 'row', 'font'].map((k) => old[k]);
+      const small = vals.filter((v) => v === 's').length;
+      const large = vals.filter((v) => v === 'l').length;
+      if (small >= 2) return 'compact';
+      if (large >= 2) return 'comfortable';
+      return DEFAULT_DENSITY;
+    }
+
+    get label() {
+      return DENSITIES.find((d) => d.value === this.value).label;
     }
 
     _apply() {
-      SETTINGS.forEach((s) => {
-        this.target.dataset[s.key] = this.value[s.key];
-      });
+      document.documentElement.dataset.density = this.value;
     }
 
-    set(key, level) {
-      if (this.value[key] === level) return;
-      this.value[key] = level;
-      Prefs.set(DISPLAY_KEY, this.value);
+    set(value) {
+      const v = Density.clean(value);
+      if (!v || v === this.value) return;
+      this.value = v;
+      Prefs.set(DENSITY_KEY, v);
       this._apply();
-      if (this._button) this._button.classList.toggle('is-customized', !this.isDefault);
-      Flash.el(this.target);
+      (this._segs || []).forEach((x) => x.set(v));
+      this.ctx.bus.emit('density', v);
+      Flash.el(document.querySelector('.lq-gridwrap') || document.body);
     }
 
-    /** 表の右上に置くボタン（標準から変えているときは印を付ける） */
-    button() {
-      this._button = h('button', {
-        class: 'lq-btn lq-btn--sm' + (this.isDefault ? '' : ' is-customized'),
-        type: 'button',
-        title: '表の見た目：列の間隔・行の間隔・文字サイズ（各 3 段階）',
-        onclick: (e) => this.open(e.currentTarget)
-      }, [Dom.icon('text-height'), '表の見た目']);
-      return this._button;
-    }
-
-    open(anchor) {
-      const pop = this.ctx.popovers;
-      if (pop.isOpen('grid-display')) {
-        pop.close();
-        return;
-      }
-      const segs = [];
-      const rows = SETTINGS.map((s) => {
-        const seg = new LQ.Segmented(LEVELS.map((lv, i) => ({ value: lv, label: s.names[i] })), this.value[s.key], (v) => this.set(s.key, v), 'lq-seg--block');
-        segs.push({ key: s.key, seg: seg });
-        return h('div', { class: 'lq-display__row' }, [
-          h('div', { class: 'lq-display__label' }, [Dom.icon(s.icon), h('span', { text: s.label }), h('span', { class: 'lq-field__hint', text: s.hint })]),
-          seg.el
-        ]);
-      });
-      const reset = h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '3 つとも「標準」に戻す', onclick: () => {
-        SETTINGS.forEach((s) => this.set(s.key, DEFAULT_DISPLAY[s.key]));
-        segs.forEach((x) => x.seg.set(DEFAULT_DISPLAY[x.key]));
-      } }, [Dom.icon('rotate-left'), '標準に戻す']);
-      const widths = h('p', { class: 'lq-field__hint', text: '列の幅は中身の文字数に合わせます。見出しの右端をドラッグすると幅を変えられ、ダブルクリックで元に戻ります。' });
-      pop.open(anchor, [
-        h('div', { class: 'lq-popover__head' }, [Dom.icon('text-height'), h('span', { text: '表の見た目' }),
-          UI.iconButton('xmark', '閉じる（Esc）', () => pop.close(), 'lq-btn--sm')]),
-        h('div', { class: 'lq-popover__body lq-display' }, rows.concat([widths])),
-        h('div', { class: 'lq-popover__foot' }, [reset, h('span', { class: 'lq-field__hint', text: 'このブラウザに記憶します' })])
-      ], { key: 'grid-display', placement: 'bottom-end' });
+    /** 3 段階の切替（どこに置いても同じ部品） */
+    segmented(extraClass) {
+      const seg = new LQ.Segmented(DENSITIES.map((d) => ({ value: d.value, label: d.label, title: d.hint || '標準の文字と余白' })), this.value, (v) => this.set(v), extraClass || '');
+      seg.el.setAttribute('aria-label', '表示密度');
+      /* 画面から外れた切替は覚えておかない（メニューを開くたびに作り直すため） */
+      this._segs = (this._segs || []).filter((x) => x.el.isConnected);
+      this._segs.push(seg);
+      return seg.el;
     }
   }
 
@@ -202,7 +185,7 @@
     }
   }
 
-  LQ.GridDisplay = GridDisplay;
+  LQ.Density = Density;
   LQ.ColumnSizer = ColumnSizer;
 })(window);
 

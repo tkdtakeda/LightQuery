@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 A 作業順レール</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="mock-common.css">
+<style>
+/* 案 A：作業順のアイコン列（レール）＋脇パネル＋上部の主要動作。今の構造を保ち、上部バーに処理の状態を常設する */
+.app { display: grid; grid-template-rows: var(--bar-h) 1fr; height: 100dvh; }
+.top { display: flex; align-items: center; gap: 12px; padding: 0 12px; background: var(--color-surface); border-bottom: 1px solid var(--color-line); }
+.logo { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--c-blue-900); }
+.logo i { background: var(--color-primary); color: #fff; width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; }
+.ws { margin-left: 4px; }
+.spacer { flex: 1; }
+.status { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 10px; border-radius: var(--radius-md); border: 1px solid var(--color-line); background: var(--c-gray-50); }
+.status .meter { width: 120px; }
+.status.is-stalled { border-color: var(--color-warn); background: var(--color-warn-soft); }
+.status.is-done { border-color: #bfe0c7; background: var(--color-ok-soft); }
+.cta-wrap { display: flex; flex-direction: column; align-items: flex-end; }
+.cta-why { font-size: var(--font-size-small); color: var(--color-text-sub); }
+.body { display: grid; grid-template-columns: 72px auto 1fr; min-height: 0; }
+.rail { background: var(--c-gray-50); border-right: 1px solid var(--color-line); display: flex; flex-direction: column; padding: 6px 0; }
+.rail h6 { margin: 8px 0 2px; font-size: 10px; color: var(--color-text-muted); text-align: center; font-weight: 600; }
+.rail button { border: 0; background: transparent; padding: 7px 2px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10.5px; color: var(--color-text-sub); cursor: pointer; position: relative; }
+.rail button i { font-size: 16px; }
+.rail button.on { background: var(--color-primary-soft); color: var(--color-primary); box-shadow: inset 3px 0 0 var(--color-primary); }
+.rail .ok { position: absolute; top: 3px; right: 14px; color: var(--color-ok); font-size: 11px; }
+.rail .grow { flex: 1; }
+.panel { grid-column: 2; width: 380px; background: var(--color-surface); border-right: 1px solid var(--color-line); display: flex; flex-direction: column; min-height: 0; }
+.panel header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--color-line); font-weight: 700; }
+.panel .scroll { overflow: auto; padding: 12px; display: grid; gap: 14px; align-content: start; }
+.field label { display: block; font-size: var(--font-size-small); color: var(--color-text-sub); margin-bottom: 3px; }
+.field input, .field select { width: 100%; height: var(--control-height); border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); padding: 0 8px; background: #fff; }
+.cond { display: grid; grid-template-columns: 24px 1fr auto 1fr; gap: 6px; align-items: center; padding: 8px; border: 1px solid var(--color-line); border-radius: var(--radius-md); }
+.main { grid-column: 3; display: grid; grid-template-rows: auto auto auto 1fr auto; min-width: 0; min-height: 0; padding: 0 12px 8px; gap: 8px; }
+.tabs { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--color-line); }
+.tabs a { padding: 10px 12px; color: var(--color-text-sub); text-decoration: none; border-bottom: 3px solid transparent; display: flex; gap: 6px; align-items: center; }
+.tabs a.on { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 600; }
+.tabs .sep { width: 1px; height: 22px; background: var(--color-line-strong); margin: 0 6px; }
+.summary { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.band { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--color-primary-soft); border: 1px solid var(--c-blue-100); }
+.band.warn { background: var(--color-warn-soft); border-color: #ecd3a6; }
+.band .meter { flex: 0 0 220px; }
+.pager { display: flex; justify-content: space-between; color: var(--color-text-sub); font-size: var(--font-size-small); }
+.is-busy-dim { opacity: .55; }
+.search { display: inline-flex; align-items: center; gap: 6px; height: var(--control-height); padding: 0 10px; border-radius: var(--radius-md); background: var(--c-gray-100); color: var(--color-text-muted); }
+.kbd { border: 1px solid var(--color-line-strong); border-radius: 3px; padding: 0 4px; font-size: 10px; background: #fff; }
+.menu { position: fixed; top: 46px; right: 8px; width: 300px; background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); z-index: 30; padding: 6px; display: grid; gap: 2px; }
+.menu .item { padding: 6px 8px; border-radius: var(--radius-md); display: flex; gap: 8px; align-items: center; }
+.menu .item:hover { background: var(--c-gray-100); }
+.menu hr { border: 0; border-top: 1px solid var(--color-line); margin: 4px 0; }
+.flowband { display: flex; gap: 6px; align-items: center; font-size: var(--font-size-small); color: var(--color-text-sub); flex-wrap: wrap; }
+.flowband b { color: var(--color-text); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="logo"><i class="fa-solid fa-magnifying-glass"></i>LightQuery</span>
+    <button class="btn ws"><i class="fa-regular fa-folder-open"></i>作業セット 1<i class="fa-solid fa-chevron-down small"></i></button>
+    <span class="spacer"></span>
+    <div id="status"></div>
+    <div class="cta-wrap" id="cta"></div>
+    <span class="search" title="機能を名前で探して開く（補助の入口）"><i class="fa-solid fa-magnifying-glass"></i>機能を探す <span class="kbd">Ctrl</span><span class="kbd">K</span></span>
+    <button class="btn btn--ghost"><i class="fa-solid fa-circle-question"></i>使い方</button>
+    <button class="icon-btn" title="メニュー（表示密度・書き出し・すべてクリア）"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+  </header>
+  <div class="body">
+    <nav class="rail" id="rail"></nav>
+    <aside class="panel" id="panel" hidden></aside>
+    <main class="main" id="main"></main>
+  </div>
+</div>
+<div class="menu" id="menu" hidden></div>
+<script src="mock-common.js"></script>
+<script>
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const RAIL = [
+    ['入力'], ['src', 'table', '①元データ', true], ['cond', 'list-check', '②照合表', true],
+    ['抽出'], ['query', 'code-compare', '抽出条件', true],
+    ['結果'], ['out', 'table-columns', '出力列'], ['pivot', 'table-cells', 'ピボット'], ['chart', 'chart-column', 'グラフ'],
+    ['grow'], ['設定'], ['rules', 'spell-check', '照合ルール'], ['hr'], ['hist', 'clock-rotate-left', '履歴'], ['smp', 'flask', 'サンプル']
+  ];
+  function rail(on, loaded) {
+    $('#rail').innerHTML = RAIL.map((r) => {
+      if (r[0] === 'grow') return '<span class="grow"></span>';
+      if (r[0] === 'hr') return '<hr style="border:0;border-top:1px solid var(--color-line);width:70%;margin:6px auto">';
+      if (r.length === 1) return '<h6>' + r[0] + '</h6>';
+      return '<button class="' + (r[0] === on ? 'on' : '') + '"><i class="fa-solid fa-' + r[1] + '"></i>' + r[2] +
+        (r[3] && loaded ? '<i class="fa-solid fa-circle-check ok"></i>' : '') + '</button>';
+    }).join('');
+  }
+  function tabs(st) {
+    const loaded = st !== 'empty';
+    const res = st === 'result' || st === 'edit' || st === 'history' || st === 'menu';
+    return '<nav class="tabs"><a title="ドロップ・Ctrl+V で差し替え（元に戻せます）"><span class="badge badge--src">①</span>' + (loaded ? '売上帳票.xlsx <span class="small muted">48 行</span> <i class="fa-solid fa-arrow-right-arrow-left small muted"></i>' : '元データ <span class="small muted">未読み込み</span>') + '</a>' +
+      '<a><span class="badge badge--cond">②</span>照合表 <span class="small muted">' + (loaded ? '3 行' : '未読み込み') + '</span></a><span class="sep"></span>' +
+      '<a class="on"><i class="fa-solid fa-table-list"></i>抽出結果 <span class="small muted">' + (res ? (st === 'edit' ? '39 行・未反映' : '39 行') : (loaded ? '抽出中' : '未実行')) + '</span></a>' +
+      '<a><i class="fa-solid fa-table-cells"></i>ピボット</a><a><i class="fa-solid fa-chart-column"></i>グラフ</a></nav>';
+  }
+  const STEPS = '<span class="steps-inline"><span class="done">✓ 準備</span><span class="cur">● 照合 3,420 / 10,000 行</span><span class="todo">○ 振り分け</span></span>';
+  const METER = '<span class="meter"><span style="flex:1"></span><span class="cur" style="flex:2"></span><span class="todo" style="flex:1"></span></span>';
+  function render(st) {
+    const loaded = st !== 'empty';
+    const running = st === 'running' || st === 'stalled';
+    rail(st === 'edit' ? 'query' : st === 'history' ? 'hist' : '', loaded);
+    /* 上部バーの状態（1-20・1-21）：要約だけ。止まっている可能性は文字で出す */
+    $('#status').innerHTML = running
+      ? '<div class="status' + (st === 'stalled' ? ' is-stalled' : '') + '"><i class="fa-solid ' + (st === 'stalled' ? 'fa-triangle-exclamation' : 'fa-spinner fa-spin') + '" style="color:var(--color-' + (st === 'stalled' ? 'warn' : 'primary') + ')"></i>' +
+        '<span><b>抽出中</b> <span class="small sub">工程 2 / 3：照合</span></span>' + METER +
+        (st === 'stalled' ? '<span class="small"><b>14:32:18 から更新なし</b></span>' : '<span class="num small">34% ・ 経過 00:18</span>') + '</div>'
+      : (st === 'result' ? '<div class="status is-done"><i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i><span class="small">抽出 完了 14:32 ・ 39 行 ・ 0.4 秒</span><a class="small" href="#history">履歴</a></div>' : '');
+    /* 主要動作（1-2）：1 か所。処理中は同じ位置が「中止する」になる */
+    $('#cta').innerHTML = !loaded
+      ? '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-import"></i>① 元データを読み込む</button>'
+      : running ? '<button class="btn btn--lg" style="border-color:var(--color-err);color:var(--color-err)"><i class="fa-solid fa-stop"></i>中止する</button>'
+        : st === 'edit' ? '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-arrows-rotate"></i>48 行から再抽出する</button><span class="cta-why">条件が変わりました（結果は未反映）</span>'
+          : '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>39 行を出力する</button>';
+    const panel = $('#panel');
+    panel.hidden = !(st === 'edit' || st === 'history');
+    if (st === 'edit') {
+      panel.innerHTML = '<header><i class="fa-solid fa-code-compare"></i>抽出条件<span class="spacer"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header><div class="scroll">' +
+        '<div class="field"><label>名前</label><input value="コードの頭文字"></div>' +
+        '<div class="field"><label>② 照合表</label><div class="band" style="background:var(--color-cond-soft);border-color:#bfe0dc"><i class="fa-solid fa-list-check" style="color:var(--color-cond)"></i>コード一覧.txt <span class="small muted">3 行 × 1 列</span></div></div>' +
+        '<div><div class="small sub" style="margin-bottom:4px">条件 1 件</div><div class="cond"><span class="badge badge--muted">A</span><select><option>① 商品コード</option></select><span>が</span><select><option>② 列A</option></select></div>' +
+        '<div class="cond" style="margin-top:4px;grid-template-columns:24px 1fr"><span></span><select><option>で始まる（前方一致）</option></select></div></div>' +
+        '<button class="btn"><i class="fa-solid fa-plus"></i>条件を追加</button>' +
+        '<div class="small muted">出力する行：一致した行（内部結合）・詳細設定 2 件を適用中 ▸</div></div>';
+    } else if (st === 'history') {
+      panel.innerHTML = '<header><i class="fa-solid fa-clock-rotate-left"></i>実行履歴 <span class="small muted">新しい順・100 件まで</span><span class="spacer"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header>' +
+        '<div class="scroll" style="padding:0">' + MOCK.history() + '</div>';
+    }
+    const menu = $('#menu');
+    menu.hidden = st !== 'menu';
+    menu.innerHTML = '<div class="item" style="display:block"><div class="small sub" style="margin-bottom:4px">表示密度（文字・余白・ボタンの高さ）</div>' + MOCK.density() + '</div><hr>' +
+      '<div class="item"><i class="fa-solid fa-file-arrow-down"></i>抽出条件を書き出す（JSON）</div><div class="item"><i class="fa-solid fa-file-arrow-up"></i>抽出条件を読み込む</div><hr>' +
+      '<div class="item" style="color:var(--color-err)"><i class="fa-solid fa-trash-can"></i>すべてクリア（元に戻せます）</div>';
+    let html = tabs(st);
+    if (!loaded) {
+      html += '<div></div><div></div><div class="empty"><div><h2>① と ② を読み込み、条件に一致する行を取り出します</h2><p class="sub">まだファイルを読み込んでいません</p>' +
+        '<div style="display:flex;gap:16px;justify-content:center"><div class="drop"><i class="fa-solid fa-table fa-2x" style="color:var(--color-src)"></i><h3>① 元データ</h3><div class="small">クリック／ドロップ／Ctrl+V</div></div>' +
+        '<div class="drop drop--cond"><i class="fa-solid fa-list-check fa-2x" style="color:var(--color-cond)"></i><h3>② 照合表</h3><div class="small">クリック／ドロップ／Ctrl+V</div></div></div>' +
+        '<p><button class="btn"><i class="fa-solid fa-flask"></i>サンプルで試す</button></p></div></div><div></div>';
+    } else {
+      html += '<div class="summary">' + (running ? '<span class="muted"><i class="fa-solid fa-hourglass-half"></i> 前回の結果（14:20）を表示中 ・ 閲覧・並べ替えはできます</span>' :
+        (st === 'edit' ? '<span class="badge badge--warn"><i class="fa-solid fa-pen"></i>条件を変更済み・未反映</span>' : '') +
+        '<b><i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i> 39 行が一致</b><span class="sub">① 48 行中 81.3%</span><span class="sub">表示 39 行 × 6 列</span>' +
+        '<span class="sub" title="条件の読み下し">A：① 商品コード が ② 列A で始まる ・ 一致した行</span><span class="spacer"></span><button class="btn"><i class="fa-solid fa-magnifying-glass"></i>抽出の内容</button><button class="btn"><i class="fa-solid fa-not-equal"></i>前回と比べる</button>') + '</div>';
+      /* 処理中の詳細（1-14・1-19）：工程・件数・停止の可能性。中止は上の主要動作の 1 か所だけ */
+      html += running
+        ? '<div class="band' + (st === 'stalled' ? ' warn' : '') + '"><i class="fa-solid ' + (st === 'stalled' ? 'fa-triangle-exclamation' : 'fa-spinner fa-spin') + '"></i><b>抽出中</b>' + STEPS + METER +
+          (st === 'stalled' ? '<span><b>14:32:18 から進捗が更新されていません。</b>停止している可能性があります（待つか、右上の「中止する」）</span><button class="btn">詳細</button>' : '<span class="num small">34% ・ 経過 00:18 ・ 最終更新 14:32:36</span>') + '</div>'
+        : '<div class="flowband"><span class="badge badge--cond">②</span>一致しなかった ② の行：<b>なし</b><span>｜</span>前回との違い：<b>増 2・減 0・変 1</b><span>｜</span>処理の流れ：読み込み <b>48</b> 行 → 絞り込み −0 → 使う行 <b>48</b> → 一致 <b>39</b></div>';
+      html += '<div class="tbl-wrap' + (running || st === 'edit' ? ' is-busy-dim' : '') + '">' + MOCK.table({ selected: st === 'result' ? 2 : -1 }) + '</div>' +
+        '<div class="pager"><span>1 / 1 ページ ・ 100 行／ページ</span><span>1–39 行目 ／ 全 39 行</span></div>';
+    }
+    $('#main').innerHTML = html;
+  }
+  MOCK.boot(MOCK.STATES.concat([['menu', 'メニュー']]), render);
+})();
+</script>
+</body>
+</html>

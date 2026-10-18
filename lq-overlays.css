@@ -22,21 +22,30 @@
   transition: width var(--dur-fast) linear;
 }
 
-/* ---------- 進み具合のカード（処理中にメイン領域の中央へ重ねる） ---------- */
-.lq-busy {
-  position: absolute;
-  inset: 0;
-  z-index: var(--z-panel);
+/* ---------- 処理の状態：表の上の帯（画面を覆わない。基本設計 1-18） ---------- */
+.lq-busyband {
+  grid-row: 3;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-8);
-  background: var(--color-overlay-soft);
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 var(--space-6) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) solid var(--color-info-line);
+  border-left: var(--indicator-width) solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-info-soft);
+  font-size: var(--fs-sm);
+  animation: lq-busy-in var(--dur-normal) var(--ease-out) var(--delay-busy) both;
 }
 
-/* 短い処理でちらつかないよう、少し遅れて現れる */
-.lq-busy.is-in {
-  animation: lq-busy-in var(--dur-normal) var(--ease-out) var(--delay-busy) both;
+.lq-busyband[data-phase="stalled"] {
+  border-color: var(--color-warning-line);
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.lq-busyband[data-phase="cancelling"] {
+  border-left-color: var(--color-text-muted);
 }
 
 @keyframes lq-busy-in {
@@ -48,63 +57,70 @@
   }
 }
 
-.lq-busy__card {
-  width: min(var(--w-busy-card), 100%);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  padding: var(--space-7) var(--space-8);
-  border: var(--border-width) solid var(--color-border);
-  border-top: var(--indicator-width) solid var(--color-primary);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-lg);
-}
-
-.lq-busy__head {
+.lq-busyband__head {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  min-width: 0;
 }
 
-.lq-busy__icon {
+.lq-busyband__icon {
   color: var(--color-primary);
-  font-size: var(--icon-lg);
 }
 
-.lq-busy__title {
-  flex: 1 1 auto;
-  margin: 0;
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
+.lq-busyband[data-phase="stalled"] .lq-busyband__icon {
+  color: var(--color-warning-strong);
+}
+
+.lq-busyband__title {
+  white-space: nowrap;
+  font-size: var(--fs-md);
   color: var(--color-text);
 }
 
-.lq-busy__elapsed {
+.lq-busyband__step {
+  white-space: nowrap;
   color: var(--color-text-sub);
-  font-size: var(--fs-sm);
 }
 
-.lq-busy__detail {
-  overflow: hidden;
+.lq-busyband__figures {
+  margin-left: auto;
+  white-space: nowrap;
   color: var(--color-text-sub);
-  font-size: var(--fs-md);
+}
+
+.lq-busyband__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.lq-busyband__detail {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-text-sub);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.lq-busy__meter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
+.lq-busyband__message {
+  color: var(--color-text);
+  line-height: var(--lh-normal);
 }
 
-/* 段階ごとの区切りを持つバー（区切りの幅は段階の重み） */
-.lq-busy__bar {
+.lq-busyband__note {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+/* 工程ごとの区切りを持つバー（区切りの幅は工程の重み） */
+.lq-busyband__bar {
   flex: 1 1 auto;
+  min-width: var(--w-progress);
   display: flex;
   gap: var(--space-1);
-  height: var(--progress-height-lg);
+  height: var(--progress-height);
 }
 
 .lq-busy__seg {
@@ -153,15 +169,7 @@
   }
 }
 
-.lq-busy__percent {
-  min-width: var(--space-10);
-  text-align: right;
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
-  color: var(--color-primary-strong);
-}
-
-.lq-busy__steps {
+.lq-busyband__steps {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-5);
@@ -187,47 +195,67 @@
   font-weight: var(--fw-medium);
 }
 
-.lq-busy__now {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2) var(--space-5);
-  min-height: var(--h-control-xs);
-  font-size: var(--fs-md);
-  color: var(--color-text);
-}
-
-.lq-busy__now .lq-num {
-  color: var(--color-text-sub);
-  font-size: var(--fs-sm);
-}
-
-.lq-busy__stall {
+/* ---------- 上部バーの処理の要約（処理中の様子／直前の処理の結果。押すと実行履歴） ---------- */
+.lq-jobstatus {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--color-warning-soft);
-  color: var(--color-warning-strong);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-}
-
-.lq-busy__hint {
-  margin: 0;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: var(--w-jobstatus-max);
+  height: var(--h-control);
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
   color: var(--color-text-sub);
   font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
+  cursor: pointer;
 }
 
-.lq-busy__foot {
-  display: flex;
-  justify-content: flex-end;
+.lq-jobstatus:disabled {
+  cursor: default;
 }
 
-.lq-busy__foot:has(> [hidden]:only-child) {
-  display: none;
+.lq-jobstatus__text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lq-jobstatus .lq-progress {
+  flex: 0 0 auto;
+  width: var(--w-progress-sm);
+}
+
+/* 処理中は右の案内の文を隠すので、そのぶん要約を広く使う */
+.lq-jobstatus[data-kind="busy"],
+.lq-jobstatus[data-kind="warn"] {
+  max-width: var(--w-status-max);
+}
+
+.lq-jobstatus[data-kind="busy"] {
+  border-color: var(--color-info-line);
+  background: var(--color-info-soft);
+  color: var(--color-info-strong);
+}
+
+.lq-jobstatus[data-kind="warn"] {
+  border-color: var(--color-warning-line);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
+}
+
+.lq-jobstatus[data-kind="ok"] .fa-solid {
+  color: var(--color-success);
+}
+
+.lq-jobstatus[data-kind="error"] {
+  border-color: var(--color-danger-line);
+  color: var(--color-danger-strong);
+}
+
+.lq-jobstatus:not(:disabled):hover {
+  border-color: var(--color-primary);
 }
 
 /* ---------- 反映の合図 ---------- */
@@ -287,28 +315,48 @@
 }
 
 /* ---------- 通知（トースト） ---------- */
+/* 表とページ送りの間に自分の行を持つ（何も重ねない）。通知がないときは高さ 0 */
 .lq-toasts {
-  position: fixed;
-  right: var(--space-7);
-  bottom: calc(var(--h-pager) + var(--space-5));
+  display: none;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-6) 0;
+  min-width: 0;
+}
+
+.lq-toasts.has-toast {
+  display: flex;
+}
+
+.lq-toasts__list {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  width: var(--w-toast);
-  z-index: var(--z-toast);
-  pointer-events: none;
+  gap: var(--space-2);
+}
+
+/* 今の 1 件（消える途中のものを除いた最新）だけを見せる（「ほか N 件」で前の通知も広げる） */
+.lq-toasts:not(.is-expanded) .lq-toast:not(.is-current):not(.is-leaving) {
+  display: none;
+}
+
+.lq-toasts__more {
+  flex: 0 0 auto;
+  margin-bottom: var(--space-3);
 }
 
 .lq-toast {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-4);
-  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
-  border-radius: var(--radius-lg);
+  min-height: calc(var(--h-pager) - var(--space-4));
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
+  border: var(--border-width) solid var(--color-border);
   border-left: var(--indicator-width) solid var(--color-info);
+  border-radius: var(--radius-md);
   background: var(--color-surface);
-  box-shadow: var(--shadow-lg);
-  pointer-events: auto;
+  box-shadow: var(--shadow-sm);
   animation: lq-toast-in var(--dur-normal) var(--ease-out);
 }
 
@@ -330,43 +378,35 @@
 @keyframes lq-toast-out {
   to {
     opacity: 0;
-    transform: translateX(var(--shift-md));
+    transform: translateY(var(--shift-sm));
   }
 }
 
 .lq-toast__icon {
-  margin-top: var(--space-1);
   font-size: var(--icon-lg);
   color: var(--color-info);
 }
 
-.lq-toast--success {
-  border-left-color: var(--color-success);
-}
+.lq-toast--success { border-left-color: var(--color-success); }
+.lq-toast--success .lq-toast__icon { color: var(--color-success); }
+.lq-toast--warn { border-left-color: var(--color-warning); }
+.lq-toast--warn .lq-toast__icon { color: var(--color-warning); }
+.lq-toast--error { border-left-color: var(--color-danger); }
+.lq-toast--error .lq-toast__icon { color: var(--color-danger); }
 
-.lq-toast--success .lq-toast__icon {
-  color: var(--color-success);
-}
-
-.lq-toast--warn {
-  border-left-color: var(--color-warning);
-}
-
-.lq-toast--warn .lq-toast__icon {
-  color: var(--color-warning);
-}
-
-.lq-toast--error {
-  border-left-color: var(--color-danger);
-}
-
-.lq-toast--error .lq-toast__icon {
-  color: var(--color-danger);
-}
-
+/* 見出しと文を 1 続きにし、長いときは 2 行までで省略する（全文はマウスを乗せると見られる） */
 .lq-toast__body {
   flex: 1 1 auto;
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: var(--lh-tight);
+}
+
+.lq-toasts.is-expanded .lq-toast__body {
+  display: block;
 }
 
 .lq-toast__title {
@@ -374,16 +414,16 @@
 }
 
 .lq-toast__msg {
-  margin-top: var(--space-1);
+  margin-left: var(--space-4);
   font-size: var(--fs-sm);
   color: var(--color-text-sub);
   word-break: break-word;
 }
 
 .lq-toast__actions {
+  flex: 0 0 auto;
   display: flex;
   gap: var(--space-3);
-  margin-top: var(--space-4);
 }
 
 /* ---------- ポップオーバー・メニュー ---------- */
@@ -984,4 +1024,151 @@
   padding: var(--space-4);
   color: var(--color-text-sub);
   font-size: var(--fs-sm);
+}
+
+/* ---------- メニューの中の設定（表示密度など） ---------- */
+.lq-menu__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.lq-menu__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: var(--fw-medium);
+}
+
+.lq-menu__label .lq-field__hint {
+  margin-left: auto;
+  font-weight: var(--fw-regular);
+}
+
+/* ---------- 機能を探す（Ctrl+K） ---------- */
+.lq-cmd-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: var(--space-11);
+  background: var(--color-overlay);
+}
+
+.lq-cmd {
+  width: min(var(--w-cmd), calc(100vw - var(--space-8)));
+  max-height: calc(100dvh - var(--space-11) * 2);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.lq-cmd__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width) solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.lq-cmd__input {
+  flex: 1 1 auto;
+  border: 0;
+  box-shadow: none;
+  font-size: var(--fs-lg);
+}
+
+.lq-cmd__input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.lq-cmd__list {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  overflow: auto;
+}
+
+.lq-cmd__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.lq-cmd__item .fa-solid {
+  width: var(--space-6);
+  text-align: center;
+  color: var(--color-text-sub);
+}
+
+.lq-cmd__item.is-active {
+  background: var(--color-surface-selected);
+}
+
+.lq-cmd__item.is-disabled {
+  cursor: not-allowed;
+  color: var(--color-text-muted);
+}
+
+.lq-cmd__label {
+  flex: 0 1 auto;
+}
+
+.lq-cmd__reason {
+  overflow: hidden;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lq-cmd__group {
+  margin-left: auto;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  font-size: var(--fs-xs);
+  color: var(--color-text-sub);
+  white-space: nowrap;
+}
+
+.lq-cmd__empty {
+  padding: var(--space-6);
+  color: var(--color-text-muted);
+}
+
+.lq-cmd__foot {
+  padding: var(--space-3) var(--space-5);
+  border-top: var(--border-width) solid var(--color-border);
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}
+
+/* ゆったりで画面が狭いとき（1440px 以下）：タブの右のボタンはアイコンだけにし（名前はツールチップ）、
+   上部バーの直前の処理はアイコンだけにして、タブの帯と上部バーを 1 行に収める（基本設計 §3） */
+@media (max-width: 1440px) {
+  :root[data-density="comfortable"] .lq-tabbar__tools .lq-btn {
+    font-size: 0;
+    gap: 0;
+  }
+
+  :root[data-density="comfortable"] .lq-tabbar__tools .lq-btn .fa-solid {
+    font-size: var(--icon-md);
+  }
+
+  :root[data-density="comfortable"] .lq-jobstatus:not([data-kind="busy"]):not([data-kind="warn"]) .lq-jobstatus__text {
+    display: none;
+  }
 }

@@ -275,6 +275,7 @@
       this.result = null;
       this.resultSignature = null;
       this.busy = null;
+      this.lastJob = null;
       this.panel = null;
       this._ensureProfile();
     }
@@ -907,6 +908,19 @@
       return JSON.stringify([
         s ? s.id + ':' + s.version : '',
         this.profiles.enabled().map((p) => [p.id, p.condition ? p.condition.id + ':' + p.condition.version : '', QueryOps.signature(p.query),
+          Normalizer.signatureOf(this.rulesFor(p))]),
+        this.effectiveCombine(),
+        LQ.Fiscal.start()
+      ]);
+    }
+
+    /**
+     * 条件の署名（読み込んだデータの番号を含まず、開き直しても同じになる）。
+     * 実行履歴から抽出し直すとき、条件が当時から変わったかを見分けるのに使う（② は名前と行数で見る）
+     */
+    conditionSignature() {
+      return JSON.stringify([
+        this.profiles.enabled().map((p) => [p.name, p.condition ? p.condition.name + ':' + p.condition.rowCount : '', QueryOps.signature(p.query),
           Normalizer.signatureOf(this.rulesFor(p))]),
         this.effectiveCombine(),
         LQ.Fiscal.start()
