@@ -769,6 +769,13 @@
       return f.col + ' が「' + f.value + '」' + phrase;
     },
 
+    /** 省略しない文章（タグのツールチップ用。「ほか N 件」の中身まで出す） */
+    describeFull(f, isDate, ds) {
+      if (f.mode !== 'values') return RowFilter.describe(f, isDate, ds);
+      const values = f.exclude && ds ? RowFilter.keptValues(f, ds) : f.values;
+      return f.col + '：' + values.map((v) => (v === '' ? '（空欄）' : v)).join('・') + (f.exclude && !ds ? ' 以外' : '');
+    },
+
     /** 「除く値」の絞り込みで残る値（絞り込み前の行にあるその列の値のうち、除く値でないもの。多い順） */
     keptValues(f, ds) {
       const c = ds.findColumn(f.col);

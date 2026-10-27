@@ -374,8 +374,9 @@
       const info = ds.filterInfo || { items: [] };
       const tags = filters.map((f) => {
         const item = info.items.find((x) => x.id === f.id) || { ok: true };
-        return h('span', { class: 'lq-ftag' + (item.ok ? '' : ' is-off'), title: item.ok ? describe(ds, f) : item.message }, [
-          h('button', { class: 'lq-ftag__body', type: 'button', title: '「' + f.col + '」の絞り込みを直す',
+        const full = LQ.RowFilter.describeFull(f, isDateCol(ds, f.col), ds);
+        return h('span', { class: 'lq-ftag' + (item.ok ? '' : ' is-off'), title: item.ok ? full : item.message }, [
+          h('button', { class: 'lq-ftag__body', type: 'button', title: '「' + f.col + '」の絞り込みを直す（' + (item.ok ? full : item.message) + '）',
             onclick: (e) => ctx.app.columnMenu.open(e.currentTarget, role, f.col) }, [Dom.icon(item.ok ? 'filter' : 'triangle-exclamation'), describe(ds, f)]),
           h('button', { class: 'lq-ftag__x', type: 'button', title: 'この絞り込みを外す', 'aria-label': 'この絞り込みを外す', onclick: () => {
             const before = filters.slice();

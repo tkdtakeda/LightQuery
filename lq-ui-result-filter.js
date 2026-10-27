@@ -177,6 +177,10 @@
         onclick: () => this._remove() }, [Dom.icon('filter-circle-xmark'), '絞り込みを外す']);
       this.valuesBox = this._valuesBody();
       this.opDetails = this._opBody();
+      /* 照合するときは、件数が結果の行数ではなく ① の行数なので、出どころを添える（基本設計 1-6） */
+      if (!this.state.filterOnly) {
+        body.push(h('p', { class: 'lq-field__hint' }, [Dom.icon('circle-info'), ' 件数は ① 元データの行数です（ほかの列の絞り込みの後・照合の前）']));
+      }
       body.push(this.valuesBox, this.opDetails,
         h('p', { class: 'lq-field__hint lq-colmenu__where' }, [Dom.icon('link'), this.state.filterOnly
           ? '① 元データの絞り込みです。OK でその場で結果に反映します。'
@@ -256,18 +260,8 @@
 
     /** ① の列の見込み：① の使う行が何行になるか（絞り込みだけでは、そのまま結果の行数） */
     _updateSource() {
-      const problem = this._problem();
-      this.okBtn.disabled = !!problem;
-      Dom.clear(this.problem);
-      Dom.clear(this.estimate);
-      if (problem) {
-        this.problem.appendChild(UI.status('warn', problem));
-        return;
-      }
-      const kept = this.ds.countWith(this._nextFilters());
-      const text = (this.state.filterOnly ? '結果 ' : '① 使う行 ') + fmt(this.ds.rowCount) + ' 行 → ' + fmt(kept) + ' 行になります' +
-        (this._allChosen() ? '（この列では絞り込みません）' : '') + (this.state.filterOnly ? '' : '（抽出し直して確定）');
-      this.estimate.appendChild(UI.status(kept ? 'ok' : 'warn', text));
+      /* 見込みの文は ① の見出しの一覧と同じ書き方にする（同じ一覧なので） */
+      super._update();
     }
 
     _apply() {
@@ -313,7 +307,8 @@
       const tags = groups.map((g) => {
         const key = prefixOf(g.role) + g.filter.col;
         const text = (g.role === 'source' ? '① ' : '② ') + LQ.RowFilter.describe(g.filter, isDateCol(g.targets[0].ds, g.filter.col), g.targets[0].ds);
-        const title = g.targets.map((t) => t.label).join('・') + '：' + (g.ok ? text : g.message);
+        const full = LQ.RowFilter.describeFull(g.filter, isDateCol(g.targets[0].ds, g.filter.col), g.targets[0].ds);
+        const title = g.targets.map((t) => t.label).join('・') + '：' + (g.ok ? full : g.message);
         return h('span', { class: 'lq-ftag' + (g.ok ? '' : ' is-off'), title: title }, [
           h('button', { class: 'lq-ftag__body', type: 'button', title: '「' + g.filter.col + '」の絞り込みを直す（' + title + '）',
             onclick: (e) => ctx.app.resultColumnMenu.open(e.currentTarget, key) }, [Dom.icon(g.ok ? 'filter' : 'triangle-exclamation'), text]),
