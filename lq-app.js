@@ -413,7 +413,7 @@
         built = LQ.Samples.build(id);
         const file = (spec) => LQ.SourceFile.fromGrid(spec.grid, spec.name, 'sample');
         const make = (role, spec) => new LQ.Dataset(role, file(spec), {
-          isSample: true, settings: spec.settings || null, members: (spec.members || []).map(file), dedup: spec.dedup || null,
+          isSample: true, settings: spec.settings || null, members: (spec.members || []).map(file), dedup: spec.dedup || null, filters: spec.filters || [],
           unpivot: spec.unpivot ? LQ.Unpivot.clean(spec.unpivot) : null
         });
         const profiles = built.profiles.map((spec) => {
@@ -508,6 +508,7 @@
       this.exporter = new LQ.ExportActions(this);
       this.prep = new LQ.PrepActions(this);
       this.compare = new LQ.CompareActions(this);
+      this.filterOnly = new LQ.FilterOnlyActions(this);
       this._token = null;
       this._validations = new Map();
       this._tabBeforePanel = null;
@@ -625,6 +626,8 @@
       if (chartCta) return chartCta;
       const aggCta = this._sourceAggregateCta();
       if (aggCta) return aggCta;
+      /* 絞り込みだけ（照合しない作業セット）：② と抽出条件は使わず、① の絞り込み後の行を出力する */
+      if (s.filterOnly) return this.filterOnly.cta();
       const all = this.validationAll();
       if (!all.enabledCount) {
         return { id: 'review', label: '抽出条件を有効にする', icon: 'toggle-on', status: { kind: 'warn', text: 'すべての抽出条件が無効です。一覧のスイッチで有効にしてください' } };
@@ -771,6 +774,10 @@
         case 'review': this.state.openPanel('query'); break;
         case 'chooseColumns': this.state.openPanel('output'); break;
         case 'showAll': this.state.setFilter(null); break;
+        case 'reviewFilters':
+          this.state.setTab('source');
+          this.state.openPanel('source');
+          break;
         case 'setupAggregate': this.state.openPanel('aggregate'); break;
         case 'setupChart': this.state.openPanel('chart'); break;
         case 'saveChart': this.main.chart.save(); break;
@@ -1110,6 +1117,11 @@
 
     async run() {
       const s = this.state;
+      /* 絞り込みだけ：照合せず、① の前処理の後の行で結果を作り直すだけ */
+      if (s.filterOnly) {
+        if (!s.busy) this.filterOnly.build();
+        return;
+      }
       if (s.busy || !this.validationAll().ok) return;
       const token = new LQ.CancelToken();
       this._token = token;
@@ -1251,6 +1263,7 @@
     explainRow(i) {
       const view = this.main.resultView();
       if (!view) return null;
+      if (view.result.filterOnly) return this.filterOnly.explain(i);
       const s = this.state;
       const src = s.datasets.source;
       const pair = view.pairAt(i);

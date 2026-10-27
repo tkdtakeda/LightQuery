@@ -262,7 +262,9 @@
       this.icon = this.isSource ? 'table' : 'list-check';
       this.size = 'md';
       this.body = h('div', { class: 'lq-dsbody' });
-      this.el = h('div', {}, [this.body]);
+      /* 絞り込みだけ（照合なし）のときの ② の案内（使わないこと・戻し方）。② のパネルだけ */
+      this.restNote = h('div');
+      this.el = h('div', {}, [this.restNote, this.body]);
       this.f = {};
       this.chips = new ColumnChips(ctx, this.isSource ? 's:' : 'c:');
       if (!ctx.app.derivedEditor) ctx.app.derivedEditor = new LQ.DerivedEditor(ctx);
@@ -276,7 +278,16 @@
       ctx.bus.on('change', (e) => {
         if (e.topic === 'library') this.refresh(true);
       });
+      if (!this.isSource) ctx.bus.on('profiles', () => this._renderRestNote());
       this.refresh();
+      if (!this.isSource) this._renderRestNote();
+    }
+
+    _renderRestNote() {
+      Dom.clear(this.restNote);
+      if (!this.state.filterOnly) return;
+      this.restNote.appendChild(UI.note('info', '絞り込みだけ（照合なし）のため、② 照合表は使いません。読み込んだ表は残しています。',
+        h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => this.app.filterOnly.set(false) }, [Dom.icon('code-compare'), '照合して抽出に戻す'])));
     }
 
     /** パネルの見出し（② は抽出条件が複数なら、どの抽出条件の ② かを添える） */

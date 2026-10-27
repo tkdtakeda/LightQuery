@@ -49,8 +49,10 @@
       const src = s.datasets.source;
       this.ctx.toasts.show({
         type: s.result ? 'success' : 'warn', title: title,
-        message: where + 'にも同じ絞り込みを掛け、' + (s.result ? '抽出し直しました。' : '結果を消しました。右上のボタンで抽出してください。') +
-          (role === 'source' && src ? '（① 使う行 ' + fmt(src.rowCount) + ' 行）' : ''),
+        message: s.filterOnly
+          ? where + 'に掛け、結果に反映しました（' + fmt(src ? src.rowCount : 0) + ' 行）。'
+          : where + 'にも同じ絞り込みを掛け、' + (s.result ? '抽出し直しました。' : '結果を消しました。右上のボタンで抽出してください。') +
+            (role === 'source' && src ? '（① 使う行 ' + fmt(src.rowCount) + ' 行）' : ''),
         actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this._undo(role, before, key) }]
       });
     }
@@ -58,7 +60,7 @@
     async _undo(role, before, key) {
       if (this.ctx.app._blockedByBusy()) return;
       await this._run(role, before, key);
-      this.ctx.toasts.show({ type: 'success', title: '絞り込みを元に戻しました', message: this.state.result ? '抽出し直しました。' : '' });
+      this.ctx.toasts.show({ type: 'success', title: '絞り込みを元に戻しました', message: this.state.filterOnly ? '結果に反映しました。' : (this.state.result ? '抽出し直しました。' : '') });
     }
 
     async _run(role, changes, key) {
@@ -152,7 +154,9 @@
       this.opDetails = this._opBody();
       const where = this.role === 'source' ? '① 元データ' : (targets.length > 1 ? '② 照合表 ' + targets.length + ' 件（' + targets.map((t) => t.label).join('・') + '）' : targets[0].label);
       body.push(this.valuesBox, this.opDetails,
-        h('p', { class: 'lq-field__hint lq-colmenu__where' }, [Dom.icon('link'), 'OK で ' + where + ' にも同じ絞り込みを掛け、抽出し直します（結果と元データは常に同じ絞り込み）。']),
+        h('p', { class: 'lq-field__hint lq-colmenu__where' }, [Dom.icon('link'), this.state.filterOnly
+          ? 'OK で ' + where + ' に絞り込みを掛け、その場で結果に反映します（絞り込みだけ・照合なし）。'
+          : 'OK で ' + where + ' にも同じ絞り込みを掛け、抽出し直します（結果と元データは常に同じ絞り込み）。']),
         this.estimate, this.problem);
       return h('div', { class: 'lq-popover__foot' }, [clearBtn, h('span', { class: 'lq-topbar__spacer' }), this.okBtn]);
     }
@@ -248,7 +252,8 @@
      * @returns {Element|null}
      */
     render(ctx, view) {
-      if (view.result.allRows) return null;
+      if (view.result.allRows && !view.result.filterOnly) return null;
+      const redo = view.result.filterOnly ? '' : 'して抽出し直す';
       const groups = ResultFilterBar._groups(ctx.state, view);
       if (!groups.length) return null;
       const tags = groups.map((g) => {
@@ -258,13 +263,15 @@
         return h('span', { class: 'lq-ftag' + (g.ok ? '' : ' is-off'), title: title }, [
           h('button', { class: 'lq-ftag__body', type: 'button', title: '「' + g.filter.col + '」の絞り込みを直す（' + title + '）',
             onclick: (e) => ctx.app.resultColumnMenu.open(e.currentTarget, key) }, [Dom.icon(g.ok ? 'filter' : 'triangle-exclamation'), text]),
-          h('button', { class: 'lq-ftag__x', type: 'button', title: 'この絞り込みを外して抽出し直す', 'aria-label': 'この絞り込みを外して抽出し直す', onclick: () => {
+          h('button', { class: 'lq-ftag__x', type: 'button', title: 'この絞り込みを外' + (redo || 'す'), 'aria-label': 'この絞り込みを外' + (redo || 'す'), onclick: () => {
             const changes = g.targets.map((t) => ({ target: t, filters: RF.removeFrom(t.ds, g.filter.col) })).filter((c) => c.filters);
             ctx.app.resultFilter.apply(g.role, changes, '「' + g.filter.col + '」の絞り込みを外しました', key);
           } }, Dom.icon('xmark'))
         ]);
       });
-      return h('div', { class: 'lq-filterbar lq-filterbar--rows', title: '抽出の前に元の表に掛けている絞り込みです。結果の見出しを押しても同じ絞り込みを直せます。' }, [
+      return h('div', { class: 'lq-filterbar lq-filterbar--rows', title: view.result.filterOnly
+        ? '① に掛けている絞り込みです（この行が結果になります）。結果の見出しを押しても同じ絞り込みを直せます。'
+        : '抽出の前に元の表に掛けている絞り込みです。結果の見出しを押しても同じ絞り込みを直せます。' }, [
         h('span', { class: 'lq-filterbar__label' }, [Dom.icon('filter'), '元データの絞り込み']), tags
       ].flat());
     },

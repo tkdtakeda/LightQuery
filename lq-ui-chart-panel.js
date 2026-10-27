@@ -117,7 +117,8 @@
     _targetSection() {
       const s = this.state;
       const src = s.datasets.source;
-      if (!s.result) {
+      /* 絞り込みだけ（照合なし）では、抽出結果＝① の絞り込み後の行なので、対象を選ばせない */
+      if (!s.result || s.result.filterOnly) {
         return UI.section('対象', [h('div', { class: 'lq-aggtarget' }, [Dom.icon('table'), h('strong', { text: '① 元データの全行' + (src.filters && src.filters.length ? '（絞り込み後）' : '') }),
           h('span', { class: 'lq-num', text: Util.formatInt(src.rowCount) + ' 行' })])]);
       }

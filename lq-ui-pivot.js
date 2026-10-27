@@ -165,7 +165,8 @@
 
     /** 「② の行」は ② の行がひも付く抽出結果でだけ使える */
     _blockedReason() {
-      return this.target() === 'source' && Settings.usesCondRow(this.state.aggregate)
+      const noCond = this.target() === 'source' || (this.state.result && this.state.result.filterOnly);
+      return noCond && Settings.usesCondRow(this.state.aggregate)
         ? '「② の行」は ② の行がひも付く抽出結果でだけ使えます。行から「② の行」を外すか、抽出してから対象を「抽出結果」にしてください。' : null;
     }
 

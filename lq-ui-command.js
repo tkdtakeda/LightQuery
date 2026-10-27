@@ -194,6 +194,11 @@
   reg({ id: 'cta', icon: 'play', label: '次にすること（右上の青いボタン）', group: '主要動作', keywords: '抽出 出力 読み込み 実行 ちゅうしゅつ しゅつりょく',
     run: (app) => app.runCta(app.shell.topbar.cta),
     disabled: (app) => (app.cta().disabled ? '今は押せません：' + (app.cta().status ? app.cta().status.text : '') : '') });
+  reg({ id: 'flow:filterOnly', icon: 'filter', label: '絞り込みだけに切り替える（② と照合しない）', group: '抽出',
+    keywords: '照合しない 照合なし 絞り込み フィルター ② なし しぼりこみ しょうごうしない',
+    run: (app) => app.filterOnly.set(true), disabled: (app) => (app.state.filterOnly ? '今は絞り込みだけです' : busyReason(app)) });
+  reg({ id: 'flow:match', icon: 'code-compare', label: '照合して抽出に戻す', group: '抽出', keywords: '照合する ② を使う しょうごう ちゅうしゅつ',
+    run: (app) => app.filterOnly.set(false), disabled: (app) => (app.state.filterOnly ? busyReason(app) : '今は照合して抽出しています') });
   reg({ id: 'load:source', icon: 'file-import', label: '① 元データのファイルを選ぶ', group: '入力', keywords: '読み込み 差し替え 開く',
     run: (app) => app.pickFile('source'), disabled: busyReason });
   reg({ id: 'load:condition', icon: 'file-import', label: '② 照合表のファイルを選ぶ', group: '入力', keywords: '読み込み 差し替え 開く',

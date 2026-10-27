@@ -179,6 +179,24 @@
       this._summary('history', last ? LQ.JobLog.formatWhen(last.endedAt) + ' ' + LQ.JobLog.kindOf(last).label + '・' + LQ.JobLog.statusOf(last).label : '記録なし');
       this._mark('history', last && (last.status === 'failed' || last.status === 'warn')
         ? { kind: 'warn', icon: 'exclamation', title: '直前の記録：' + LQ.JobLog.statusOf(last).label } : null);
+      this._renderResting();
+    }
+
+    /**
+     * 絞り込みだけ（照合なし）のとき、使わない ② 照合表・照合ルールを薄くし、一時停止の印を付ける。
+     * 抽出条件は休止にしない（照合して抽出に戻す切替がパネルの先頭にあるため）
+     */
+    _renderResting() {
+      const resting = this.state.filterOnly;
+      const why = '絞り込みだけ（照合なし）のため使いません（抽出条件パネルの先頭で「照合して抽出」に戻せます）';
+      ['condition', 'rules'].forEach((id) => {
+        const item = this.items.get(id);
+        item.btn.classList.toggle('is-resting', resting);
+        if (!resting) return;
+        this._mark(id, { kind: 'rest', icon: 'pause', title: why });
+        this._summary(id, why);
+      });
+      if (resting) this._summary('query', '絞り込みだけ（照合なし）。抽出条件 ' + this.state.profiles.length + ' 件は使わずに残しています');
     }
 
     /** 抽出条件の印：要設定の件数（警告）／整っていれば有効な件数（複数のとき）かチェック */
@@ -186,6 +204,7 @@
       const s = this.state;
       const multi = s.profiles.length > 1;
       const started = multi || s.query.conditions.length > 0;
+      if (s.filterOnly) return { kind: 'count', icon: 'filter', title: '絞り込みだけ（照合なし）' };
       if (!s.datasets.source || !started) return multi ? { kind: 'count', text: String(s.profiles.length), title: '抽出条件 ' + s.profiles.length + ' 件' } : null;
       const all = this.app.validationAll();
       if (!all.ok && all.errorCount) return { kind: 'warn', text: String(all.errorCount), title: '要設定 ' + all.errorCount + ' 件' };

@@ -327,6 +327,7 @@
   --opacity-stale: 0.55;
   --opacity-drag: 0.45;
   --opacity-sub: 0.85;
+  --opacity-resting: 0.5;  /* 絞り込みだけのときに使わない ② 照合表・照合ルール */
 }
 
 /* 画面幅が狭い PC（1440px 以下）ではパネル幅を詰める */

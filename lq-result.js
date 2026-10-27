@@ -273,6 +273,20 @@
     };
   };
 
+  /**
+   * 「絞り込みだけ」（照合しない作業セット）の結果：① の前処理（縦に結合・縦持ち・列の追加・絞り込み・重複の削除）の後の行。
+   *   形は allRows と同じで、抽出結果として表示・出力・比較する。filterOnly で見分ける
+   * @param {LQ.Dataset} source
+   * @param {object} rules
+   */
+  BatchRunner.filterOnly = function (source, rules) {
+    const res = BatchRunner.allRows(source, rules);
+    res.id = LQ.Util.uid('flt');
+    res.filterOnly = true;
+    res.parts[0].name = '絞り込みだけ';
+    return res;
+  };
+
   LQ.BatchRunner = BatchRunner;
 })(window);
 
@@ -433,6 +447,10 @@
         def.idx = this.source.findColumn(name);
         if (def.idx < 0) Object.assign(def, { available: false, reason: '① に列がありません' });
         return def;
+      }
+      /* 絞り込みだけ：② の行はひも付かない。照合していたときの ② の列・根拠の列は案内に出さずに外す */
+      if (this.result.filterOnly && key !== 'm:srcRow') {
+        return Object.assign(def, { available: false, reason: '絞り込みだけ（照合なし）では ② の列は使いません', silent: true });
       }
       if (kind === 'condition') {
         def.idxByPart = this.parts.map((p) => (this._linksCondition(p) ? p.condition.findColumn(name) : -1));

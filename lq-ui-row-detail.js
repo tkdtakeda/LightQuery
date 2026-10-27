@@ -177,6 +177,10 @@
       this.prevBtn.disabled = i <= 0;
       this.nextBtn.disabled = i >= view.length - 1;
       this.title.textContent = '結果 ' + fmt(i + 1) + ' 行目の判定の根拠';
+      if (info.filterOnly) {
+        this._renderFilterOnly(info);
+        return;
+      }
       const notes = [];
       if (info.stale) notes.push(UI.note('warn', 'この結果の後に条件が変更されています。以下は現在の条件での判定です。'));
       const assigned = info.cards.find((c) => c.status === 'assigned');
@@ -191,6 +195,33 @@
       const cards = info.cards.map((c) => this._card(c, info, openAll || c.status === 'assigned'));
       Dom.clear(this.body);
       Dom.append(this.body, [headline, where].concat(notes, cards));
+      LQ.Flash.el(headline);
+    }
+
+    /** 絞り込みだけ（照合なし）：照合はしていないので、この行が残った理由（掛けている絞り込み・重複の削除）だけを並べる */
+    _renderFilterOnly(info) {
+      const headline = h('div', { class: 'lq-detail__verdict is-ok' }, [Dom.icon('filter'), h('strong', { text: '絞り込みだけ（照合なし）で残った行' })]);
+      const where = h('div', { class: 'lq-sub lq-num', text: '① ' + fmt(info.sourceRowNumber) + ' 行目' });
+      const body = [];
+      if (!info.items.length) {
+        body.push(h('p', { class: 'lq-detail__reason', text: '① に絞り込みを掛けていないため、すべての行が結果に入ります。' }));
+      } else {
+        body.push(h('p', { class: 'lq-detail__reason', text: '① に掛けている次の条件をすべて満たしたため、結果に残りました。' }));
+        body.push(h('ul', { class: 'lq-explain' }, info.items.map((it) => h('li', { class: 'lq-explain__item lq-explain__item--' + (it.ok ? 'true' : 'ignored') + ' is-key' }, [
+          UI.badge('src', '①'),
+          h('span', { class: 'lq-explain__state' }, [Dom.icon(it.ok ? 'circle-check' : 'circle-minus'), it.ok ? '満たす' : '掛かっていない']),
+          h('span', { class: 'lq-explain__text' }, it.kind === 'filter'
+            ? [it.text + (it.ok ? '（この行の「' + it.col + '」は「' : ''), it.ok ? h('span', { class: 'lq-explain__value', text: it.value }) : null, it.ok ? '」）' : '：' + it.note]
+            : [it.text])
+        ]))));
+      }
+      if (info.prep) body.push(h('p', { class: 'lq-sub', text: '処理の流れ：' + info.prep }));
+      const card = h('details', { class: 'lq-detail__card is-assigned', open: true }, [
+        h('summary', { class: 'lq-detail__summary' }, [h('span', { class: 'lq-detail__name', text: '① の絞り込み' })]),
+        h('div', { class: 'lq-stack' }, body)
+      ]);
+      Dom.clear(this.body);
+      Dom.append(this.body, [headline, where, card]);
       LQ.Flash.el(headline);
     }
 

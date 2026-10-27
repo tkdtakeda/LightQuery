@@ -14,6 +14,11 @@
 
   const TABLE_STEP = { id: 'table', label: '表の準備', weight: 1 };
 
+  /** 比べられる結果か：抽出結果と、絞り込みだけの結果（ピボット・グラフ用の「① の全行」は比べない） */
+  function comparable(view) {
+    return !view.result.allRows || !!view.result.filterOnly;
+  }
+
   class CompareActions {
     constructor(app) {
       this.app = app;
@@ -22,6 +27,8 @@
       /** 抽出のたびに覚える結果：latest＝今の結果／previous＝その 1 つ前（「直前の抽出結果」） */
       this.latest = null;
       this.previous = null;
+      /** 絞り込みだけで今の結果を作った ① の id（同じ ① の絞り込み直しは latest を上書きする） */
+      this._latestKey = null;
       /** 比べている基準と行を見分ける列（null なら比べていない） */
       this.base = null;
       this.key = null;
@@ -37,17 +44,21 @@
     /**
      * 抽出が終わったときに呼ぶ：今の結果を覚え、それまでの結果を「直前の抽出結果」にする。
      * 今の結果は開いている作業セットに保存する（サンプル表示中は覚えない：自分の「直前」がサンプルにならないように）
+     * @param {{replaceKey?:string}} [opts] replaceKey：絞り込みだけで使う ① の id。同じ ① の絞り込み直しは「今の結果」を上書きし、
+     *        「直前の抽出結果」は前の ① の最後の結果のまま残す（絞り込みを少し変えるたびに基準が入れ替わらないように）
      */
-    remember() {
+    remember(opts) {
       if (this.state.hasSample()) return;
       const view = this.app.main.resultView();
-      if (!view || view.result.allRows) return;
+      if (!view || !comparable(view)) return;
       const defs = view.resolveColumns(this.state.output.columns).filter((d) => d.available);
       if (!defs.length) return;
       const d = new Date();
       const when = (d.getMonth() + 1) + '/' + d.getDate() + ' ' + Util.pad2(d.getHours()) + ':' + Util.pad2(d.getMinutes());
-      const table = LQ.CompareTable.fromView(view, defs, '抽出結果（' + when + '）');
-      this.previous = this.latest;
+      const table = LQ.CompareTable.fromView(view, defs, (view.result.filterOnly ? '絞り込みの結果（' : '抽出結果（') + when + '）');
+      const key = opts && opts.replaceKey ? opts.replaceKey : null;
+      if (!key || key !== this._latestKey) this.previous = this.latest;
+      this._latestKey = key;
       this.latest = table;
       if (this.app.worksets) this.app.worksets.saveResult(table);
       this._changed();
@@ -57,6 +68,7 @@
     useSaved(table) {
       this.latest = table && Array.isArray(table.rows) ? table : null;
       this.previous = null;
+      this._latestKey = null;
       this._changed();
     }
 
@@ -74,7 +86,7 @@
     /** 今の抽出結果の表（すべての行・今の出力列） */
     currentTable() {
       const view = this.app.main.resultView();
-      if (!view || view.result.allRows) return null;
+      if (!view || !comparable(view)) return null;
       const defs = view.resolveColumns(this.state.output.columns).filter((d) => d.available);
       return defs.length ? LQ.CompareTable.fromView(view, defs, '今の抽出結果') : null;
     }
@@ -133,7 +145,7 @@
     result() {
       if (!this.base) return null;
       const view = this.app.main.resultView();
-      if (!view || view.result.allRows) return null;
+      if (!view || !comparable(view)) return null;
       const sig = view.result.id + '|' + JSON.stringify(this.state.output.columns) + '|' + this.key;
       if (this._memo && this._memo.sig === sig && this._memo.base === this.base) return this._memo.res;
       const cur = this.currentTable();

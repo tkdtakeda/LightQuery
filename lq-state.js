@@ -235,9 +235,13 @@
     return Util.clamp(isFinite(v) && v > 0 ? v : DEFAULT_PAGE_SIZE, 1, PAGE_SIZE_MAX);
   }
 
+  /**
+   * 抽出のしかた（作業セットごと）。mode・includeUnmatched：抽出条件の振り分け／
+   * filterOnly：照合しないで ① の前処理（絞り込みなど）の後の行だけを結果にする（② と抽出条件は使わずに残す）
+   */
   function cleanCombine(value) {
     const v = value || {};
-    return { mode: v.mode === 'independent' ? 'independent' : 'assign', includeUnmatched: !!v.includeUnmatched };
+    return { mode: v.mode === 'independent' ? 'independent' : 'assign', includeUnmatched: !!v.includeUnmatched, filterOnly: !!v.filterOnly };
   }
 
   class AppState {
@@ -459,7 +463,12 @@
 
     /** 実行に使う組み合わせの設定（抽出条件が 1 つのときは振り分けの設定を使わない） */
     effectiveCombine() {
-      return this.profiles.length > 1 ? Util.clone(this.combine) : cleanCombine(null);
+      return this.profiles.length > 1 ? Util.clone(this.combine) : cleanCombine({ filterOnly: this.combine.filterOnly });
+    }
+
+    /** 照合しないで「絞り込みだけ」の作業セットか */
+    get filterOnly() {
+      return !!this.combine.filterOnly;
     }
 
     _ensureProfile() {
@@ -565,9 +574,15 @@
     /** patch：{mode:'assign'|'independent', includeUnmatched:boolean} */
     setCombine(patch) {
       const next = cleanCombine(Object.assign({}, this.combine, patch));
-      if (next.mode === this.combine.mode && next.includeUnmatched === this.combine.includeUnmatched) return;
+      if (next.mode === this.combine.mode && next.includeUnmatched === this.combine.includeUnmatched && next.filterOnly === this.combine.filterOnly) return;
+      const flowChanged = next.filterOnly !== this.combine.filterOnly;
       this.combine = next;
-      this._emit('profiles', { combine: true });
+      /* 照合する／しないが変わったら、今の結果は別の流れのものになるため消す（絞り込みだけなら、すぐに作り直される） */
+      if (flowChanged) {
+        this.view.filter = null;
+        this._clearResult();
+      }
+      this._emit('profiles', { combine: true, filterOnly: flowChanged });
     }
 
     /** 一覧をまとめて差し替える（JSON の置き換え・サンプル・全消去） */
@@ -905,6 +920,8 @@
      */
     querySignature() {
       const s = this.datasets.source;
+      /* 絞り込みだけ：結果は ① の前処理の後の行だけで決まる（抽出条件・② は使わない） */
+      if (this.filterOnly) return JSON.stringify([s ? s.id + ':' + s.version : '', 'filterOnly']);
       return JSON.stringify([
         s ? s.id + ':' + s.version : '',
         this.profiles.enabled().map((p) => [p.id, p.condition ? p.condition.id + ':' + p.condition.version : '', QueryOps.signature(p.query),
@@ -919,6 +936,7 @@
      * 実行履歴から抽出し直すとき、条件が当時から変わったかを見分けるのに使う（② は名前と行数で見る）
      */
     conditionSignature() {
+      if (this.filterOnly) return JSON.stringify(['filterOnly']);
       return JSON.stringify([
         this.profiles.enabled().map((p) => [p.name, p.condition ? p.condition.name + ':' + p.condition.rowCount : '', QueryOps.signature(p.query),
           Normalizer.signatureOf(this.rulesFor(p))]),

@@ -461,6 +461,108 @@ check('前回との違い：直前の抽出結果との比較・保存して開�
   }
 });
 
+check('絞り込みだけ：切り替え（画面のボタン）・その場で反映・0 行・照合に戻す・元に戻す・出力の記録・根拠', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.evaluate(PAGE_HELPERS);
+    await page.evaluate(async () => {
+      await LQ.app.loadFile('source', __csv('受注番号,地域,金額\nA1,東京,100\nA2,大阪,200\nA3,東京,300\nA4,福岡,400\n', 'm.csv'));
+      LQ.app.state.setTab('result');
+    });
+    /* 照合の流れでは ② を読み込むよう案内し、「あと少し」の画面に切り替えの入口がある */
+    eq(await page.evaluate(() => LQ.app.cta().id), 'loadCondition', '切り替える前は照合の流れ');
+    await page.click('.lq-empty__links .lq-btn >> text=絞り込みだけに切り替える');
+    const r1 = await page.evaluate(() => {
+      const A = LQ.app;
+      return { on: A.state.filterOnly, rows: A.state.result.length, cta: A.cta().label, status: A.cta().status.text,
+        tag: !!document.querySelector('.lq-mode-tag'), rest: document.querySelector('.lq-rail__item[data-role="condition"]').classList.contains('is-resting') };
+    });
+    eq(r1, { on: true, rows: 4, cta: '4 行を出力する', status: '絞り込みだけ（照合なし）：全行（絞り込みなし）', tag: true, rest: true }, '切り替えるとすぐ ① の全行が結果になる');
+    /* 結果の見出しの一覧で「東京」以外を外す → 抽出し直しなしで反映 */
+    await page.click('th[data-key="s:地域"]');
+    await page.evaluate(() => {
+      document.querySelectorAll('.lq-popover .lq-filter__values .lq-filter__value').forEach((label) => {
+        if (label.querySelector('.lq-filter__label').textContent !== '東京') label.querySelector('input').click();
+      });
+    });
+    await page.click('.lq-popover .lq-popover__foot .lq-btn--primary');
+    await page.waitForFunction(() => LQ.app.state.result && LQ.app.state.result.length === 2);
+    const r2 = await page.evaluate(() => {
+      const A = LQ.app;
+      const meta = A.exporter.metaLines(A.exporter.prepare({})).map((l) => l.join('：'));
+      A.rowDetail.open(0);
+      const detail = document.querySelector('#lqDetail').textContent;
+      A.rowDetail.close();
+      return { cta: A.cta().label, src: A.state.datasets.source.rowCount, stale: A.state.isStale(),
+        meta: meta.some((t) => t.indexOf('照合なし（絞り込みだけ）') >= 0) && meta.some((t) => t.indexOf('地域') >= 0),
+        detail: detail.indexOf('絞り込みだけ（照合なし）で残った行') >= 0 && detail.indexOf('東京') >= 0 };
+    });
+    eq(r2, { cta: '2 行を出力する', src: 2, stale: false, meta: true, detail: true }, '絞り込みは ① に掛かり、その場で結果・主要動作・記録・根拠に反映');
+    /* 0 行：主要動作は「① の絞り込みを見直す」 */
+    const r3 = await page.evaluate(async () => {
+      const S = LQ.app.state;
+      S.setFilters('source', S.datasets.source.filters.concat([{ id: 'x0', col: '金額', mode: 'op', op: 'gte', value: '99999', value2: '' }]));
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const empty = document.querySelector('.lq-empty__title');
+      return { id: LQ.app.cta().id, empty: !!empty && empty.textContent.indexOf('0 行') >= 0 };
+    });
+    eq(r3, { id: 'reviewFilters', empty: true }, '0 行のときは絞り込みを見直す');
+    /* 照合して抽出に戻す → 元に戻す */
+    await page.click('.lq-summary__actions .lq-btn >> text=照合して抽出に戻す');
+    const back = await page.evaluate(() => [LQ.app.state.filterOnly, !!LQ.app.state.result, LQ.app.cta().id]);
+    eq(back, [false, false, 'loadCondition'], '照合に戻すと結果を消して ② を案内する');
+    await page.locator('#lqToasts .lq-btn:has-text("元に戻す") >> visible=true').first().click();
+    const again = await page.evaluate(() => [LQ.app.state.filterOnly, LQ.app.state.result.length, LQ.app.cta().id]);
+    eq(again, [true, 0, 'reviewFilters'], '通知の「元に戻す」で絞り込みだけに戻る');
+  });
+});
+
+check('絞り込みだけ：作業セットに保存して開き直しても残り、① を差し替えると前の ① の結果と比べられる', async (browser) => {
+  const context = await browser.newContext({ viewport: { width: 1500, height: 900 } });
+  try {
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(PAGE_URL);
+    await page.waitForTimeout(800);
+    await page.evaluate(PAGE_HELPERS);
+    await page.evaluate(async () => {
+      const A = LQ.app;
+      A.manual.close();
+      await A.loadFile('source', __csv('受注番号,地域,金額\nA1,東京,100\nA2,大阪,200\nA3,東京,300\n', 'apr.csv'));
+      A.filterOnly.set(true);
+      const S = A.state;
+      S.setFilters('source', [{ id: 'f1', col: '地域', mode: 'values', values: ['東京'] }]);
+      S.setFilters('source', [{ id: 'f1', col: '地域', mode: 'values', values: ['東京', '大阪'] }]);
+      S.setFilters('source', [{ id: 'f1', col: '地域', mode: 'values', values: ['東京'] }]);
+      await A.worksets.flush();
+    });
+    await page.waitForTimeout(500);
+    await page.reload();
+    await page.waitForTimeout(1200);
+    await page.evaluate(PAGE_HELPERS);
+    const r = await page.evaluate(async () => {
+      const A = LQ.app;
+      A.manual.close();
+      const kept = A.state.filterOnly;
+      const saved = A.compare.latest ? A.compare.latest.rows.length : -1;
+      await A.loadFile('source', __csv('受注番号,地域,金額\nA1,東京,100\nA3,東京,350\nA5,東京,500\nA6,大阪,600\n', 'may.csv'));
+      const prev = A.compare.previous;
+      A.compare.start(prev, '受注番号');
+      const res = A.compare.result();
+      return { kept: kept, saved: saved, rows: A.state.result.length, prevRows: prev ? prev.rows.length : -1,
+        counts: [res.added.length, res.removed.length, res.changed.length, res.same], cta: A.cta().label };
+    });
+    eq(r.kept, true, '開き直しても絞り込みだけのまま');
+    eq(r.saved, 2, '絞り込みを変えるたびではなく、最後の結果を覚える');
+    eq([r.rows, r.prevRows], [3, 2], '差し替えた ① にも絞り込みを掛け直し、前の ① の結果が「直前の結果」');
+    eq(r.counts, [1, 0, 1, 1], '増えた（A5）・消えた・変わった（A3）・同じ（A1）');
+    eq(r.cta, '3 行を出力する', '主要動作');
+    if (errors.length) throw new CheckError('ページでエラー：' + errors.join(' / '));
+  } finally {
+    await context.close();
+  }
+});
+
 check('記憶：重複の削除の掛け直し・作業セットへの保存（②）', async (browser) => {
   await withPage(browser, async (page) => {
     await page.evaluate(PAGE_HELPERS);

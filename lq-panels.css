@@ -1380,3 +1380,10 @@
   align-items: center;
   gap: var(--space-3) var(--space-4);
 }
+
+/* ── 抽出条件パネル：絞り込みだけのとき使わない部分（薄くし、操作できない。理由は上の案内） ── */
+.lq-flowrest.is-resting {
+  opacity: var(--opacity-resting);
+  pointer-events: none;
+  user-select: none;
+}

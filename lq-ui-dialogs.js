@@ -363,6 +363,10 @@
       const res = this.state.result;
       const view = this.app.main.resultView();
       if (!res || !view) return;
+      if (res.filterOnly) {
+        this._filterOnlyDetails(anchor, res);
+        return;
+      }
       const st = res.stats;
       const multi = res.parts.length > 1;
       const mode = LQ.BatchRunner.COMBINE_MODES.find((m) => m.id === st.mode);
@@ -382,6 +386,22 @@
         h('div', { class: 'lq-popover__body' }, [h('div', { class: 'lq-stack' }, blocks.concat([
           h('table', { class: 'lq-grid lq-grid--kv' }, h('tbody', {}, rows.map((r) => h('tr', {}, [h('th', { text: r[0] }), h('td', { text: r[1] })]))))
         ]))])
+      ], { key: 'details', size: 'lg', placement: 'bottom-end' });
+    }
+
+    /** 絞り込みだけ（照合なし）の内容：照合しないこと・① の前処理・掛けている絞り込み・結果の行数 */
+    _filterOnlyDetails(anchor, res) {
+      const src = this.state.datasets.source;
+      const rows = [
+        ['照合', '照合なし（絞り込みだけ）：② 照合表と抽出条件は使いません'],
+        ['① 元データ', res.snapshot.sourceName + '（読み込み ' + fmt(src ? LQ.PrepFlow.steps(src)[0].rows : res.stats.sourceRows) + ' 行）'],
+        ['① の前処理', res.snapshot.sourcePrep || 'なし（全行）']
+      ];
+      (src && src.filters ? src.filters : []).forEach((f, i) => rows.push([i === 0 ? '絞り込み' : '', LQ.RowFilter.describe(f, LQ.DateColumns ? LQ.DateColumns.isDate(src, f.col) : false)]));
+      rows.push(['結果', fmt(res.length) + ' 行']);
+      this.pop.open(anchor, [
+        this._head('magnifying-glass', '抽出の内容'),
+        h('div', { class: 'lq-popover__body' }, [h('table', { class: 'lq-grid lq-grid--kv' }, h('tbody', {}, rows.map((r) => h('tr', {}, [h('th', { text: r[0] }), h('td', { text: r[1] })]))))])
       ], { key: 'details', size: 'lg', placement: 'bottom-end' });
     }
 

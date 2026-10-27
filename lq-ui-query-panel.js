@@ -363,7 +363,9 @@
       this._profileId = null;
       this.list = new LQ.ProfileListView(ctx);
       this.el = h('div');
-      Dom.append(this.el, [this.list.el, this._buildHead(), this._buildConditions(), this._buildLogic(), this._buildJoin(), this._buildRules(), this._buildMatch()]);
+      /* 先頭に「照合するか」の切替。絞り込みだけのときは、その下（抽出条件の一覧と編集欄）を薄くして操作できなくする */
+      this.rest = h('div', { class: 'lq-flowrest' }, [this.list.el, this._buildHead(), this._buildConditions(), this._buildLogic(), this._buildJoin(), this._buildRules(), this._buildMatch()]);
+      Dom.append(this.el, [this._buildFlow(), this.rest]);
       ctx.bus.on('query', (d) => this.update(d));
       ['datasets', 'profiles', 'store', 'rules', 'output'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
       ctx.bus.on('focus-condition', (d) => this._focusCondition(d.id, d.field));
@@ -382,6 +384,29 @@
     }
 
     /* ---------------- 組み立て ---------------- */
+
+    /** 照合するか（作業セットごと）：照合して抽出／絞り込みだけ。切り替えは元に戻せる */
+    _buildFlow() {
+      this.flowSeg = new LQ.Segmented([
+        { value: false, label: '照合して抽出', icon: 'code-compare', title: '① の各行を ② 照合表と照らし合わせ、条件に一致した行を取り出します' },
+        { value: true, label: '絞り込みだけ', icon: 'filter', title: '② と抽出条件を使わず、① の見出しで絞り込んだ行をそのまま結果にします（抽出条件は消さずに残します）' }
+      ], this.state.filterOnly, (v) => this.app.filterOnly.set(v), 'lq-seg--block');
+      this.flowNote = h('div');
+      return h('section', { class: 'lq-section' }, [UI.field('照合するか（この作業セット）', this.flowSeg.el), this.flowNote]);
+    }
+
+    _renderFlow() {
+      const on = this.state.filterOnly;
+      this.flowSeg.set(on);
+      Dom.clear(this.flowNote);
+      if (on) {
+        this.flowNote.appendChild(UI.note('info', '絞り込みだけのため、下の抽出条件と ② 照合表は使いません（消さずに残しています）。' +
+          '① の見出しの一覧か、左の「①元データ」で絞り込んだ行が、そのまま抽出結果になります。'));
+      }
+      this.rest.classList.toggle('is-resting', on);
+      this.rest.inert = on;
+      this.rest.setAttribute('aria-disabled', on ? 'true' : 'false');
+    }
 
     _buildHead() {
       this.rankBadge = h('span', { class: 'lq-badge lq-badge--rank', title: '優先順位（上の一覧で変更できます）' });
@@ -530,6 +555,7 @@
     update(detail) {
       const d = detail || {};
       const s = this.state;
+      this._renderFlow();
       const p = s.activeProfile;
       const q = p.query;
       const switched = p.id !== this._profileId;
