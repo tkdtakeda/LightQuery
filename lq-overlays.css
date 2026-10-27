@@ -887,10 +887,15 @@
   border-radius: var(--radius-md);
 }
 
-/* 絞り込みだけを選んでいるときは、照合していないことが一目で分かるよう塗りを強める（文字とアイコンも添える） */
+/* 選んでいる側は色だけでなく、白地＋影（.lq-seg と同じ）＋太字で示す（基本設計 1-3） */
 .lq-flowswitch .lq-seg__item.is-active {
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
+  font-weight: var(--fw-bold);
+}
+
+/* 絞り込みだけを選んでいるときは、照合していないことが一目で分かるよう塗りを強める（文字とアイコンも添える） */
+.lq-flowswitch.is-filter .lq-seg__item.is-active {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
 }
 
 /* ---------- 作業セット（上部バーのボタンと一覧の小窓） ---------- */

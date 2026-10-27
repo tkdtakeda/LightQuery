@@ -236,6 +236,7 @@
       const s = this.state;
       const prev = this.seg.value;
       this.seg.set(s.filterOnly);
+      this.el.classList.toggle('is-filter', s.filterOnly);
       /* 処理中は結果とデータの対応が崩れるため止め、理由を出す（基本設計 1-4・1-18） */
       this.seg.setDisabled(!!s.busy);
       this.el.title = s.busy ? '処理中のため切り替えられません' : '照合するか（この作業セットの設定）：' + (s.filterOnly ? '絞り込みだけ' : '照合して抽出');
