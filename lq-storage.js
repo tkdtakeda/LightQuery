@@ -43,7 +43,7 @@
 
   function cleanCombine(combine) {
     if (!combine || typeof combine !== 'object') return null;
-    return { mode: combine.mode === 'independent' ? 'independent' : 'assign', includeUnmatched: !!combine.includeUnmatched };
+    return { mode: combine.mode === 'independent' ? 'independent' : 'assign', includeUnmatched: !!combine.includeUnmatched, filterOnly: !!combine.filterOnly };
   }
 
   function cleanOutput(output) {

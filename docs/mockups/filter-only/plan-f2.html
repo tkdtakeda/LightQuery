@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 F2 主要動作の分岐</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="../mock-common.css">
+<link rel="stylesheet" href="fo-shell.css">
+</head>
+<body>
+<script src="../mock-common.js"></script>
+<script src="fo-shell.js"></script>
+<script>
+/* 案 F2：設定を増やさず、主要動作の ▾ に「照合せずに ① の絞り込み結果を出力する」を置く（その場限りの操作） */
+FO.boot([['loaded', '① 読み込み直後'], ['menu', '▾ を開いた'], ['filtered', '絞り込み結果を出力']], (st) => {
+  const note = '照合しないのは「たまにある別の出口」と考え、設定を増やさずに主要動作の脇の ▾ から選ばせれば、普段の流れを一切変えずに済む';
+  const cta = (label, why) => '<div class="cta-row"><button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-import"></i>' + label + '</button>' +
+    '<button class="btn btn--primary btn--lg" style="padding:0 10px" title="ほかの進め方"><i class="fa-solid fa-caret-down"></i></button></div><span class="cta-why">' + why + '</span>';
+  if (st !== 'filtered') {
+    return { planNote: note, tab: 'src', filtered: true, cta: cta('② 照合表を読み込む', '固定値だけの条件なら ② は不要です'), info: FO.FILTERS, summary: '<b>① 売上帳票.xlsx</b><span class="sub">30 行中 18 行（絞り込み後）</span>',
+      overlay: st === 'menu' ? '<div class="splitmenu"><div><i class="fa-solid fa-filter"></i> 照合せずに ① の絞り込み結果を出力する（18 行）</div><div class="muted"><i class="fa-solid fa-plus"></i> 固定値の条件を追加する</div></div>' : '' };
+  }
+  return { planNote: note, tab: 'src', filtered: true, cta: cta('② 照合表を読み込む', '出力しました：① の絞り込み結果 18 行'), info: FO.FILTERS,
+    summary: '<b>① 売上帳票.xlsx</b><span class="sub">30 行中 18 行（絞り込み後）</span><span class="badge badge--ok"><i class="fa-solid fa-circle-check"></i>18 行を出力しました</span>' };
+});
+</script>
+</body>
+</html>

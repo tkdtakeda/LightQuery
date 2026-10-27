@@ -630,6 +630,36 @@
       }
     },
     {
+      id: 'filteronly',
+      icon: 'filter',
+      title: '照合しないで ① を絞り込んで出力する（絞り込みだけ）',
+      desc: '② 照合表を使わない作業セットです（抽出条件パネルの先頭が「絞り込みだけ」）。① の受注に「地域：東京・大阪」「金額 30,000 以上」の絞り込みを掛けた行が、そのまま抽出結果になります。見出しの一覧で絞り込みを変えると、その場で結果と右上の「○ 行を出力する」が変わります。「前回との違い」は、サンプルの先月の出力と受注番号で比べています。',
+      tags: ['絞り込みだけ', '照合なし', '② なし', '前回との違い'],
+      build() {
+        const grid = orders(2580);
+        const at = (name) => ORDER_HEADER.indexOf(name);
+        const cols = ['受注番号', '受注日', '顧客名', '地域', '商品名', '金額'];
+        const pick = cols.map(at);
+        const amount = cols.indexOf('金額');
+        /* 先月の出力：今月の絞り込み結果から 5 行を除き（→ 増えた行）、3 行を足し（→ 消えた行）、4 行の金額を変える（→ 変わった行） */
+        const kept = grid.slice(1).filter((r) => (r[at('地域')] === '東京' || r[at('地域')] === '大阪') && Number(r[at('金額')]) >= 30000)
+          .map((r) => pick.map((k) => r[k]));
+        const last = kept.slice(0, Math.max(0, kept.length - 5)).map((r, i) => (i % 7 === 2 && i < 28 ? r.map((v, j) => (j === amount ? String(Number(v) + 2000) : v)) : r));
+        for (let i = 0; i < 3; i++) last.push(['OD-8' + String(80001 + i), '2025/09/1' + i, '（先月の受注）', '東京', '（先月の商品）', String(40000 + 1000 * i)]);
+        return {
+          source: { name: ORDERS_NAME, grid: grid, filters: [
+            { id: 'smp-flt-region', col: '地域', mode: 'values', values: ['東京', '大阪'] },
+            { id: 'smp-flt-amount', col: '金額', mode: 'op', op: 'gte', value: '30000', value2: '' }
+          ] },
+          profiles: [],
+          combine: { mode: 'assign', includeUnmatched: false, filterOnly: true },
+          output: cols.map((c) => 's:' + c),
+          compare: { name: 'サンプル_先月の出力.xlsx', grid: [cols].concat(last), key: '受注番号' },
+          tab: 'result'
+        };
+      }
+    },
+    {
       id: 'unpivot',
       icon: 'arrows-turn-to-dots',
       title: '前処理：月が横に並んだ表を縦持ちにして月ごとに集計',
@@ -753,6 +783,7 @@
   /* サンプルの一覧の見出し（目的ごと）。ここにない id は「その他」に入る */
   const GROUPS = [
     { label: '基本の抽出', icon: 'play', ids: ['idlist', 'threshold', 'exclude', 'logic', 'report', 'ngword'] },
+    { label: '絞り込みだけ（② と照合しない）', icon: 'filter', ids: ['filteronly'] },
     { label: '比べ方の書き方（ワイルドカード・比較演算子・日付・表記ゆれ・正規表現）', icon: 'equals', ids: ['wildcard', 'criteria', 'dates', 'variants'] },
     { label: '複数の抽出条件', icon: 'arrow-down-1-9', ids: ['priority', 'independent', 'rules'] },
     { label: 'ピボット', icon: 'table-cells', ids: ['aggregate', 'condagg', 'pivot'] },
@@ -785,7 +816,7 @@
       return SAMPLES.find((s) => s.id === id) || null;
     },
 
-    /** @returns {{id, title, source:{name,grid,settings?,members?:Array<{name,grid}>,dedup?,unpivot?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[], compare?:{name, grid, key}}} */
+    /** @returns {{id, title, source:{name,grid,settings?,members?:Array<{name,grid}>,dedup?,unpivot?,filters?}, profiles:Array<{name, condition:{name,grid,settings?}|null, query, rules?}>, combine?, output:string[], compare?:{name, grid, key}}} */
     build(id) {
       const sample = Samples.get(id);
       if (!sample) throw new Error('サンプルが見つかりません');

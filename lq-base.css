@@ -443,6 +443,18 @@ ol {
   color: var(--color-primary-strong);
 }
 
+/* 絞り込みだけ（照合なし）で使わない機能：薄くし、右上に一時停止の印（意味はツールチップと印の title） */
+.lq-rail__item.is-resting > .fa-solid,
+.lq-rail__item.is-resting > .lq-rail__label {
+  opacity: var(--opacity-resting);
+}
+
+.lq-rail__mark--rest {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
 @charset "UTF-8";
 /* =========================================================================
  * ── 部品 ──

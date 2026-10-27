@@ -216,6 +216,24 @@
   color: var(--color-warning);
 }
 
+/* 絞り込みだけ（照合なし）の札：照合した結果と見分ける（アイコン＋文字＋色） */
+.lq-mode-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+.lq-tab.is-resting {
+  opacity: var(--opacity-resting);
+}
+
 .lq-summary__item {
   display: inline-flex;
   align-items: center;

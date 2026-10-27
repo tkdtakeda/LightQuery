@@ -213,5 +213,37 @@
     }
   }
 
+  /* ---------------------------------------------------------------------
+   * ── 照合するかの切替 ──
+   * FlowSwitch：上部バーの作業セット名の右に「照合して抽出｜絞り込みだけ」。作業セットごとの設定なので、セット名の隣に置く
+   *   （どのタブ・パネルでも見え、位置が変わらない）。切り替えは LQ.FilterOnlyActions（元に戻せる通知つき）
+   * ------------------------------------------------------------------- */
+  class FlowSwitch {
+    constructor(ctx, topbar, after) {
+      this.ctx = ctx;
+      this.state = ctx.state;
+      this.seg = new LQ.Segmented([
+        { value: false, label: '照合して抽出', icon: 'code-compare', title: '① の各行を ② 照合表と照らし合わせ、条件に一致した行を取り出します' },
+        { value: true, label: '絞り込みだけ', icon: 'filter', title: '② と抽出条件を使わず、① を絞り込んだ行をそのまま抽出結果にします（抽出条件は消さずに残します）' }
+      ], this.state.filterOnly, (v) => ctx.app.filterOnly.set(v), 'lq-seg--top');
+      this.el = h('div', { class: 'lq-flowswitch', role: 'group', 'aria-label': '照合するか（この作業セット）' }, this.seg.el);
+      topbar.insertBefore(this.el, after.nextSibling);
+      ctx.bus.on('change', () => this.render());
+      this.render();
+    }
+
+    render() {
+      const s = this.state;
+      const prev = this.seg.value;
+      this.seg.set(s.filterOnly);
+      this.el.classList.toggle('is-filter', s.filterOnly);
+      /* 処理中は結果とデータの対応が崩れるため止め、理由を出す（基本設計 1-4・1-18） */
+      this.seg.setDisabled(!!s.busy);
+      this.el.title = s.busy ? '処理中のため切り替えられません' : '照合するか（この作業セットの設定）：' + (s.filterOnly ? '絞り込みだけ' : '照合して抽出');
+      if (prev !== s.filterOnly) LQ.Flash.el(this.el);
+    }
+  }
+
   LQ.WorksetButton = WorksetButton;
+  LQ.FlowSwitch = FlowSwitch;
 })(window);

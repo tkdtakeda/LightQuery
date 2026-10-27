@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 F5 自動で切り替える</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="../mock-common.css">
+<link rel="stylesheet" href="fo-shell.css">
+</head>
+<body>
+<script src="../mock-common.js"></script>
+<script src="fo-shell.js"></script>
+<script>
+/* 案 F5：照合の条件が 1 件もなければ、自動で「① の絞り込み結果」を抽出結果として出す（何も選ばせない） */
+FO.boot([['loaded', '① 読み込み直後'], ['cond', '条件を 1 件足した']], (st) => {
+  const note = '選択肢をまったく増やさず、条件が無いときは自動で ① の絞り込み結果を出せば、判断の数が最少になる（ヒックの法則）';
+  if (st === 'loaded') return { planNote: note, tab: 'result', filtered: true, resultCount: '18 行', info: FO.FILTERS,
+    cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>18 行を出力する</button><span class="cta-why">条件がないため ① の絞り込み結果を表示中</span>',
+    summary: '<span class="badge badge--warn"><i class="fa-solid fa-triangle-exclamation"></i>照合していません</span><b>18 行</b><span class="sub">照合するときは左の「抽出条件」で条件を追加</span>' };
+  return { planNote: note, tab: 'result', filtered: true, resultCount: '未実行', railOn: 'query',
+    cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-import"></i>② 照合表を読み込む</button><span class="cta-why">条件を足したため照合の流れに戻りました</span>',
+    body: '<div class="empty"><div><h2>あと少しで抽出できます</h2><p class="sub">さっきまでの 18 行の結果は消えました</p></div></div>', pagerText: '' };
+});
+</script>
+</body>
+</html>

@@ -115,7 +115,7 @@
     /** 「② の行」を使えるか（抽出結果に ② の行がひも付く） */
     _condRowAvailable() {
       const s = this.state;
-      return this._target() === 'result' && !!s.result && s.profiles.items.some((p) => p.enabled && p.condition);
+      return this._target() === 'result' && !!s.result && !s.result.filterOnly && s.profiles.items.some((p) => p.enabled && p.condition);
     }
 
     _typeOf(key) {
@@ -154,11 +154,12 @@
           actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.app.restore(snap, 'ピボットの設定を元に戻しました') }] });
       } }, [Dom.icon('eraser'), 'すべて外す']);
       reset.disabled = !Settings.isConfigured(s.aggregate);
-      if (!s.result) {
+      if (!s.result || s.result.filterOnly) {
         return UI.section('対象', [
           h('div', { class: 'lq-aggtarget' }, [Dom.icon('table'), h('strong', { text: '① 元データの全行' + (src.filters && src.filters.length ? '（絞り込み後）' : '') }),
             h('span', { class: 'lq-num', text: Util.formatInt(src.rowCount) + ' 行' })]),
-          h('p', { class: 'lq-field__hint', text: '抽出していないので、② を使わずに ① の全行で作ります。抽出すると、抽出結果も選べるようになります。' })
+          h('p', { class: 'lq-field__hint', text: s.result ? '絞り込みだけ（照合なし）のため、① の絞り込み後の行で作ります。'
+            : '抽出していないので、② を使わずに ① の全行で作ります。抽出すると、抽出結果も選べるようになります。' })
         ], [reset]);
       }
       const target = this._target();

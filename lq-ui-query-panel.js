@@ -363,7 +363,9 @@
       this._profileId = null;
       this.list = new LQ.ProfileListView(ctx);
       this.el = h('div');
-      Dom.append(this.el, [this.list.el, this._buildHead(), this._buildConditions(), this._buildLogic(), this._buildJoin(), this._buildRules(), this._buildMatch()]);
+      /* 先頭に「照合するか」の切替。絞り込みだけのときは、その下（抽出条件の一覧と編集欄）を薄くして操作できなくする */
+      this.rest = h('div', { class: 'lq-flowrest' }, [this.list.el, this._buildHead(), this._buildConditions(), this._buildLogic(), this._buildJoin(), this._buildRules(), this._buildMatch()]);
+      Dom.append(this.el, [this._buildFlow(), this.rest]);
       ctx.bus.on('query', (d) => this.update(d));
       ['datasets', 'profiles', 'store', 'rules', 'output'].forEach((topic) => ctx.bus.on(topic, () => this.update({})));
       ctx.bus.on('focus-condition', (d) => this._focusCondition(d.id, d.field));
@@ -382,6 +384,24 @@
     }
 
     /* ---------------- 組み立て ---------------- */
+
+    /** 絞り込みだけのときの案内（切り替えは上部バーの 1 か所だけ。ここでは使わないことと戻し方を示す） */
+    _buildFlow() {
+      this.flowNote = h('div');
+      return this.flowNote;
+    }
+
+    _renderFlow() {
+      const on = this.state.filterOnly;
+      Dom.clear(this.flowNote);
+      if (on) {
+        this.flowNote.appendChild(h('section', { class: 'lq-section' }, UI.note('info', '絞り込みだけ（照合なし）のため、下の抽出条件と ② 照合表は使いません（消さずに残しています）。' +
+          '照合するときは、上部バーの作業セット名の右で「照合して抽出」に切り替えます。')));
+      }
+      this.rest.classList.toggle('is-resting', on);
+      this.rest.inert = on;
+      this.rest.setAttribute('aria-disabled', on ? 'true' : 'false');
+    }
 
     _buildHead() {
       this.rankBadge = h('span', { class: 'lq-badge lq-badge--rank', title: '優先順位（上の一覧で変更できます）' });
@@ -530,6 +550,7 @@
     update(detail) {
       const d = detail || {};
       const s = this.state;
+      this._renderFlow();
       const p = s.activeProfile;
       const q = p.query;
       const switched = p.id !== this._profileId;

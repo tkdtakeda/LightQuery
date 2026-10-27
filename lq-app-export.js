@@ -136,6 +136,7 @@
       const src = s.datasets.source;
       const out = [];
       if (src) out.push({ label: '① 元データ', text: src.name + '（' + fmt(src.rowCount) + ' 行）' });
+      if (s.result && s.result.filterOnly) out.push({ label: '照合', text: '照合なし（絞り込みだけ）' + (src && LQ.PrepFlow.active(src) ? '：' + LQ.PrepFlow.text(src) : '：全行') });
       if (s.result) out.push({ label: '抽出結果', text: fmt(s.result.length) + ' 行' + (s.isStale() ? '（条件の変更は未反映）' : '') });
       return out;
     }
@@ -200,6 +201,7 @@
       const s = this.state;
       const view = prepared.view;
       const res = view.result;
+      if (res.filterOnly) return this._filterOnlyMetaLines(prepared);
       if (res.allRows) return this._allRowsMetaLines(prepared);
       const st = res.stats;
       const multi = view.parts.length > 1;
@@ -229,6 +231,30 @@
       const cmpLine = this.app.compare.metaLine();
       if (cmpLine) lines.push(cmpLine);
       if (s.isStale()) lines.push(['注意', '出力時点の画面の条件は、この結果を作った条件から変更されています']);
+      lines.push(['作成', 'LightQuery（簡易クエリ）']);
+      return lines;
+    }
+
+    /** 絞り込みだけ（照合なし）の結果を出力したときの根拠の行 */
+    _filterOnlyMetaLines(prepared) {
+      const s = this.state;
+      const src = s.datasets.source;
+      const view = prepared.view;
+      const lines = [['項目', '内容'], ['出力日時', Util.dateTimeText(new Date())], ['① 元データ', this._describeDataset(src)]];
+      lines.push(['照合', '照合なし（絞り込みだけ）：② 照合表と抽出条件は使わず、① の前処理の後の行をそのまま出力']);
+      const prep = this._prepLine(src, '① の前処理');
+      lines.push(prep || ['① の前処理', 'なし（全行）']);
+      (src.filters || []).forEach((f, i) => lines.push([i === 0 ? '絞り込み' : '', LQ.RowFilter.describe(f, LQ.DateColumns ? LQ.DateColumns.isDate(src, f.col) : false)]));
+      lines.push(['結果', fmt(view.result.length) + ' 行']);
+      if (prepared.aggregate) {
+        lines.push(['ピボット', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(prepared.aggregate.rowCount) + ' 行・表 ' + fmt(prepared.aggregate.groupCount) + ' 行）']);
+        prepared.aggregate.notes.forEach((n) => lines.push(['', n]));
+      }
+      if (prepared.sheets && prepared.sheets.length > 1) lines.push(['シート', prepared.sheets.map((sh) => sh.name).join('、')]);
+      if (s.view.sort) lines.push(['並び順', LQ.ResultView.nameOf(s.view.sort.key) + '（' + (s.view.sort.dir === 'desc' ? '降順' : '昇順') + '）']);
+      lines.push(['出力した列', prepared.defs.map((d) => d.name).join('、')]);
+      const cmpLine = this.app.compare.metaLine();
+      if (cmpLine) lines.push(cmpLine);
       lines.push(['作成', 'LightQuery（簡易クエリ）']);
       return lines;
     }
