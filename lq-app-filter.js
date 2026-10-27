@@ -90,7 +90,7 @@
       const view = this.app.main.resultView();
       if (!view.length) {
         return { id: 'reviewFilters', label: '① の絞り込みを見直す', icon: 'filter',
-          status: { kind: 'warn', text: '絞り込み後の行が 0 行のため出力できません（① の見出しの一覧か、左の「①元データ」で絞り込みを外します）' } };
+          status: { kind: 'warn', text: '絞り込み後が 0 行のため出力できません' } };
       }
       if (!this.app._hasOutputColumn()) {
         return { id: 'chooseColumns', label: '出力する列を選ぶ', icon: 'table-columns', status: { kind: 'warn', text: '出力できる列が 0 列のため出力できません（左の「出力列」で選びます）' } };

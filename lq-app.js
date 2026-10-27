@@ -733,7 +733,7 @@
       if (e.code === 'noConditionData' || (e.code === 'noCondition' && !p.condition)) {
         return { id: 'loadCondition', target: p.id, label: (of ? of + ' ' : '') + '② 照合表を読み込む', icon: 'file-import',
           status: { kind: e.code === 'noCondition' ? 'info' : 'warn',
-            text: ref ? '前回は「' + ref + '」を使っていました（同じファイルなら読み込み範囲も前回どおり）' : '固定値だけの条件なら ② は不要です（左の「抽出条件」）' } };
+            text: ref ? '前回は「' + ref + '」を使っていました（同じファイルなら読み込み範囲も前回どおり）' : '② を使わないなら「絞り込みだけ」に切り替えます' } };
       }
       if (e.code === 'noCondition') {
         return { id: 'addCondition', target: p.id, label: (multi ? '「' + p.name + '」に' : '') + '条件を追加する', icon: 'plus',

@@ -643,7 +643,12 @@
       const ds = s.datasets[role];
       const r = ROLE_TEXT[role];
       if (role === 'condition' && s.filterOnly) this.info.appendChild(this._restingNote());
-      if (role === 'condition') this.info.appendChild(this.condBar.render());
+      if (role === 'condition' && !s.filterOnly) this.info.appendChild(this.condBar.render());
+      /* 絞り込みだけのときは ② を読み込むよう誘わない（上の案内から照合に戻せる） */
+      if (!ds && role === 'condition' && s.filterOnly) {
+        this.grid.showEmpty(this._emptyMessage('pause', '② 照合表は使いません', '絞り込みだけ（照合なし）のため、② は読み込まなくても出力できます。照合するときは上の「照合して抽出に戻す」を押します。'));
+        return;
+      }
       if (!ds) {
         const who = role === 'condition' && s.profiles.length > 1 ? '「' + s.activeProfile.name + '」の ' : '';
         const drop = h('div', { class: 'lq-drop' + (role === 'condition' ? ' lq-drop--cond' : ''), role: 'button', tabindex: '0', onclick: () => this.app.pickFile(role) },
