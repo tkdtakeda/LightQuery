@@ -552,6 +552,7 @@
       this.shell = new LQ.Shell(ctx, this.panels);
       this.worksets = new LQ.Worksets(this);
       this.worksetButton = new LQ.WorksetButton(ctx, Dom.qs('#lqTopbar'), this.worksets);
+      this.flowSwitch = new LQ.FlowSwitch(ctx, Dom.qs('#lqTopbar'), this.worksetButton.el);
       this.worksets.init(restored);
       this.store.attach((notice) => this.toasts.show(notice));
       this.bus.on('panel', () => this._syncPanelView());
@@ -733,7 +734,7 @@
       if (e.code === 'noConditionData' || (e.code === 'noCondition' && !p.condition)) {
         return { id: 'loadCondition', target: p.id, label: (of ? of + ' ' : '') + '② 照合表を読み込む', icon: 'file-import',
           status: { kind: e.code === 'noCondition' ? 'info' : 'warn',
-            text: ref ? '前回は「' + ref + '」を使っていました（同じファイルなら読み込み範囲も前回どおり）' : '② を使わないなら「絞り込みだけ」に切り替えます' } };
+            text: ref ? '前回は「' + ref + '」を使っていました（同じファイルなら読み込み範囲も前回どおり）' : '② を使わないなら、左上の「絞り込みだけ」に切り替えます' } };
       }
       if (e.code === 'noCondition') {
         return { id: 'addCondition', target: p.id, label: (multi ? '「' + p.name + '」に' : '') + '条件を追加する', icon: 'plus',

@@ -410,7 +410,7 @@
 
     /**
      * 絞り込みだけ（照合なし）の要約：札と行数だけ。前処理の内訳は下の処理の流れの帯に出す（行数を 2 か所に出さない）。
-     *   右に照合して抽出に戻す入口を常に置く（パネルを開かなくても戻れるように）
+     *   照合する／しないの切替は上部バーの 1 か所だけ（ここには置かない）
      */
     _renderFilterOnlySummary(view, defs) {
       const src = this.state.datasets.source;
@@ -421,8 +421,6 @@
       const compareBtn = h('button', { class: 'lq-btn lq-btn--sm' + (this.app.compare.active ? ' is-active' : ''), type: 'button',
         title: '直前の結果や前回出力したファイルと比べ、増えた行・消えた行・変わった行を確かめる',
         onclick: (e) => LQ.CompareDialog.open(this.ctx, e.currentTarget) }, [Dom.icon('not-equal'), '前回と比べる']);
-      const backBtn = h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '② 照合表と抽出条件を使って抽出する流れに戻す（元に戻せます）',
-        onclick: () => this.app.filterOnly.set(false) }, [Dom.icon('code-compare'), '照合して抽出に戻す']);
       const items = [
         h('span', { class: 'lq-mode-tag', title: '照合しないで、① の前処理（絞り込みなど）の後の行をそのまま結果にしています' }, [Dom.icon('filter'), '絞り込みだけ（照合なし）']),
         h('span', { class: 'lq-summary__main' + (view.length ? '' : ' is-none') }, [Dom.icon(view.length ? 'circle-check' : 'triangle-exclamation'), fmt(view.length) + ' 行']),
@@ -431,7 +429,7 @@
       ];
       const facts = h('span', { class: 'lq-summary__facts' }, items);
       facts.title = items.filter(Boolean).map((el) => el.textContent.trim()).join('　｜　');
-      this.info.appendChild(h('div', { class: 'lq-summary lq-summary--line' }, [facts, h('span', { class: 'lq-summary__actions' }, [detailsBtn, compareBtn, backBtn])]));
+      this.info.appendChild(h('div', { class: 'lq-summary lq-summary--line' }, [facts, h('span', { class: 'lq-summary__actions' }, [detailsBtn, compareBtn])]));
     }
 
     /** ① の前処理（縦に結合・絞り込み・重複の削除）を使っているときは、抽出に使った行までの流れを出す */
@@ -522,7 +520,7 @@
       };
       const sampleBtn = h('button', { class: 'lq-btn', type: 'button', onclick: () => this.app.dialogs.openSamples(sampleBtn, 'bottom-start') }, [Dom.icon('flask'), 'サンプルで試す']);
       const aggNote = h('p', { class: 'lq-empty__lead' }, [Dom.icon('calculator'), ' ② を使わずに ',
-        h('strong', { text: '① を絞り込んで出力' }), '（「絞り込みだけ」に切り替え）したり、',
+        h('strong', { text: '① を絞り込んで出力' }), '（上部バーの「絞り込みだけ」）したり、',
         h('strong', { text: '① だけでピボット・グラフ' }), 'を作ったりもできます（① を読み込んだあとに選びます）。']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: '① と ② を読み込み、条件に一致する行を取り出します' }),
@@ -567,16 +565,13 @@
           s.setTab('chart');
           s.openPanel('chart');
         } }, [Dom.icon('chart-column'), '① だけでグラフを作る']);
-      /* 照合しないで ① を絞り込んで出力する入口（押すと切り替えるだけ。出力は右上のボタンから） */
-      const filterOnly = h('button', { class: 'lq-btn', type: 'button', title: '② と抽出条件を使わず、① の見出しで絞り込んだ行をそのまま結果にします（元に戻せます。抽出条件は残します）',
-        onclick: () => this.app.filterOnly.set(true) }, [Dom.icon('filter'), '絞り込みだけに切り替える']);
       this.grid.showEmpty(h('div', { class: 'lq-empty' }, [
         h('div', { class: 'lq-empty__title', text: 'あと少しで抽出できます' }),
         list,
         h('p', { class: 'lq-empty__lead', text: '次にすることは、画面右上の青いボタンに表示されています。各段階のカードを押すと、その設定を開けます。' }),
-        h('p', { class: 'lq-empty__lead' }, [Dom.icon('filter'), ' ② と照合せずに、',
-          h('strong', { text: '① を絞り込んだ行だけを出力' }), 'することもできます。']),
-        h('div', { class: 'lq-empty__links' }, [filterOnly, aggOnly, chartOnly])
+        h('p', { class: 'lq-empty__lead' }, [Dom.icon('filter'), ' ② と照合せずに ',
+          h('strong', { text: '① を絞り込んだ行だけを出力' }), 'するときは、上部バーの作業セット名の右で「絞り込みだけ」に切り替えます。']),
+        h('div', { class: 'lq-empty__links' }, [aggOnly, chartOnly])
       ]));
     }
 
@@ -627,8 +622,7 @@
     /** 絞り込みだけのときに ② を開いた案内（使わないこと・残していること・戻し方） */
     _restingNote() {
       return UI.note('info', h('span', {}, [h('strong', { text: '絞り込みだけ（照合なし）のため、② 照合表は使いません。' }),
-        '読み込んだ表と抽出条件は残しています。 ',
-        h('button', { class: 'lq-btn lq-btn--xs', type: 'button', onclick: () => this.app.filterOnly.set(false) }, [Dom.icon('code-compare'), '照合して抽出に戻す'])]));
+        '読み込んだ表と抽出条件は残しています。照合するときは、上部バーの作業セット名の右で「照合して抽出」に切り替えます。']));
     }
 
     _emptyMessage(icon, title, lead, action) {
@@ -646,7 +640,7 @@
       if (role === 'condition' && !s.filterOnly) this.info.appendChild(this.condBar.render());
       /* 絞り込みだけのときは ② を読み込むよう誘わない（上の案内から照合に戻せる） */
       if (!ds && role === 'condition' && s.filterOnly) {
-        this.grid.showEmpty(this._emptyMessage('pause', '② 照合表は使いません', '絞り込みだけ（照合なし）のため、② は読み込まなくても出力できます。照合するときは上の「照合して抽出に戻す」を押します。'));
+        this.grid.showEmpty(this._emptyMessage('pause', '② 照合表は使いません', '絞り込みだけ（照合なし）のため、② は読み込まなくても出力できます。照合するときは、上部バーの作業セット名の右で「照合して抽出」に切り替えます。'));
         return;
       }
       if (!ds) {

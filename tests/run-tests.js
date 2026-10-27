@@ -461,7 +461,7 @@ check('前回との違い：直前の抽出結果との比較・保存して開�
   }
 });
 
-check('絞り込みだけ：切り替え（画面のボタン）・その場で反映・0 行・照合に戻す・元に戻す・出力の記録・根拠', async (browser) => {
+check('絞り込みだけ：上部バーで切り替え・その場で反映・0 行・照合に戻す・元に戻す・出力の記録・根拠', async (browser) => {
   await withPage(browser, async (page) => {
     await page.evaluate(PAGE_HELPERS);
     await page.evaluate(async () => {
@@ -470,13 +470,13 @@ check('絞り込みだけ：切り替え（画面のボタン）・その場で�
     });
     /* 照合の流れでは ② を読み込むよう案内し、「あと少し」の画面に切り替えの入口がある */
     eq(await page.evaluate(() => LQ.app.cta().id), 'loadCondition', '切り替える前は照合の流れ');
-    await page.click('.lq-empty__links .lq-btn >> text=絞り込みだけに切り替える');
+    await page.click('.lq-flowswitch .lq-seg__item >> text=絞り込みだけ');
     const r1 = await page.evaluate(() => {
       const A = LQ.app;
       return { on: A.state.filterOnly, rows: A.state.result.length, cta: A.cta().label, status: A.cta().status.text,
         tag: !!document.querySelector('.lq-mode-tag'), rest: document.querySelector('.lq-rail__item[data-role="condition"]').classList.contains('is-resting') };
     });
-    eq(r1, { on: true, rows: 4, cta: '4 行を出力する', status: '絞り込みだけ（照合なし）：全行（絞り込みなし）', tag: true, rest: true }, '切り替えるとすぐ ① の全行が結果になる');
+    eq(r1, { on: true, rows: 4, cta: '4 行を出力する', status: '照合なし・全行（絞り込みなし）', tag: true, rest: true }, '上部バーで切り替えるとすぐ ① の全行が結果になる');
     /* 結果の見出しの一覧で「東京」以外を外す → 抽出し直しなしで反映 */
     await page.click('th[data-key="s:地域"]');
     await page.evaluate(() => {
@@ -507,7 +507,7 @@ check('絞り込みだけ：切り替え（画面のボタン）・その場で�
     });
     eq(r3, { id: 'reviewFilters', empty: true }, '0 行のときは絞り込みを見直す');
     /* 照合して抽出に戻す → 元に戻す */
-    await page.click('.lq-summary__actions .lq-btn >> text=照合して抽出に戻す');
+    await page.click('.lq-flowswitch .lq-seg__item >> text=照合して抽出');
     const back = await page.evaluate(() => [LQ.app.state.filterOnly, !!LQ.app.state.result, LQ.app.cta().id]);
     eq(back, [false, false, 'loadCondition'], '照合に戻すと結果を消して ② を案内する');
     await page.locator('#lqToasts .lq-btn:has-text("元に戻す") >> visible=true').first().click();

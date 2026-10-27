@@ -286,8 +286,8 @@
     _renderRestNote() {
       Dom.clear(this.restNote);
       if (!this.state.filterOnly) return;
-      this.restNote.appendChild(UI.note('info', '絞り込みだけ（照合なし）のため、② 照合表は使いません。読み込んだ表は残しています。',
-        h('button', { class: 'lq-btn lq-btn--sm', type: 'button', onclick: () => this.app.filterOnly.set(false) }, [Dom.icon('code-compare'), '照合して抽出に戻す'])));
+      this.restNote.appendChild(UI.note('info', '絞り込みだけ（照合なし）のため、② 照合表は使いません。読み込んだ表は残しています。' +
+        '照合するときは、上部バーの作業セット名の右で「照合して抽出」に切り替えます。'));
     }
 
     /** パネルの見出し（② は抽出条件が複数なら、どの抽出条件の ② かを添える） */

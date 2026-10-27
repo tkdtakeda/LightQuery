@@ -71,7 +71,7 @@
         title: on ? '絞り込みだけに切り替えました' : '照合して抽出に戻しました',
         message: on
           ? '② 照合表と抽出条件は使わずに残しています。① の見出しで絞り込んだ行が、そのまま抽出結果になります。'
-          : '残していた抽出条件と ② 照合表を使います。右上のボタンで抽出してください。',
+          : '残していた抽出条件と ② 照合表を使います。次にすることは右上のボタンで示します。',
         actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => this.set(!on, true) }]
       });
     }
@@ -95,9 +95,10 @@
       if (!this.app._hasOutputColumn()) {
         return { id: 'chooseColumns', label: '出力する列を選ぶ', icon: 'table-columns', status: { kind: 'warn', text: '出力できる列が 0 列のため出力できません（左の「出力列」で選びます）' } };
       }
+      /* 照合しないことは上部バーの切替と要約の札で分かるので、ここは行数の内訳を短く出す（1366px で切れないように） */
       const scope = this._narrowed(src)
-        ? '① ' + fmt(LQ.PrepFlow.steps(src)[0].rows) + ' 行 → ' + fmt(src.rowCount) + ' 行'
-        : '全行（絞り込みなし）';
+        ? '① ' + fmt(LQ.PrepFlow.steps(src)[0].rows) + ' 行 → ' + fmt(src.rowCount) + ' 行（照合なし）'
+        : '照合なし・全行（絞り込みなし）';
       /* ピボットタブでは、照合するときと同じくピボットの表を出力する（出力の処理もピボットを出す） */
       const agg = s.view.tab === 'aggregate' ? this.app.main.aggregate.computed() : null;
       if (agg) {
@@ -105,7 +106,7 @@
           status: { kind: 'ok', text: '絞り込み後の ' + fmt(agg.rowCount) + ' 行のピボットを Excel・CSV・コピーで出力できます' } };
       }
       return { id: 'export', label: fmt(view.length) + ' 行を出力する', icon: 'file-export',
-        status: { kind: 'ok', text: '絞り込みだけ（照合なし）：' + scope } };
+        status: { kind: 'ok', text: scope } };
     }
 
     /**

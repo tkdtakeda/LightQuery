@@ -879,6 +879,20 @@
   font-size: var(--fs-xs);
 }
 
+/* ---------- 照合するか（上部バーの作業セット名の右。作業セットごとの設定） ---------- */
+.lq-flowswitch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+}
+
+/* 絞り込みだけを選んでいるときは、照合していないことが一目で分かるよう塗りを強める（文字とアイコンも添える） */
+.lq-flowswitch .lq-seg__item.is-active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
 /* ---------- 作業セット（上部バーのボタンと一覧の小窓） ---------- */
 .lq-wsbtn {
   display: inline-flex;

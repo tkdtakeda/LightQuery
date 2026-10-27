@@ -385,23 +385,18 @@
 
     /* ---------------- 組み立て ---------------- */
 
-    /** 照合するか（作業セットごと）：照合して抽出／絞り込みだけ。切り替えは元に戻せる */
+    /** 絞り込みだけのときの案内（切り替えは上部バーの 1 か所だけ。ここでは使わないことと戻し方を示す） */
     _buildFlow() {
-      this.flowSeg = new LQ.Segmented([
-        { value: false, label: '照合して抽出', icon: 'code-compare', title: '① の各行を ② 照合表と照らし合わせ、条件に一致した行を取り出します' },
-        { value: true, label: '絞り込みだけ', icon: 'filter', title: '② と抽出条件を使わず、① の見出しで絞り込んだ行をそのまま結果にします（抽出条件は消さずに残します）' }
-      ], this.state.filterOnly, (v) => this.app.filterOnly.set(v), 'lq-seg--block');
       this.flowNote = h('div');
-      return h('section', { class: 'lq-section' }, [UI.field('照合するか（この作業セット）', this.flowSeg.el), this.flowNote]);
+      return this.flowNote;
     }
 
     _renderFlow() {
       const on = this.state.filterOnly;
-      this.flowSeg.set(on);
       Dom.clear(this.flowNote);
       if (on) {
-        this.flowNote.appendChild(UI.note('info', '絞り込みだけのため、下の抽出条件と ② 照合表は使いません（消さずに残しています）。' +
-          '① の見出しの一覧か、左の「①元データ」で絞り込んだ行が、そのまま抽出結果になります。'));
+        this.flowNote.appendChild(h('section', { class: 'lq-section' }, UI.note('info', '絞り込みだけ（照合なし）のため、下の抽出条件と ② 照合表は使いません（消さずに残しています）。' +
+          '照合するときは、上部バーの作業セット名の右で「照合して抽出」に切り替えます。')));
       }
       this.rest.classList.toggle('is-resting', on);
       this.rest.inert = on;

@@ -184,11 +184,11 @@
 
     /**
      * 絞り込みだけ（照合なし）のとき、使わない ② 照合表・照合ルールを薄くし、一時停止の印を付ける。
-     * 抽出条件は休止にしない（照合して抽出に戻す切替がパネルの先頭にあるため）
+     * 抽出条件は休止にしない（抽出条件パネル自体は開け、絞り込みだけであることを案内するため）
      */
     _renderResting() {
       const resting = this.state.filterOnly;
-      const why = '絞り込みだけ（照合なし）のため使いません（抽出条件パネルの先頭で「照合して抽出」に戻せます）';
+      const why = '絞り込みだけ（照合なし）のため使いません（上部バーの作業セット名の右で「照合して抽出」に戻せます）';
       ['condition', 'rules'].forEach((id) => {
         const item = this.items.get(id);
         item.btn.classList.toggle('is-resting', resting);
