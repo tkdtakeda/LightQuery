@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 F1 作業セットの切替</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="../mock-common.css">
+<link rel="stylesheet" href="fo-shell.css">
+</head>
+<body>
+<script src="../mock-common.js"></script>
+<script src="fo-shell.js"></script>
+<script>
+/* 案 F1：作業セットごとの切替「照合して抽出／絞り込みだけ」。入口は最初の画面・あと少しの画面・抽出条件パネルの先頭の 3 か所で、同じ設定を切り替える */
+const SEG = (on) => '<span class="seg"><button aria-pressed="' + (on === 'match') + '"><i class="fa-solid fa-code-compare"></i>照合して抽出</button>' +
+  '<button aria-pressed="' + (on === 'filter') + '"><i class="fa-solid fa-filter"></i>絞り込みだけ</button></span>';
+FO.boot([['first', '最初の画面'], ['loaded', '① 読み込み直後'], ['filtered', '絞り込みだけの結果'], ['panel', '抽出条件パネル（休止）']], (st) => {
+  const note = '照合するかどうかを作業セットの設定として 1 か所に持てば、どの画面にいても今の流れ（照合する／しない）を誤認せず、右上のボタンも 1 つに保てる';
+  if (st === 'first') {
+    return { planNote: note, cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-import"></i>① 元データを読み込む</button>', tab: 'result',
+      body: '<div class="empty"><div><h2>何をしますか？</h2><p class="sub">あとから抽出条件パネルの先頭でいつでも切り替えられます</p><div class="cards">' +
+        '<div class="choice is-on"><i class="fa-solid fa-code-compare fa-lg" style="color:var(--color-cond)"></i><h3>① を ② 照合表と照らし合わせる</h3><div class="small sub">① の各行を ② の条件と比べ、一致した行を取り出します</div></div>' +
+        '<div class="choice"><i class="fa-solid fa-filter fa-lg" style="color:var(--color-primary)"></i><h3>① を絞り込んで出力する</h3><div class="small sub">② は使いません。見出しの一覧で絞った ① の行をそのまま出力します</div></div>' +
+        '</div></div></div>', pagerText: '' };
+  }
+  if (st === 'loaded') {
+    return { planNote: note, cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-import"></i>② 照合表を読み込む</button><span class="cta-why">照合しないなら「絞り込みだけ」に切り替えます</span>', tab: 'result',
+      body: '<div class="empty"><div><h2>あと少しで抽出できます</h2><p class="sub">① 売上帳票.xlsx（30 行） ✓ → ② 照合表 ● → 抽出条件 ○ → 抽出 ○</p>' +
+        '<p><button class="btn"><i class="fa-solid fa-filter"></i>照合せずに ① の絞り込み結果を出力する</button></p></div></div>', pagerText: '' };
+  }
+  if (st === 'filtered') {
+    return { planNote: note, restRail: ['cond', 'query', 'rules'], restCond: true, filtered: true, tab: 'result', resultCount: '18 行',
+      cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>18 行を出力する</button><span class="cta-why">絞り込みだけ（照合なし）：① 30 行 → 18 行</span>',
+      summary: '<span class="badge badge--run"><i class="fa-solid fa-filter"></i>絞り込みだけ（照合なし）</span><b>18 行</b><span class="sub">① 30 行中 60.0%</span><span class="spacer"></span><button class="btn"><i class="fa-solid fa-code-compare"></i>照合して抽出に切り替える</button>',
+      info: FO.FILTERS };
+  }
+  return { planNote: note, railOn: 'query', restRail: ['cond', 'rules'], restCond: true, filtered: true, tab: 'result', resultCount: '18 行',
+    cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>18 行を出力する</button>',
+    panel: '<header><i class="fa-solid fa-code-compare"></i>抽出条件<span class="spacer"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header><div class="scroll">' +
+      '<div><div class="small sub" style="margin-bottom:4px">抽出のしかた（この作業セット）</div>' + SEG('filter') + '</div>' +
+      '<div class="note"><i class="fa-solid fa-circle-info"></i><span>絞り込みだけのため、抽出条件と ② 照合表は使いません（設定は消さずに残します）。切り替えると元の条件で抽出できます。</span></div>' +
+      '<div style="opacity:.45;pointer-events:none"><div class="small sub">抽出条件 1 件</div><div class="note">コードの頭文字：A：① 商品コード が ② 列A で始まる</div></div></div>',
+    summary: '<span class="badge badge--run"><i class="fa-solid fa-filter"></i>絞り込みだけ（照合なし）</span><b>18 行</b>', info: FO.FILTERS };
+});
+</script>
+</body>
+</html>

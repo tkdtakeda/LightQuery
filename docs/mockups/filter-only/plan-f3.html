@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 F3 照合しない抽出条件</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="../mock-common.css">
+<link rel="stylesheet" href="fo-shell.css">
+</head>
+<body>
+<script src="../mock-common.js"></script>
+<script src="fo-shell.js"></script>
+<script>
+/* 案 F3：抽出条件の種類に「照合しない（① の行をそのまま）」を加える。抽出条件の一覧・振り分けの仕組みをそのまま使う */
+FO.boot([['list', '抽出条件の一覧'], ['filtered', '結果']], (st) => {
+  const note = '新しい概念を作らず「抽出条件の一種」にすれば、優先順位・振り分け・該当なしの仕組みを再利用でき、照合する条件と混ぜることもできる';
+  const panel = '<header><i class="fa-solid fa-code-compare"></i>抽出条件<span class="spacer"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header><div class="scroll">' +
+    '<div class="small sub">抽出条件 1 件（優先順位の順）</div>' +
+    '<div class="note" style="background:#fff"><span class="badge badge--muted">1</span><span><b>文具と家電（絞り込みだけ）</b><br><span class="small">種類：照合しない・① の絞り込みのみ 2 件</span></span></div>' +
+    '<div class="small sub">新しい抽出条件の種類</div><span class="seg"><button aria-pressed="false"><i class="fa-solid fa-code-compare"></i>② と照合する</button><button aria-pressed="true"><i class="fa-solid fa-filter"></i>照合しない</button></span>' +
+    '<div class="small sub">この抽出条件の絞り込み</div>' + FO.FILTERS + '<button class="btn"><i class="fa-solid fa-plus"></i>抽出条件を追加</button></div>';
+  if (st === 'list') return { planNote: note, railOn: 'query', panel: panel, tab: 'result', cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-play"></i>30 行から抽出する</button><span class="cta-why">条件 0 件：① の絞り込みのみ</span>', body: '<div class="empty"><div><h2>あと少しで抽出できます</h2></div></div>', pagerText: '' };
+  return { planNote: note, tab: 'result', resultCount: '18 行', cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>18 行を出力する</button>',
+    summary: '<b><i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i> 18 行が該当</b><span class="sub">「文具と家電（絞り込みだけ）」・① 30 行中 60.0%</span>', info: FO.FILTERS };
+});
+</script>
+</body>
+</html>

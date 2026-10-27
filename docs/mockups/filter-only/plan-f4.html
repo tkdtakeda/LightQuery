@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 F4 ① タブから出力</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="../mock-common.css">
+<link rel="stylesheet" href="fo-shell.css">
+</head>
+<body>
+<script src="../mock-common.js"></script>
+<script src="fo-shell.js"></script>
+<script>
+/* 案 F4：① タブで絞り込んだら、その場で主要動作が「この 18 行を出力する」になる（見ている表をそのまま出す） */
+FO.boot([['src', '① タブで絞り込んだ'], ['result', '抽出結果タブ']], (st) => {
+  const note = '絞り込んだ表がいま目の前にあるなら、その表をそのまま出力できれば、モードや画面の切り替えを考えなくてよい（見ているもの＝出るもの）';
+  if (st === 'src') return { planNote: note, tab: 'src', filtered: true, info: FO.FILTERS,
+    cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>この 18 行を出力する</button><span class="cta-why">① の絞り込み後の行（照合なし）。照合するときは「抽出結果」タブ</span>',
+    summary: '<b>① 売上帳票.xlsx</b><span class="sub">30 行中 18 行（絞り込み後）</span>' };
+  return { planNote: note, tab: 'result', cta: '<button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-import"></i>② 照合表を読み込む</button>', body: '<div class="empty"><div><h2>あと少しで抽出できます</h2><p class="sub">① タブでは、絞り込んだ ① をそのまま出力できます</p></div></div>', pagerText: '' };
+});
+</script>
+</body>
+</html>
