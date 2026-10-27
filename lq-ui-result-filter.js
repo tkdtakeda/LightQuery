@@ -132,6 +132,9 @@
     /** 値の一覧・条件で絞る・見込み・OK を用意し、本体に足す。フッターを返す */
     _initFilter(targets, name, body) {
       const first = targets[0];
+      /* ① の列は ① の見出しの一覧と同じ（ほかの列の絞り込みを掛けた ① の値・外した値もチェックなしで残す・残す値で保存） */
+      this.sourceMode = first.role === 'source';
+      if (this.sourceMode) return this._initSourceFilter(first, name, body);
       const current = (first.ds.filters || []).find((x) => x.col === name) || null;
       this.targets = targets;
       this.role = first.role;
@@ -157,6 +160,27 @@
         h('p', { class: 'lq-field__hint lq-colmenu__where' }, [Dom.icon('link'), this.state.filterOnly
           ? 'OK で ' + where + ' に絞り込みを掛け、その場で結果に反映します（絞り込みだけ・照合なし）。'
           : 'OK で ' + where + ' にも同じ絞り込みを掛け、抽出し直します（結果と元データは常に同じ絞り込み）。']),
+        this.estimate, this.problem);
+      return h('div', { class: 'lq-popover__foot' }, [clearBtn, h('span', { class: 'lq-topbar__spacer' }), this.okBtn]);
+    }
+
+    /** ① の列：① の見出しの一覧と同じ中身（LQ.ColumnMenu._prepare）。確定は元の表に掛けて結果に反映（元に戻せる） */
+    _initSourceFilter(target, name, body) {
+      this.targets = [target];
+      this._prepare(target.ds, 'source', name);
+      this.estimate = h('div', { class: 'lq-filter__estimate' });
+      this.problem = h('div');
+      this.okBtn = h('button', { class: 'lq-btn lq-btn--primary', type: 'button', title: '① に絞り込みを掛けて結果に反映する（Enter）', onclick: () => this._apply() },
+        [Dom.icon('check'), 'OK']);
+      const clearBtn = h('button', { class: 'lq-btn', type: 'button', disabled: !this.current,
+        title: this.current ? 'この列の絞り込みを外す（元に戻せます）' : 'この列は絞り込んでいません',
+        onclick: () => this._remove() }, [Dom.icon('filter-circle-xmark'), '絞り込みを外す']);
+      this.valuesBox = this._valuesBody();
+      this.opDetails = this._opBody();
+      body.push(this.valuesBox, this.opDetails,
+        h('p', { class: 'lq-field__hint lq-colmenu__where' }, [Dom.icon('link'), this.state.filterOnly
+          ? '① 元データの絞り込みです。OK でその場で結果に反映します。'
+          : '① 元データの絞り込みです。OK で ① に掛けて抽出し直します（結果と元データは常に同じ絞り込み）。']),
         this.estimate, this.problem);
       return h('div', { class: 'lq-popover__foot' }, [clearBtn, h('span', { class: 'lq-topbar__spacer' }), this.okBtn]);
     }
@@ -196,13 +220,18 @@
       return this.f.mode === 'values' ? RF.unchecked(this.values.list.map((v) => v.value), this.f.values) : [];
     }
 
-    /** 値の一覧ですべて選んでいるとき（絞り込みを変えない） */
+    /** 値の一覧ですべて選んでいるとき（① の列：この列の絞り込みを外す／② の列：絞り込みを変えない） */
     _allChosen() {
+      if (this.sourceMode) return super._allChosen();
       return this.f.mode === 'values' && !this._removed().length;
     }
 
     _update() {
       if (!this.okBtn) return;
+      if (this.sourceMode) {
+        this._updateSource();
+        return;
+      }
       const problem = this._problem();
       this.okBtn.disabled = !!problem;
       Dom.clear(this.problem);
@@ -225,8 +254,33 @@
       this.estimate.appendChild(UI.status(kept ? 'ok' : 'warn', text + '（目安。抽出し直して確定）'));
     }
 
+    /** ① の列の見込み：① の使う行が何行になるか（絞り込みだけでは、そのまま結果の行数） */
+    _updateSource() {
+      const problem = this._problem();
+      this.okBtn.disabled = !!problem;
+      Dom.clear(this.problem);
+      Dom.clear(this.estimate);
+      if (problem) {
+        this.problem.appendChild(UI.status('warn', problem));
+        return;
+      }
+      const kept = this.ds.countWith(this._nextFilters());
+      const text = (this.state.filterOnly ? '結果 ' : '① 使う行 ') + fmt(this.ds.rowCount) + ' 行 → ' + fmt(kept) + ' 行になります' +
+        (this._allChosen() ? '（この列では絞り込みません）' : '') + (this.state.filterOnly ? '' : '（抽出し直して確定）');
+      this.estimate.appendChild(UI.status(kept ? 'ok' : 'warn', text));
+    }
+
     _apply() {
       if (this._problem()) return;
+      if (this.sourceMode) {
+        const next = this._nextFilters();
+        const before = this.ds.filters || [];
+        this.ctx.popovers.close();
+        if (JSON.stringify(next) === JSON.stringify(before)) return;
+        const title = this._allChosen() ? '「' + this.f.col + '」の絞り込みを外しました' : '「' + this.f.col + '」で絞り込みました';
+        this.ctx.app.resultFilter.apply('source', [{ target: this.targets[0], filters: next }], title, this.key);
+        return;
+      }
       const removed = this._removed();
       const changes = this.targets.map((t) => ({ target: t, filters: RF.mergeInto(t.ds, this.f, removed) })).filter((c) => c.filters);
       this.ctx.popovers.close();
@@ -258,7 +312,7 @@
       if (!groups.length) return null;
       const tags = groups.map((g) => {
         const key = prefixOf(g.role) + g.filter.col;
-        const text = (g.role === 'source' ? '① ' : '② ') + LQ.RowFilter.describe(g.filter, isDateCol(g.targets[0].ds, g.filter.col));
+        const text = (g.role === 'source' ? '① ' : '② ') + LQ.RowFilter.describe(g.filter, isDateCol(g.targets[0].ds, g.filter.col), g.targets[0].ds);
         const title = g.targets.map((t) => t.label).join('・') + '：' + (g.ok ? text : g.message);
         return h('span', { class: 'lq-ftag' + (g.ok ? '' : ' is-off'), title: title }, [
           h('button', { class: 'lq-ftag__body', type: 'button', title: '「' + g.filter.col + '」の絞り込みを直す（' + title + '）',

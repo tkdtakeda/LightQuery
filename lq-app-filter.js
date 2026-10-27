@@ -124,7 +124,7 @@
         const info = src.filterInfo && src.filterInfo.items ? src.filterInfo.items.find((x) => x.id === f.id) : null;
         const ok = !info || info.ok !== false;
         const col = src.findColumn(f.col);
-        items.push({ kind: 'filter', ok: ok, col: f.col, text: LQ.RowFilter.describe(f, LQ.DateColumns ? LQ.DateColumns.isDate(src, f.col) : false),
+        items.push({ kind: 'filter', ok: ok, col: f.col, text: LQ.RowFilter.describe(f, LQ.DateColumns ? LQ.DateColumns.isDate(src, f.col) : false, src),
           value: ok && col >= 0 ? String(src.cell(pair.src, col)) : '', note: ok ? '' : (info.message || '掛けられていません') });
       });
       if (src.dedupInfo) items.push({ kind: 'dedup', ok: true, text: '重複の削除：同じ値の行のうち最初の 1 行として残りました' });

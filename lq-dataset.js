@@ -744,11 +744,20 @@
       return { test: (r) => op.test(left(at(r, col)), right) === true };
     },
 
-    /** 絞り込みの文章（タグ・根拠用） */
-    describe(f, isDate) {
+    /**
+     * 絞り込みの文章（タグ・根拠用）。値の一覧は「残す値」で表す（外した値を逆算させない）。
+     *   以前の「除く値」の絞り込みは、ds があればその列の値から残す値に直して表す
+     */
+    describe(f, isDate, ds) {
       if (f.mode === 'values') {
-        const shown = f.values.slice(0, 3).map((v) => (v === '' ? '（空欄）' : v));
-        return f.col + '：' + shown.join('・') + (f.values.length > 3 ? ' ほか ' + (f.values.length - 3) + ' 件' : '') + (f.exclude ? ' 以外' : '');
+        let values = f.values;
+        let exclude = !!f.exclude;
+        if (exclude && ds) {
+          values = RowFilter.keptValues(f, ds);
+          exclude = false;
+        }
+        const shown = values.slice(0, 3).map((v) => (v === '' ? '（空欄）' : v));
+        return f.col + '：' + shown.join('・') + (values.length > 3 ? ' ほか ' + (values.length - 3) + ' 件' : '') + (exclude ? ' 以外' : '');
       }
       const op = LQ.Operators.get(f.op);
       if (!op) return f.col;
@@ -758,6 +767,21 @@
         return f.col + ' が ' + v(f.value) + '〜' + v(f.value2) + ' ' + phrase;
       }
       return f.col + ' が「' + f.value + '」' + phrase;
+    },
+
+    /** 「除く値」の絞り込みで残る値（絞り込み前の行にあるその列の値のうち、除く値でないもの。多い順） */
+    keptValues(f, ds) {
+      const c = ds.findColumn(f.col);
+      if (c < 0) return [];
+      const norm = normalizer();
+      const drop = new Set((f.values || []).map((v) => norm.text(v)));
+      const counts = new Map();
+      for (let r = 0; r < ds.baseRowCount; r++) {
+        const raw = ds.baseCell(r, c);
+        const v = LQ.Normalizer.isBlank(raw) ? '' : String(raw);
+        if (!drop.has(norm.text(v))) counts.set(v, (counts.get(v) || 0) + 1);
+      }
+      return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map((e) => e[0]);
     }
   };
 

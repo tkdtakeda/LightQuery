@@ -281,8 +281,20 @@ check('抽出結果の絞り込み：見出しの一覧で外した値を元の�
     }, dropped);
     ok(r1.rows < before, '外した値の行が結果から消える（' + before + ' → ' + r1.rows + ' 行）');
     eq(r1.left, 0, '外した値の行は残らない');
-    eq(r1.filter, { col: '地域', exclude: true, values: [dropped] }, '① には「外した値を除く」絞り込みが掛かる');
+    eq([r1.filter.col, r1.filter.exclude, r1.filter.values.indexOf(dropped), r1.filter.values.length > 0], ['地域', false, -1, true],
+      '① には「残す値」の絞り込みが掛かる（① の見出しの一覧と同じ形）');
     ok(r1.tag && r1.mark, '結果の上に絞り込みのタグ、見出しに漏斗が出る');
+    /* 抽出結果の見出しの一覧を開き直すと、外した値もチェックなしで残り、入れ直せる（Excel と同じ） */
+    await page.click('th[data-key="s:地域"]');
+    const reopened = await page.evaluate((v) => {
+      const labels = Array.from(document.querySelectorAll('.lq-popover .lq-filter__values .lq-filter__value'));
+      const hit = labels.find((l) => l.querySelector('.lq-filter__label').textContent === v);
+      LQ.app.popovers.close();
+      return hit ? hit.querySelector('input').checked : null;
+    }, dropped);
+    eq(reopened, false, '外した値は一覧にチェックなしで残る');
+    const tagText = await page.evaluate(() => document.querySelector('.lq-filterbar .lq-ftag').textContent);
+    ok(tagText.indexOf('以外') < 0 && tagText.indexOf(dropped) < 0, 'タグは残している値で表す：' + tagText);
     /* ① の見出しの一覧では、外した値だけ選ばれていない */
     const unchecked = await page.evaluate((v) => {
       LQ.app.columnMenu.open(document.body, 'source', '地域');

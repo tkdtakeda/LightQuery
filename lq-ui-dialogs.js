@@ -397,7 +397,7 @@
         ['① 元データ', res.snapshot.sourceName + '（読み込み ' + fmt(src ? LQ.PrepFlow.steps(src)[0].rows : res.stats.sourceRows) + ' 行）'],
         ['① の前処理', res.snapshot.sourcePrep || 'なし（全行）']
       ];
-      (src && src.filters ? src.filters : []).forEach((f, i) => rows.push([i === 0 ? '絞り込み' : '', LQ.RowFilter.describe(f, LQ.DateColumns ? LQ.DateColumns.isDate(src, f.col) : false)]));
+      (src && src.filters ? src.filters : []).forEach((f, i) => rows.push([i === 0 ? '絞り込み' : '', LQ.RowFilter.describe(f, LQ.DateColumns ? LQ.DateColumns.isDate(src, f.col) : false, src)]));
       rows.push(['結果', fmt(res.length) + ' 行']);
       this.pop.open(anchor, [
         this._head('magnifying-glass', '抽出の内容'),

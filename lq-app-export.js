@@ -244,7 +244,7 @@
       lines.push(['照合', '照合なし（絞り込みだけ）：② 照合表と抽出条件は使わず、① の前処理の後の行をそのまま出力']);
       const prep = this._prepLine(src, '① の前処理');
       lines.push(prep || ['① の前処理', 'なし（全行）']);
-      (src.filters || []).forEach((f, i) => lines.push([i === 0 ? '絞り込み' : '', LQ.RowFilter.describe(f, LQ.DateColumns ? LQ.DateColumns.isDate(src, f.col) : false)]));
+      (src.filters || []).forEach((f, i) => lines.push([i === 0 ? '絞り込み' : '', LQ.RowFilter.describe(f, LQ.DateColumns ? LQ.DateColumns.isDate(src, f.col) : false, src)]));
       lines.push(['結果', fmt(view.result.length) + ' 行']);
       if (prepared.aggregate) {
         lines.push(['ピボット', LQ.Aggregator.describe(s.aggregate) + '（対象 ' + fmt(prepared.aggregate.rowCount) + ' 行・表 ' + fmt(prepared.aggregate.groupCount) + ' 行）']);

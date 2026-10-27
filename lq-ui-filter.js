@@ -29,7 +29,7 @@
 
   /** 絞り込みの文章（日付の列なら日付向けの呼び方） */
   function describe(ds, f) {
-    return LQ.RowFilter.describe(f, isDateCol(ds, f.col));
+    return LQ.RowFilter.describe(f, isDateCol(ds, f.col), ds);
   }
 
   /* ---------------------------------------------------------------------
@@ -57,26 +57,9 @@
         pop.close();
         return;
       }
-      const current = (ds.filters || []).find((f) => f.col === colName) || null;
-      const values = this._distinct(ds, colName);
-      const date = isDateCol(ds, colName);
-      const all = values.list.map((v) => v.value);
-      const f = current ? LQ.Util.clone(current) : { id: LQ.Util.uid('flt'), col: colName, mode: 'values', op: date ? 'between' : 'eq', value: '', value2: '', values: all.slice() };
-      if (f.mode !== 'values' && !f.values) f.values = all.slice();
-      if (f.mode === 'values' && f.exclude) {
-        /* 抽出結果の見出しで掛けた「除く値」は、残す値の一覧に直して見せる */
-        const norm = new LQ.Normalizer(LQ.Normalizer.DEFAULT_RULES);
-        const drop = new Set(f.values.map((v) => norm.text(v)));
-        f.values = all.filter((v) => !drop.has(norm.text(v)));
-        delete f.exclude;
-      }
-      this.ds = ds;
-      this.role = role;
-      this.f = f;
-      this.current = current;
-      this.others = (ds.filters || []).filter((x) => x.col !== colName);
-      this.values = values;
-      this.date = date;
+      this._prepare(ds, role, colName);
+      const current = this.current;
+      const f = this.f;
       this.estimate = h('div', { class: 'lq-filter__estimate' });
       this.problem = h('div');
       this.okBtn = h('button', { class: 'lq-btn lq-btn--primary', type: 'button', onclick: () => this._apply() }, [Dom.icon('check'), 'OK']);
@@ -112,11 +95,52 @@
       return sw.el;
     }
 
-    /** 絞り込み前の列の値（種類と件数。多い順） */
-    _distinct(ds, colName) {
+    /**
+     * 一覧の中身を用意する（① / ② の見出し・抽出結果の ① の列の見出しで共通。どこで開いても同じ一覧になる）。
+     *   Excel のオートフィルターと同じく、値の一覧は「ほかの列の絞り込み」を掛けた行の値で、
+     *   この列で外した値もチェックなしで残す（チェックを入れ直せば戻せる）
+     */
+    _prepare(ds, role, colName) {
+      const current = (ds.filters || []).find((f) => f.col === colName) || null;
+      const others = (ds.filters || []).filter((x) => x.col !== colName);
+      const values = this._distinct(ds, colName, others);
+      const date = isDateCol(ds, colName);
+      const all = values.list.map((v) => v.value);
+      const f = current ? LQ.Util.clone(current) : { id: LQ.Util.uid('flt'), col: colName, mode: 'values', op: date ? 'between' : 'eq', value: '', value2: '', values: all.slice() };
+      const norm = new LQ.Normalizer(LQ.Normalizer.DEFAULT_RULES);
+      if (f.mode !== 'values') {
+        /* 条件で絞っているときは、条件を満たす値にチェックを入れて見せる（値の一覧に切り替えたときの出発点） */
+        const test = current ? LQ.RowFilter.compile(current, { findColumn: () => 0 }, (r) => r) : null;
+        f.values = test && test.test ? all.filter((v) => test.test(v)) : all.slice();
+      } else if (f.exclude) {
+        /* 以前の「除く値」（抽出結果の見出しで外した値）は、残す値の一覧に直して見せる */
+        const drop = new Set(f.values.map((v) => norm.text(v)));
+        f.values = all.filter((v) => !drop.has(norm.text(v)));
+        delete f.exclude;
+      }
+      /* ほかの列の絞り込みで一覧に出ない「残す値」は、確定しても消さずに持ち越す */
+      const listed = new Set(all.map((v) => norm.text(v)));
+      this.hidden = f.mode === 'values' && current && !current.exclude ? current.values.filter((v) => !listed.has(norm.text(v))) : [];
+      f.values = f.values.filter((v) => listed.has(norm.text(v)));
+      this.ds = ds;
+      this.role = role;
+      this.f = f;
+      this.current = current;
+      this.others = others;
+      this.values = values;
+      this.date = date;
+    }
+
+    /** 列の値（種類と件数。多い順）。others（ほかの列の絞り込み）を満たす行だけを数える */
+    _distinct(ds, colName, others) {
       const c = ds.findColumn(colName);
       const counts = new Map();
+      const cell = (r, col) => ds.baseCell(r, col);
+      const tests = (others || []).map((f) => LQ.RowFilter.compile(f, ds, cell).test).filter(Boolean);
       for (let r = 0; r < ds.baseRowCount; r++) {
+        let ok = true;
+        for (let i = 0; i < tests.length && ok; i++) ok = tests[i](r);
+        if (!ok) continue;
         const raw = ds.baseCell(r, c);
         const v = LQ.Normalizer.isBlank(raw) ? BLANK : String(raw);
         counts.set(v, (counts.get(v) || 0) + 1);
@@ -253,6 +277,29 @@
       return this.f.mode === 'values' && this.values.total <= VALUE_LIMIT && this.f.values.length === this.values.list.length;
     }
 
+    /** 確定する絞り込み（値の一覧なら、一覧に出ていない「残す値」も持ち越す） */
+    _finalFilter() {
+      const f = LQ.Util.clone(this.f);
+      if (f.mode === 'values') {
+        f.values = f.values.concat(this.hidden || []);
+        f.known = this.values.list.map((v) => v.value).concat(this.hidden || []);
+        delete f.exclude;
+      }
+      return f;
+    }
+
+    /** 確定したあとの、この表の絞り込みの一覧（すべて選んでいればこの列の絞り込みを外す） */
+    _nextFilters() {
+      if (this._allChosen()) return this.others;
+      const next = this._finalFilter();
+      /* 直した絞り込みはタグの並びの同じ位置に置く（直すたびに位置が動かないように） */
+      const list = (this.ds.filters || []).slice();
+      const at = list.findIndex((x) => x.col === next.col);
+      if (at < 0) return list.concat([next]);
+      list[at] = next;
+      return list;
+    }
+
     /** 確定できない理由（なければ null） */
     _problem() {
       if (this.f.mode === 'values') return this.f.values.length ? null : '残す値を 1 つ以上選んでください';
@@ -270,7 +317,7 @@
         return;
       }
       const base = this.ds.baseRowCount;
-      const kept = this.ds.countWith(this._allChosen() ? this.others : this.others.concat([this.f]));
+      const kept = this.ds.countWith(this._nextFilters());
       this.estimate.appendChild(UI.status(kept ? 'ok' : 'warn', fmt(base) + ' 行 → ' + fmt(kept) + ' 行になります' +
         (this.others.length ? '（ほかの列の絞り込み ' + this.others.length + ' 件も含む）' : '') + (this._allChosen() ? '・この列では絞り込みません' : '')));
     }
@@ -287,11 +334,7 @@
         }
         return;
       }
-      if (f.mode === 'values') {
-        f.values = f.values.slice();
-        f.known = this.values.list.map((v) => v.value);
-      }
-      this.state.setFilters(this.role, this.others.concat([f]));
+      this.state.setFilters(this.role, this._nextFilters());
       this.ctx.popovers.close();
       this._notify(before, '「' + f.col + '」で絞り込みました');
     }
