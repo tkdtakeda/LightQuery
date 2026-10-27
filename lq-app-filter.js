@@ -98,6 +98,12 @@
       const scope = this._narrowed(src)
         ? '① ' + fmt(LQ.PrepFlow.steps(src)[0].rows) + ' 行 → ' + fmt(src.rowCount) + ' 行'
         : '全行（絞り込みなし）';
+      /* ピボットタブでは、照合するときと同じくピボットの表を出力する（出力の処理もピボットを出す） */
+      const agg = s.view.tab === 'aggregate' ? this.app.main.aggregate.computed() : null;
+      if (agg) {
+        return { id: 'export', label: 'ピボット（' + fmt(agg.groupCount) + ' 行）を出力する', icon: 'file-export',
+          status: { kind: 'ok', text: '絞り込み後の ' + fmt(agg.rowCount) + ' 行のピボットを Excel・CSV・コピーで出力できます' } };
+      }
       return { id: 'export', label: fmt(view.length) + ' 行を出力する', icon: 'file-export',
         status: { kind: 'ok', text: '絞り込みだけ（照合なし）：' + scope } };
     }
