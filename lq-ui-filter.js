@@ -169,8 +169,10 @@
             else chosen.delete(v.value);
             commit();
           });
-          frag.appendChild(h('label', { class: 'lq-filter__value' }, [box, h('span', { class: 'lq-filter__label', text: label, title: label }),
-            h('span', { class: 'lq-filter__count lq-num', text: fmt(v.count) })]));
+          /* off：今この列の絞り込みで外している値（抽出結果の見出しの一覧だけ。件数は元の表の行数） */
+          frag.appendChild(h('label', { class: 'lq-filter__value' + (v.off ? ' is-off' : ''), title: v.off ? v.offTitle : null }, [box,
+            h('span', { class: 'lq-filter__label', text: label, title: v.off ? null : label }),
+            h('span', { class: 'lq-filter__count lq-num', text: v.off ? v.offCount : fmt(v.count) })]));
         });
         list.appendChild(frag);
         syncAll();

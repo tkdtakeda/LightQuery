@@ -317,6 +317,39 @@ check('抽出結果の絞り込み：見出しの一覧で外した値を元の�
   });
 });
 
+check('抽出結果の絞り込み：外した値も見出しの一覧にチェックなしで出し、チェックを入れて戻せる（照合する・絞り込みだけ）', async (browser) => {
+  for (const sample of ['idlist', 'filteronly']) {
+    await withPage(browser, async (page) => {
+      await page.evaluate(async (id) => {
+        await LQ.app.profiles.loadSample(id);
+        await LQ.app.run();
+      }, sample);
+      await page.waitForFunction(() => LQ.app.state.result && !LQ.app.state.busy);
+      const start = await page.evaluate(() => ({ rows: LQ.app.state.result.length, filters: JSON.stringify(LQ.app.state.datasets.source.filters) }));
+      const offLabels = () => page.evaluate(() => Array.from(document.querySelectorAll('.lq-popover .lq-filter__value.is-off'))
+        .map((l) => ({ value: l.querySelector('.lq-filter__label').textContent, checked: l.querySelector('input').checked })));
+      /* 見出しの一覧で 1 つ外す */
+      await page.click('th[data-key="s:顧客名"]');
+      eq((await offLabels()).length, 0, sample + '：外す前は「外している値」はない');
+      const dropped = await page.evaluate(() => {
+        const label = document.querySelector('.lq-popover .lq-filter__values .lq-filter__value');
+        label.querySelector('input').click();
+        return label.querySelector('.lq-filter__label').textContent;
+      });
+      await page.click('.lq-popover .lq-popover__foot .lq-btn--primary');
+      await page.waitForFunction((n) => LQ.app.state.result && !LQ.app.state.busy && LQ.app.state.result.length < n, start.rows);
+      /* もう一度開くと、外した値がチェックなしで出る */
+      await page.click('th[data-key="s:顧客名"]');
+      eq(await offLabels(), [{ value: dropped, checked: false }], sample + '：外した値がチェックなしで一覧に出る');
+      await page.evaluate(() => document.querySelector('.lq-popover .lq-filter__value.is-off input').click());
+      await page.click('.lq-popover .lq-popover__foot .lq-btn--primary');
+      await page.waitForFunction((n) => LQ.app.state.result && !LQ.app.state.busy && LQ.app.state.result.length === n, start.rows, { timeout: 3000 }).catch(() => null);
+      const end = await page.evaluate(() => ({ rows: LQ.app.state.result.length, filters: JSON.stringify(LQ.app.state.datasets.source.filters) }));
+      eq(end, start, sample + '：チェックを入れて OK で元の行数・元の絞り込みに戻る');
+    });
+  }
+});
+
 check('貼り付け：読み込むたびに、値が Excel の表示どおり（丸めた値）だと知らせる', async (browser) => {
   await withPage(browser, async (page) => {
     const n = await page.evaluate(async () => {
