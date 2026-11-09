@@ -1,0 +1,54 @@
+/* =========================================================================
+ * 案 G（表を最大にする）のモック：状態帯を 1 行にまとめる
+ *   骨組み（上部バー・アイコン列・タブ・表）は fo-shell.css を使い、ここでは状態帯・札・ポップオーバー・下段だけを足す
+ * ========================================================================= */
+.main { grid-template-rows: auto auto 1fr auto; gap: 6px; }
+.main.is-before { grid-template-rows: auto auto auto 1fr auto auto; }
+.tabbar { display: flex; align-items: flex-end; border-bottom: 1px solid var(--color-line); }
+.tabbar .tabs { border-bottom: 0; flex: 1; }
+.tabtools { display: flex; gap: 6px; padding-bottom: 5px; }
+.btn--sm { height: 28px; padding: 0 10px; font-size: var(--font-size-small); }
+.btn .warn-dot { color: var(--color-warn); margin-left: 2px; }
+
+/* 変更前：帯を縦に積む */
+.bands { display: grid; gap: 6px; }
+.band { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: var(--radius-md); background: var(--c-gray-50); border: 1px solid var(--color-line); font-size: var(--font-size-small); color: var(--color-text-sub); flex-wrap: wrap; }
+.band b { color: var(--color-text); }
+.band .spacer { flex: 1; }
+.pill { display: inline-flex; gap: 4px; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--color-surface); border: 1px solid var(--color-line); }
+
+/* 変更後：1 行の状態帯（左：事実 → 札 → 右：操作） */
+.strip { display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; }
+.strip .facts { display: flex; gap: 12px; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.strip .facts .main-fact { font-weight: 700; display: inline-flex; gap: 6px; align-items: center; }
+.strip .facts .main-fact i { color: var(--color-ok); }
+.strip .facts .opt { color: var(--color-text-sub); font-size: var(--font-size-small); }
+.strip .chips { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+.strip .actions { display: flex; gap: 6px; margin-left: auto; flex: 0 0 auto; }
+.chip { display: inline-flex; gap: 5px; align-items: center; height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--c-blue-100); background: var(--color-primary-soft); color: var(--color-primary); font-size: var(--font-size-small); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.chip .caret { font-size: 9px; opacity: .7; }
+.chip--cond { border-color: #c9e4e1; background: var(--color-cond-soft); color: var(--color-cond); }
+.chip--warn { border-color: #ecd3a6; background: var(--color-warn-soft); color: var(--color-warn); }
+.chip--muted { border-color: var(--color-line); background: var(--color-surface); color: var(--color-text-sub); }
+.chip.is-open { box-shadow: 0 0 0 3px var(--c-blue-100); }
+.chip .num { font-variant-numeric: tabular-nums; }
+
+/* 札を押すと開く中身（今の帯と同じ内容・同じ操作） */
+.pop { position: absolute; z-index: 40; width: 420px; background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.pop header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--color-line); font-weight: 700; }
+.pop header .spacer { flex: 1; }
+.pop .body { padding: 12px; display: grid; gap: 10px; font-size: var(--font-size-small); color: var(--color-text-sub); }
+.pop .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.pop .ftag { font-size: var(--font-size-small); }
+
+/* 下段：ページ送りと知らせを 1 行に（知らせが表を押し縮めない） */
+.foot { display: flex; align-items: center; gap: 12px; height: 34px; color: var(--color-text-sub); font-size: var(--font-size-small); }
+.foot .toast { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; padding: 0 10px; height: 28px; border-radius: var(--radius-md); background: var(--color-ok-soft); border-left: 3px solid var(--color-ok); color: var(--color-text); white-space: nowrap; overflow: hidden; }
+.foot .toast span { overflow: hidden; text-overflow: ellipsis; }
+.foot .toast .btn { height: 22px; padding: 0 8px; font-size: 11px; margin-left: auto; }
+.toastrow { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-line); border-left: 3px solid var(--color-ok); font-size: var(--font-size-small); }
+.toastrow .spacer { flex: 1; }
+
+/* 面積の比較（評価用の注記。?shot=1 では隠す） */
+.measure { position: fixed; right: 12px; bottom: 30px; background: #fffbe8; border: 1px solid #e8d79a; border-radius: 6px; padding: 6px 10px; font-size: 11px; color: #5a4a10; z-index: 98; }
+body.shot .measure { display: none; }
