@@ -104,14 +104,53 @@
       '<span class="actions"><button class="icon-btn" title="抽出の内容"><i class="fa-solid fa-magnifying-glass"></i></button><button class="icon-btn" title="前回と比べる"><i class="fa-solid fa-not-equal"></i></button></span></div>' + table(26) + foot;
   }
 
-  const STATES = [['before', '変更前（今）'], ['after', '変更後'], ['popover', '変更後：札を押したところ'], ['source', '変更後：① タブ'], ['narrow', '変更後：パネルを開いて狭いとき']];
+  /* パネルをたたむ：幅 40px ほどの縦の帯に。パネル名と適用中の件数が見えたまま残り、押すと同じ状態で開き直す（Ctrl+B でも開閉） */
+  const PANEL = '<header><i class="fa-solid fa-code-compare"></i>抽出条件<span class="spacer"></span>' +
+    '<button class="icon-btn" title="たたむ（Ctrl+B）。入力中の内容はそのまま残ります"><i class="fa-solid fa-angles-left"></i></button><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header>' +
+    '<div class="scroll"><div class="note">抽出条件 1 件：A：① 顧客ID ＝ ② 顧客ID（入力中の内容）</div></div>';
+  function panelOpen() {
+    $('#panel').hidden = false;
+    $('#panel').className = 'panel';
+    $('#panel').innerHTML = PANEL;
+    return strip() + table(26) + foot;
+  }
+  function collapsed() {
+    $('#panel').hidden = false;
+    $('#panel').className = 'panel is-folded';
+    $('#panel').innerHTML = '<button class="fold" title="抽出条件パネルを開く（Ctrl+B）。たたむ前の状態のまま開きます"><i class="fa-solid fa-angles-right"></i>' +
+      '<span class="fold__title">抽出条件</span><span class="fold__count">1</span></button>';
+    return strip() + table(26) + foot;
+  }
+  /* 列の固定：見出しの一覧の「この列まで固定」。狭くなって横にスクロールしても、見分けに使う列が消えない（作業セットごとに記憶） */
+  function frozen() {
+    $('#panel').hidden = false;
+    $('#panel').className = 'panel';
+    $('#panel').innerHTML = PANEL;
+    setTimeout(() => {
+      const w = document.querySelector('.tbl-wrap');
+      if (w) w.scrollLeft = 160;
+    });
+    return strip() + '<div class="tbl-wrap is-frozen">' + MOCK.table({ limit: 26 }) + '</div>' + foot;
+  }
+  function freezeMenu() {
+    $('#panel').hidden = true;
+    return strip() + table(26) + foot;
+  }
+  const FREEZE_MENU = '<div class="pop" style="left:300px;top:186px;width:300px"><header><i class="fa-solid fa-filter"></i>商品コード<span class="spacer"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header>' +
+    '<div class="body"><div class="row"><span>この列を出力する</span><span class="pill">ON</span></div><div class="row"><button class="btn btn--sm">昇順</button><button class="btn btn--sm">降順</button>' +
+    '<button class="btn btn--sm is-hl"><i class="fa-solid fa-thumbtack"></i>この列まで固定</button></div><div class="small sub">（値の一覧・条件で絞る…）</div></div></div>';
+
+  const STATES = [['before', '変更前（今）'], ['after', '変更後'], ['popover', '変更後：札を押したところ'], ['source', '変更後：① タブ'], ['narrow', '変更後：パネルを開いて狭いとき'],
+    ['panel', 'パネル：開いた'], ['folded', 'パネル：たたんだ'], ['freezemenu', '列の固定：見出しの一覧'], ['frozen', '列の固定：狭くても見分けの列が残る']];
   MOCK.boot(STATES, (st) => {
     $('#panel').hidden = true;
     const main = $('#main');
     main.className = 'main' + (st === 'before' ? ' is-before' : '');
-    const html = st === 'before' ? before() : st === 'popover' ? after('filter') : st === 'source' ? source() : st === 'narrow' ? narrow() : after();
+    $('#panel').className = 'panel';
+    const html = st === 'before' ? before() : st === 'popover' ? after('filter') : st === 'source' ? source() : st === 'narrow' ? narrow()
+      : st === 'panel' ? panelOpen() : st === 'folded' ? collapsed() : st === 'frozen' ? frozen() : st === 'freezemenu' ? freezeMenu() : after();
     main.innerHTML = tabs(st === 'source' ? 'src' : st === 'before' ? 'before' : 'result') + html;
-    $('#overlay').innerHTML = st === 'popover' ? popover() : '';
+    $('#overlay').innerHTML = st === 'popover' ? popover() : st === 'freezemenu' ? FREEZE_MENU : '';
     requestAnimationFrame(() => {
       const t = main.querySelector('.tbl-wrap');
       if (!t) return;

@@ -52,3 +52,29 @@
 /* 面積の比較（評価用の注記。?shot=1 では隠す） */
 .measure { position: fixed; right: 12px; bottom: 30px; background: #fffbe8; border: 1px solid #e8d79a; border-radius: 6px; padding: 6px 10px; font-size: 11px; color: #5a4a10; z-index: 98; }
 body.shot .measure { display: none; }
+
+/* パネルをたたんだ帯（幅 40px。パネル名と適用中の件数を残す） */
+.panel.is-folded { width: 40px; }
+.fold { border: 0; background: var(--color-surface); height: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0; cursor: pointer; color: var(--color-primary); }
+.fold:hover { background: var(--color-primary-soft); }
+.fold__title { writing-mode: vertical-rl; font-weight: 700; letter-spacing: .1em; }
+.fold__count { min-width: 20px; height: 20px; border-radius: 999px; background: var(--color-primary); color: #fff; font-size: 11px; display: grid; place-items: center; }
+
+/* 列の固定：行番号＋先頭 2 列を左に固定し、境目に影を付ける */
+.tbl-wrap.is-frozen th:nth-child(-n+3), .tbl-wrap.is-frozen td:nth-child(-n+3) { position: sticky; z-index: 2; background: var(--color-surface); }
+.tbl-wrap.is-frozen th:nth-child(1), .tbl-wrap.is-frozen td:nth-child(1) { left: 0; }
+.tbl-wrap.is-frozen th:nth-child(2), .tbl-wrap.is-frozen td:nth-child(2) { left: 40px; }
+.tbl-wrap.is-frozen th:nth-child(3), .tbl-wrap.is-frozen td:nth-child(3) { left: 120px; box-shadow: 4px 0 4px -2px rgba(20, 44, 71, .18); }
+.tbl-wrap.is-frozen th:nth-child(-n+3) { background: var(--c-gray-50); z-index: 3; }
+.btn.is-hl { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); }
+.panel.is-folded .fold { width: 100%; flex: 1; justify-content: flex-start; }
+.panel.is-folded .fold__title { display: block; color: var(--color-text); font-size: 13px; line-height: 1; }
+.tbl-wrap.is-frozen { overflow: auto; }
+.tbl-wrap.is-frozen table { min-width: 1500px; }
+.panel.is-folded .fold { height: auto; min-height: 100%; }
+.tbl-wrap.is-frozen table { table-layout: fixed; width: 1500px; }
+.tbl-wrap.is-frozen th:nth-child(1) { width: 40px; }
+.tbl-wrap.is-frozen th:nth-child(2) { width: 80px; }
+.tbl-wrap.is-frozen th:nth-child(3) { width: 130px; }
+.panel.is-folded .fold > * { flex: none; }
+.panel.is-folded .fold__title { writing-mode: horizontal-tb; width: 1em; line-height: 1.2; word-break: break-all; text-align: center; letter-spacing: 0; }
