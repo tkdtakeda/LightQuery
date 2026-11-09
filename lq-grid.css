@@ -267,6 +267,211 @@
   gap: var(--space-2);
 }
 
+/* ---------- 状態帯（lq-ui-status-strip.js）：要約・札・操作を 1 行に ---------- */
+.lq-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  min-height: var(--h-control-sm);
+  overflow: hidden;
+}
+
+/* 要約は先に縮み、入りきらない項目は折り返した先ごと隠す（全文はツールチップ） */
+.lq-strip__summary.lq-summary {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  min-width: var(--w-strip-summary-min);
+  max-height: var(--h-control-sm);
+  overflow: hidden;
+}
+
+.lq-strip__summary > * {
+  min-height: var(--h-control-sm);
+}
+
+.lq-strip__chips {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lq-strip__actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.lq-strip__actions > .lq-summary__actions {
+  margin-left: 0;
+}
+
+/* 狭いとき：操作ボタンはアイコンだけ（文字は読み上げ・ツールチップに残す）、要約はさらに縮める */
+.lq-strip.is-tight .lq-strip__summary.lq-summary {
+  min-width: var(--w-strip-summary-min-tight);
+}
+
+.lq-strip.is-tight .lq-strip__actions .lq-btn {
+  gap: 0;
+  font-size: 0;
+}
+
+.lq-strip.is-tight .lq-strip__actions .lq-btn .fa-solid {
+  font-size: var(--icon-md);
+}
+
+/* 札：押すと元の帯の中身（操作つき）を開く */
+.lq-schip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-control-xs);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--color-primary-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
+}
+
+.lq-schip:hover,
+.lq-schip.is-open {
+  box-shadow: 0 0 0 var(--focus-width) var(--color-focus-ring);
+}
+
+.lq-schip:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus-ring);
+  outline-offset: var(--border-width);
+}
+
+.lq-schip .lq-badge {
+  height: auto;
+}
+
+.lq-schip__caret {
+  font-size: var(--icon-xs);
+  opacity: var(--opacity-resting);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.lq-schip.is-open .lq-schip__caret {
+  transform: rotate(180deg);
+}
+
+.lq-schip--cond {
+  border-color: var(--color-cond-line);
+  background: var(--color-cond-soft);
+  color: var(--color-cond-strong);
+}
+
+.lq-schip--warn {
+  border-color: var(--color-warning-line);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
+}
+
+.lq-schip--muted {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-sub);
+}
+
+/* 札の中身：元の帯をそのまま入れる（折り返して読めるように） */
+.lq-popover.lq-strip-pop {
+  width: auto;
+  min-width: var(--w-popover);
+  max-width: min(var(--w-popover-strip), calc(100vw - var(--space-8)));
+}
+
+.lq-strip-pop__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lq-strip-pop__body .lq-filterbar {
+  flex-wrap: wrap;
+}
+
+/* 帯の見出し（「処理の流れ」など）はポップオーバーの見出しと同じなので出さない */
+.lq-strip-pop__body > .lq-filterbar > .lq-filterbar__label:first-child {
+  display: none;
+}
+
+.lq-strip-pop__sub {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  color: var(--color-text-sub);
+}
+
+/* 「列 n / m」ボタンの ⚠（出力できない列があるとき） */
+.lq-btn__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-warning-strong);
+  font-weight: var(--fw-bold);
+}
+
+/* ---------- 下段：ページ送りと知らせを 1 行に ---------- */
+.lq-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-2) var(--space-6);
+  font-size: var(--fs-sm);
+  color: var(--color-text-sub);
+}
+
+.lq-foot:not(:has(> .lq-pager > *)):not(:has(> .lq-toasts.has-toast)) {
+  display: none;
+}
+
+.lq-foot > .lq-pager {
+  display: contents;
+}
+
+.lq-foot > .lq-pager > * {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.lq-foot > .lq-toasts {
+  order: 1;
+  flex: 1 1 0;
+  min-width: min(100%, var(--w-toast-min));
+  padding: 0;
+  align-items: center;
+}
+
+.lq-foot .lq-pager__range {
+  order: 2;
+}
+
+.lq-foot .lq-toast {
+  min-height: var(--h-control-sm);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.lq-foot .lq-toasts:not(.is-expanded) .lq-toast__body {
+  -webkit-line-clamp: 1;
+}
+
+.lq-foot .lq-toasts__more {
+  margin-bottom: 0;
+}
+
 /* ---------- 表 ---------- */
 .lq-gridwrap {
   position: relative;

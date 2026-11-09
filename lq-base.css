@@ -350,8 +350,7 @@ ol {
 .lq-main > .lq-infobar { grid-row: 2; }
 .lq-main > .lq-busyband { grid-row: 3; }
 .lq-main > .lq-gridwrap { grid-row: 4; }
-.lq-main > .lq-toasts { grid-row: 5; }
-.lq-main > .lq-pager { grid-row: 6; }
+.lq-main > .lq-foot { grid-row: 6; }
 
 /* ---------- 左のアイコン列の項目（アイコン＋短いラベル） ---------- */
 .lq-rail__item {

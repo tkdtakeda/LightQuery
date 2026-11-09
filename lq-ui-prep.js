@@ -346,7 +346,12 @@
         items.push(h('button', { class: 'lq-btn lq-btn--xs lq-flow__edit', type: 'button', title: '読み込みの設定（縦に結合・列の追加・絞り込み・重複の削除）を開く',
           onclick: () => ctx.state.openPanel(ds.role) }, [Dom.icon('sliders'), '設定']));
       }
-      return h('div', { class: 'lq-filterbar lq-flow', role: 'group', 'aria-label': '処理の流れ' }, items);
+      const steps = LQ.PrepFlow.steps(ds);
+      const label = fmt(steps[0].rows) + ' → ' + fmt(ds.rowCount) + (o.tail ? ' → ' + fmt(o.tail.rows) : '');
+      return LQ.StatusStrip.fold(h('div', { class: 'lq-filterbar lq-flow', role: 'group', 'aria-label': '処理の流れ' }, items), {
+        id: 'flow', badge: [ds.role === 'source' ? 'src' : 'cond', mark], label: label, tone: ds.role === 'source' ? 'primary' : 'cond', priority: 40,
+        heading: mark + ' 処理の流れ', title: mark + ' 処理の流れ：読み込み ' + fmt(steps[0].rows) + ' 行 → 使う行 ' + fmt(ds.rowCount) + ' 行' + (o.tail ? ' → ' + o.tail.label + ' ' + fmt(o.tail.rows) + ' 行' : '')
+      });
     },
 
     _step(ctx, ds, st, first) {

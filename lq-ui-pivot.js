@@ -282,8 +282,7 @@
       const onResult = this.target() === 'result';
       if (onResult) main._renderFilterBar(view);
       if (onResult && s.isStale()) {
-        main.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
-          'ピボットは変更前の抽出結果から計算しています。右上のボタンで再抽出すると反映されます。'])));
+        main.info.appendChild(LQ.MainView.staleNote('ピボットは変更前の抽出結果から計算しています。右上のボタンで再抽出すると反映されます。'));
       }
       if (c.missing.length) main.info.appendChild(UI.note('warn', '次の項目は使えないため外しました：' + c.missing.join('、') + '。'));
       if (c.notes.length) main.info.appendChild(UI.note('info', h('div', {}, c.notes.map((n) => h('div', { text: n })))));

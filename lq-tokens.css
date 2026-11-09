@@ -194,6 +194,10 @@
   --w-popover: 360px;
   --w-popover-lg: 460px;
   --w-popover-xl: 840px;
+  --w-popover-strip: 620px;
+  --w-strip-summary-min: 200px;
+  --w-strip-summary-min-tight: 120px;
+  --w-toast-min: 320px;
   --w-toast: 400px;
   --w-modal: 960px;
   --w-modal-form: 760px;

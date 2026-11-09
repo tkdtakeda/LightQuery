@@ -350,11 +350,15 @@
         ctx.toasts.show({ type: 'success', title: '絞り込みをすべて外しました', message: 'すべての行（' + fmt(s.datasets[role].rowCount) + ' 行）を使います。',
           actions: [{ label: '元に戻す', icon: 'rotate-left', onClick: () => s.setFilters(role, before) }] });
       } }, [Dom.icon('filter-circle-xmark'), 'すべて外す']);
-      return h('div', { class: 'lq-filterbar lq-filterbar--rows' }, [
+      const broken = info.items.some((x) => !x.ok);
+      return LQ.StatusStrip.fold(h('div', { class: 'lq-filterbar lq-filterbar--rows' }, [
         h('span', { class: 'lq-filterbar__label' }, [Dom.icon('filter'),
           '絞り込み中：' + fmt(info.base || ds.baseRowCount) + ' 行中 ' + fmt(info.kept === undefined ? ds.rowCount : info.kept) + ' 行（すべてを満たす行）']),
         tags, clear
-      ].flat());
+      ].flat()), {
+        id: 'filters', icon: broken ? 'triangle-exclamation' : 'filter', label: '絞り込み ' + filters.length, tone: broken ? 'warn' : 'primary', priority: 50,
+        heading: '絞り込み（' + filters.length + ' 件）', title: '絞り込み中：' + fmt(info.base || ds.baseRowCount) + ' 行中 ' + fmt(info.kept === undefined ? ds.rowCount : info.kept) + ' 行'
+      });
     }
   };
 

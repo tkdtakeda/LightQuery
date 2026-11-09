@@ -311,11 +311,15 @@
           } }, Dom.icon('xmark'))
         ]);
       });
-      return h('div', { class: 'lq-filterbar lq-filterbar--rows', title: view.result.filterOnly
+      const broken = groups.some((g) => !g.ok);
+      return LQ.StatusStrip.fold(h('div', { class: 'lq-filterbar lq-filterbar--rows', title: view.result.filterOnly
         ? '① に掛けている絞り込みです（この行が結果になります）。結果の見出しを押しても同じ絞り込みを直せます。'
         : '抽出の前に元の表に掛けている絞り込みです。結果の見出しを押しても同じ絞り込みを直せます。' }, [
         h('span', { class: 'lq-filterbar__label' }, [Dom.icon('filter'), '元データの絞り込み']), tags
-      ].flat());
+      ].flat()), {
+        id: 'filters', icon: broken ? 'triangle-exclamation' : 'filter', label: '絞り込み ' + groups.length, tone: broken ? 'warn' : 'primary', priority: 50,
+        heading: '元データの絞り込み（' + groups.length + ' 件）', title: groups.map((g) => (g.role === 'source' ? '① ' : '② ') + LQ.RowFilter.describe(g.filter, false)).join('\n')
+      });
     },
 
     /** ① は 1 件ずつ、② は同じ列・同じ内容の絞り込みを 1 つのタグにまとめる */
