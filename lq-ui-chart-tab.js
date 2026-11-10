@@ -157,8 +157,7 @@
       if (this.target(chart) === 'result') {
         main._renderFilterBar(view);
         if (s.isStale()) {
-          main.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
-            'グラフは変更前の抽出結果から描いています。右上のボタンで再抽出すると反映されます。'])));
+          main.info.appendChild(LQ.MainView.staleNote('グラフは変更前の抽出結果から描いています。右上のボタンで再抽出すると反映されます。'));
         }
       }
       /* 描けないときも操作バー（種類）は残し、別の種類にすぐ戻せるようにする。理由は描画領域の中に出す */
@@ -289,7 +288,7 @@
         h('span', { class: 'lq-summary__item lq-summary__hint' }, [Dom.icon('up-right-and-down-left-from-center'), '「1 枚で表示」で大きく表示・種類を変更'])
       ]));
       if (anyResult && s.isStale()) {
-        main.info.appendChild(UI.note('warn', '条件または照合ルールが変更されています。抽出結果を使うグラフは変更前の結果から描いています。'));
+        main.info.appendChild(LQ.MainView.staleNote('抽出結果を使うグラフは変更前の結果から描いています。'));
       }
       const cards = all.items.map((c) => this._card(c));
       if (cards.length !== this.gridEl.children.length || cards.some((card, i) => this.gridEl.children[i] !== card.el)) {

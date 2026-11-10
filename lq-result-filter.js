@@ -83,6 +83,38 @@
       return { list: list.slice(0, VALUE_LIMIT), total: list.length, rows: rows };
     },
 
+    /**
+     * この列の絞り込みで今外している値（ほかの列の絞り込みは満たす行だけ。件数は元の表の行数、多い順）。
+     *   結果の見出しの一覧に「チェックなし」で並べ、チェックすれば戻せるようにする（Excel のオートフィルターと同じ）
+     * @param {Array<{ds:LQ.Dataset}>} targets
+     * @param {string} col
+     * @returns {Array<{value:string,count:number}>}
+     */
+    excluded(targets, col) {
+      const norm = normalizer();
+      const found = new Map();
+      targets.forEach((t) => {
+        const ds = t.ds;
+        const filters = ds.filters || [];
+        const mine = filters.find((x) => x.col === col);
+        const c = ds.findColumn(col);
+        if (!mine || c < 0) return;
+        const cell = (r, ci) => ds.baseCell(r, ci);
+        const test = LQ.RowFilter.compile(mine, ds, cell).test;
+        if (!test) return;
+        const others = filters.filter((x) => x !== mine).map((x) => LQ.RowFilter.compile(x, ds, cell).test).filter(Boolean);
+        for (let r = 0; r < ds.baseRowCount; r++) {
+          if (test(r) || !others.every((o) => o(r))) continue;
+          const v = blankOr(ds.baseCell(r, c));
+          const k = norm.text(v);
+          const hit = found.get(k);
+          if (hit) hit.count++;
+          else found.set(k, { value: v, count: 1 });
+        }
+      });
+      return Array.from(found.values()).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value, 'ja', { numeric: true })).slice(0, VALUE_LIMIT);
+    },
+
     /** 一覧に出した値のうち、選ばなかった値 */
     unchecked(listed, chosen) {
       const on = new Set(chosen);
@@ -92,35 +124,46 @@
     /**
      * 結果の一覧での指定を、その表の絞り込みに直した新しい一覧（変わらなければ null）。
      *   条件（op）：その列の絞り込みを置き換える（① / ② の見出しの一覧で直すのと同じ）
-     *   値の一覧：選ばなかった値を、その列の今の絞り込みから除く（今の絞り込みがなければ「その値を除く」を足す）
+     *   値の一覧：選ばなかった値を、その列の今の絞り込みから除く（今の絞り込みがなければ「その値を除く」を足す）。
+     *             今外している値を選び直したら（restored）、その値を戻す。外している値をすべて戻し、新たに外す値もなければ、その列の絞り込みを外す
      * @param {LQ.Dataset} ds
      * @param {object} f 一覧で作った絞り込み（mode：'values' | 'op'）
-     * @param {string[]} removed 値の一覧で選ばなかった値
+     * @param {string[]} removed 値の一覧で選ばなかった値（結果にある値のうち）
+     * @param {string[]} [restored] 今外している値のうち、選び直した値
+     * @param {boolean} [restoresAll] 今外している値をすべて選び直したか
      */
-    mergeInto(ds, f, removed) {
+    mergeInto(ds, f, removed, restored, restoresAll) {
       const filters = ds.filters || [];
       const current = filters.find((x) => x.col === f.col) || null;
       const others = filters.filter((x) => x !== current);
       if (f.mode !== 'values') {
         return others.concat([{ id: current ? current.id : LQ.Util.uid('flt'), col: f.col, mode: 'op', op: f.op, value: f.value || '', value2: f.value2 || '' }]);
       }
-      if (!removed.length) return null;
+      const back = restored || [];
+      if (!removed.length && !back.length) return null;
+      if (current && !removed.length && restoresAll) return others;
       const norm = normalizer();
       const drop = new Set(removed.map((v) => norm.text(v)));
+      const revive = new Set(back.map((v) => norm.text(v)));
       const keep = (v) => !drop.has(norm.text(v));
       const id = current ? current.id : LQ.Util.uid('flt');
-      if (!current) return others.concat([{ id: id, col: f.col, mode: 'values', exclude: true, values: removed.slice() }]);
+      if (!current) return removed.length ? others.concat([{ id: id, col: f.col, mode: 'values', exclude: true, values: removed.slice() }]) : null;
       if (current.mode === 'values' && current.exclude) {
-        const known = new Set(current.values.map((v) => norm.text(v)));
-        const add = removed.filter((v) => !known.has(norm.text(v)));
-        return others.concat([Object.assign({}, current, { values: current.values.concat(add) })]);
+        const rest = current.values.filter((v) => !revive.has(norm.text(v)));
+        const known = new Set(rest.map((v) => norm.text(v)));
+        const values = rest.concat(removed.filter((v) => !known.has(norm.text(v))));
+        return values.length ? others.concat([Object.assign({}, current, { values: values })]) : others;
       }
+      const addBack = (list) => {
+        const have = new Set(list.map((v) => norm.text(v)));
+        return list.filter(keep).concat(back.filter((v) => !have.has(norm.text(v))));
+      };
       if (current.mode === 'values') {
-        return others.concat([Object.assign({}, current, { values: current.values.filter(keep) })]);
+        return others.concat([Object.assign({}, current, { values: addBack(current.values) })]);
       }
-      /* 条件（op）の絞り込み → 条件を満たす値の一覧から、選ばなかった値を除いた一覧にする */
+      /* 条件（op）の絞り込み → 条件を満たす値の一覧から、選ばなかった値を除き、選び直した値を足した一覧にする */
       const allowed = ResultFilter._valuesPassing(ds, current);
-      return others.concat([{ id: id, col: f.col, mode: 'values', values: allowed.values.filter(keep), known: allowed.known }]);
+      return others.concat([{ id: id, col: f.col, mode: 'values', values: addBack(allowed.values), known: allowed.known }]);
     },
 
     /** 絞り込み前の行のうち、filter を満たす行の値の一覧（と、すべての値） */

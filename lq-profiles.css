@@ -935,3 +935,12 @@ td.is-toggle .lq-th__caret {
   font-size: var(--fs-xs);
   color: var(--color-text-muted);
 }
+
+/* 抽出結果の見出しの一覧：今この列の絞り込みで外している値（チェックすると戻せる） */
+.lq-filter__value.is-off .lq-filter__label {
+  color: var(--color-text-muted);
+}
+
+.lq-filter__value.is-off .lq-filter__count {
+  font-style: italic;
+}

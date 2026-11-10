@@ -64,8 +64,11 @@
             (anchor) => CondMissBar.open(ctx, x.p, name, anchor), { zeroText: 'すべて一致しました' }));
         });
       }
-      return h('div', { class: 'lq-filterbar lq-flow', role: 'group', 'aria-label': '一致しなかった ② の行',
-        title: '顧客リストのうち受注がなかった顧客など、① のどの行とも一致しなかった ② の行です（優先順位の振り分けの前に数えます）' }, items);
+      return LQ.StatusStrip.fold(h('div', { class: 'lq-filterbar lq-flow', role: 'group', 'aria-label': '一致しなかった ② の行',
+        title: '顧客リストのうち受注がなかった顧客など、① のどの行とも一致しなかった ② の行です（優先順位の振り分けの前に数えます）' }, items), {
+        id: 'condmiss', badge: ['cond', '②'], label: total ? '未一致 ' + fmt(total) : 'すべて一致', tone: 'cond', priority: 30,
+        heading: '一致しなかった ② の行', title: total ? '① のどの行とも一致しなかった ② の行：' + fmt(total) + ' 行' : '② の行はすべて ① と一致しました'
+      });
     },
 
     /** 一致しなかった ② の行を、② の列で内訳に出す */
@@ -110,7 +113,11 @@
         h('button', { class: 'lq-btn lq-btn--xs', type: 'button', title: '比べる相手・行を見分ける列を変える', onclick: (e) => CompareDialog.open(ctx, e.currentTarget) }, [Dom.icon('sliders'), '設定']),
         UI.iconButton('xmark', '前回との比較を外す（元に戻せます）', () => cmp.stop(), 'lq-btn--xs')
       ]));
-      return h('div', { class: 'lq-filterbar lq-flow', role: 'group', 'aria-label': '前回との違い' }, items);
+      const label = !res.ok ? '比べられません' : '+' + fmt(res.added.length) + ' −' + fmt(res.removed.length) + (res.key ? ' ~' + fmt(res.changed.length) : '');
+      return LQ.StatusStrip.fold(h('div', { class: 'lq-filterbar lq-flow', role: 'group', 'aria-label': '前回との違い' }, items), {
+        id: 'compare', icon: 'not-equal', label: label, tone: res.ok ? 'muted' : 'warn', priority: 20, heading: '前回との違い',
+        title: '前回との違い（基準：' + cmp.base.name + '）' + (res.ok ? '：増えた行 ' + fmt(res.added.length) + '・消えた行 ' + fmt(res.removed.length) + (res.key ? '・変わった行 ' + fmt(res.changed.length) : '') : '')
+      });
     },
 
     open(ctx, res, kind, anchor) {

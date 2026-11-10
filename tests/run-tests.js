@@ -277,12 +277,12 @@ check('抽出結果の絞り込み：見出しの一覧で外した値を元の�
       for (let i = 0; i < view.length; i++) if (view.value(def, i) === v) left++;
       const f = S.datasets.source.filters[0];
       return { rows: view.length, left: left, filter: { col: f.col, exclude: !!f.exclude, values: f.values },
-        tag: !!document.querySelector('.lq-filterbar .lq-ftag'), mark: !!document.querySelector('th[data-key="s:地域"] .lq-th__filtered') };
+        tag: Array.from(document.querySelectorAll('.lq-strip .lq-schip')).some((c) => c.textContent.indexOf('絞り込み 1') !== -1), mark: !!document.querySelector('th[data-key="s:地域"] .lq-th__filtered') };
     }, dropped);
     ok(r1.rows < before, '外した値の行が結果から消える（' + before + ' → ' + r1.rows + ' 行）');
     eq(r1.left, 0, '外した値の行は残らない');
     eq(r1.filter, { col: '地域', exclude: true, values: [dropped] }, '① には「外した値を除く」絞り込みが掛かる');
-    ok(r1.tag && r1.mark, '結果の上に絞り込みのタグ、見出しに漏斗が出る');
+    ok(r1.tag && r1.mark, '結果の上の状態帯に「絞り込み 1」の札、見出しに漏斗が出る');
     /* ① の見出しの一覧では、外した値だけ選ばれていない */
     const unchecked = await page.evaluate((v) => {
       LQ.app.columnMenu.open(document.body, 'source', '地域');
@@ -300,20 +300,99 @@ check('抽出結果の絞り込み：見出しの一覧で外した値を元の�
     await page.click('th[data-key="c:メモ"]');
     await page.evaluate(() => document.querySelector('.lq-popover .lq-filter__values .lq-filter__value input').click());
     await page.click('.lq-popover .lq-popover__foot .lq-btn--primary');
-    await page.waitForFunction(() => LQ.app.state.result && !LQ.app.state.busy && document.querySelectorAll('.lq-filterbar .lq-ftag').length === 2, null, { timeout: 3000 }).catch(() => null);
+    await page.waitForFunction(() => LQ.app.state.result && !LQ.app.state.busy &&
+      Array.from(document.querySelectorAll('.lq-strip .lq-schip')).some((c) => c.textContent.indexOf('絞り込み 2') !== -1), null, { timeout: 3000 }).catch(() => null);
     const r2 = await page.evaluate(() => {
       const c = LQ.app.state.datasets.condition;
-      return { filters: c.filters.map((f) => ({ col: f.col, exclude: !!f.exclude, n: f.values.length })), tags: document.querySelectorAll('.lq-filterbar .lq-ftag').length };
+      const chip = Array.from(document.querySelectorAll('.lq-strip .lq-schip')).find((x) => x.textContent.indexOf('絞り込み') !== -1);
+      chip.click();
+      return { filters: c.filters.map((f) => ({ col: f.col, exclude: !!f.exclude, n: f.values.length })), tags: document.querySelectorAll('.lq-strip-pop .lq-ftag').length };
     });
-    eq(r2, { filters: [{ col: 'メモ', exclude: true, n: 1 }], tags: 2 }, '② にも絞り込みが掛かり、タグが 2 つになる');
+    eq(r2, { filters: [{ col: 'メモ', exclude: true, n: 1 }], tags: 2 }, '② にも絞り込みが掛かり、札を押すとタグが 2 つ出る');
     ok(memo.length > 1, '② の列の値の一覧が出る');
     /* タグの × で外すと元の行数に戻る */
+    /* 札の中身は抽出し直すと新しいものに入れ替わる（開いたまま、残りのタグを外せる） */
     for (let i = 0; i < 2; i++) {
-      await page.click('.lq-filterbar .lq-ftag__x');
-      await page.waitForFunction((n) => LQ.app.state.result && !LQ.app.state.busy && document.querySelectorAll('.lq-filterbar .lq-ftag').length === n, 1 - i);
+      await page.click('.lq-strip-pop .lq-ftag__x');
+      await page.waitForFunction((n) => LQ.app.state.result && !LQ.app.state.busy && document.querySelectorAll('.lq-strip-pop .lq-ftag').length === n, 1 - i);
     }
     eq(await page.evaluate(() => [LQ.app.state.datasets.source.filters.length, LQ.app.state.datasets.condition.filters.length]), [0, 0], '① / ② の絞り込みが外れる');
     eq(await page.evaluate(() => LQ.app.state.result.length), before, 'タグの × で外すと元の行数に戻る');
+  });
+});
+
+check('抽出結果の絞り込み：外した値も見出しの一覧にチェックなしで出し、チェックを入れて戻せる（照合する・絞り込みだけ）', async (browser) => {
+  for (const sample of ['idlist', 'filteronly']) {
+    await withPage(browser, async (page) => {
+      await page.evaluate(async (id) => {
+        await LQ.app.profiles.loadSample(id);
+        await LQ.app.run();
+      }, sample);
+      await page.waitForFunction(() => LQ.app.state.result && !LQ.app.state.busy);
+      const start = await page.evaluate(() => ({ rows: LQ.app.state.result.length, filters: JSON.stringify(LQ.app.state.datasets.source.filters) }));
+      const offLabels = () => page.evaluate(() => Array.from(document.querySelectorAll('.lq-popover .lq-filter__value.is-off'))
+        .map((l) => ({ value: l.querySelector('.lq-filter__label').textContent, checked: l.querySelector('input').checked })));
+      /* 見出しの一覧で 1 つ外す */
+      await page.click('th[data-key="s:顧客名"]');
+      eq((await offLabels()).length, 0, sample + '：外す前は「外している値」はない');
+      const dropped = await page.evaluate(() => {
+        const label = document.querySelector('.lq-popover .lq-filter__values .lq-filter__value');
+        label.querySelector('input').click();
+        return label.querySelector('.lq-filter__label').textContent;
+      });
+      await page.click('.lq-popover .lq-popover__foot .lq-btn--primary');
+      await page.waitForFunction((n) => LQ.app.state.result && !LQ.app.state.busy && LQ.app.state.result.length < n, start.rows);
+      /* もう一度開くと、外した値がチェックなしで出る */
+      await page.click('th[data-key="s:顧客名"]');
+      eq(await offLabels(), [{ value: dropped, checked: false }], sample + '：外した値がチェックなしで一覧に出る');
+      await page.evaluate(() => document.querySelector('.lq-popover .lq-filter__value.is-off input').click());
+      await page.click('.lq-popover .lq-popover__foot .lq-btn--primary');
+      await page.waitForFunction((n) => LQ.app.state.result && !LQ.app.state.busy && LQ.app.state.result.length === n, start.rows, { timeout: 3000 }).catch(() => null);
+      const end = await page.evaluate(() => ({ rows: LQ.app.state.result.length, filters: JSON.stringify(LQ.app.state.datasets.source.filters) }));
+      eq(end, start, sample + '：チェックを入れて OK で元の行数・元の絞り込みに戻る');
+    });
+  }
+});
+
+check('状態帯：表の上の情報を 1 行にまとめ、狭いときは札を「+N」にまとめる（未反映の札は最後まで残す）', async (browser) => {
+  await withPage(browser, async (page) => {
+    await page.evaluate(async () => {
+      await LQ.app.profiles.loadSample('filteronly');
+      await LQ.app.run();
+    });
+    await page.waitForFunction(() => LQ.app.state.result && !LQ.app.state.busy);
+    const measure = () => page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
+      const strip = document.querySelector('.lq-strip');
+      if (!strip) {
+        res({ lines: 0, oneLine: false, chips: [], bands: -1 });
+        return;
+      }
+      const chips = Array.from(strip.querySelectorAll('.lq-schip')).map((c) => c.textContent.trim());
+      res({ lines: document.querySelectorAll('.lq-infobar > *').length, oneLine: strip.scrollWidth <= strip.clientWidth + 1, chips: chips,
+        bands: document.querySelectorAll('.lq-infobar .lq-note, .lq-infobar .lq-flow').length });
+    }))));
+    const wide = await measure();
+    eq(wide.lines, 1, '表の上は状態帯の 1 行だけ');
+    eq(wide.bands, 0, '注意や処理の流れの帯は札に入る');
+    ok(wide.oneLine && wide.chips.some((c) => c.indexOf('絞り込み') !== -1), '札が 1 行に収まる：' + wide.chips.join('|'));
+    /* 狭くする（パネルを開いた 900px）：札は「+N」にまとまり、まとめた分を含めて数は変わらない */
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.evaluate(() => LQ.app.state.openPanel('query'));
+    const narrow = await measure();
+    const more = narrow.chips.find((c) => /^\+\d+$/.test(c));
+    ok(narrow.oneLine, '狭くても 1 行に収まる：' + narrow.chips.join('|'));
+    ok(!!more, '入りきらない札は「+N」にまとまる：' + narrow.chips.join('|'));
+    eq(narrow.chips.length - 1 + Number(more.slice(1)), wide.chips.length, '「+N」にまとめた札も数に入る（隠して消さない）');
+    /* 照合する作業で照合ルールを変えて未反映にする：さらに狭くしても「未反映」の札は残る */
+    await page.evaluate(async () => {
+      LQ.app.state.closePanel();
+      await LQ.app.profiles.loadSample('idlist');
+      await LQ.app.run();
+      LQ.app.state.setRules({ kana: !LQ.app.state.rules.kana });
+    });
+    await page.setViewportSize({ width: 700, height: 700 });
+    const stale = await measure();
+    ok(stale.oneLine && stale.chips[0] === '未反映', '未反映の札が先頭に残る：' + stale.chips.join('|'));
   });
 });
 
@@ -728,7 +807,7 @@ check('処理中：本物の進み具合で 5 秒以上更新がないと、時�
   });
 });
 
-check('通知：表とページ送りの間の行に新しい 1 件だけを出し、前の通知は「ほか N 件」で広げる', async (browser) => {
+check('通知：表の下のページ送りの行に新しい 1 件だけを出し、前の通知は「ほか N 件」で広げる', async (browser) => {
   await withPage(browser, async (page) => {
     await page.evaluate(async () => {
       await LQ.app.profiles.loadSample('idlist');
@@ -744,9 +823,9 @@ check('通知：表とページ送りの間の行に新しい 1 件だけを出�
       const main = document.querySelector('#lqMain').getBoundingClientRect();
       const bar = document.querySelector('.lq-toast:last-child').getBoundingClientRect();
       const grid = document.querySelector('.lq-gridwrap').getBoundingClientRect();
-      const pager = document.querySelector('.lq-pager').getBoundingClientRect();
+      const foot = document.querySelector('.lq-foot').getBoundingClientRect();
       const out = { inMain: !!document.querySelector('#lqMain #lqToasts'), first: visible(), more: document.querySelector('.lq-toasts__more').textContent,
-        noOverlap: bar.top >= grid.bottom - 1 && bar.bottom <= pager.top + 1, right: bar.right <= main.right };
+        noOverlap: bar.top >= grid.bottom - 1 && bar.top >= foot.top - 1 && bar.bottom <= foot.bottom + 1, right: bar.right <= main.right };
       document.querySelector('.lq-toasts__more').click();
       out.expanded = visible();
       document.querySelector('.lq-toasts__more').click();
@@ -754,7 +833,7 @@ check('通知：表とページ送りの間の行に新しい 1 件だけを出�
       out.afterClose = visible().filter((t) => t === '一つ目');
       return out;
     });
-    ok(r.inMain && r.right && r.noOverlap, '表とページ送りの間に置き、どちらにも重ならない：' + JSON.stringify(r));
+    ok(r.inMain && r.right && r.noOverlap, '表の下のページ送りの行に置き、表に重ならない：' + JSON.stringify(r));
     eq(r.first, ['二つ目'], '新しい 1 件だけ');
     ok(r.more.indexOf('ほか 1 件') >= 0, '前の通知の数：' + r.more);
     eq(r.expanded, ['一つ目', '二つ目'], '広げると前の通知も見られる');

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案 G 表を最大にする</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+<link rel="stylesheet" href="../mock-common.css">
+<link rel="stylesheet" href="../filter-only/fo-shell.css">
+<link rel="stylesheet" href="plan-g.css">
+</head>
+<body>
+<div class="app">
+  <header class="top"><span class="logo"><i class="fa-solid fa-magnifying-glass"></i>LightQuery</span>
+    <button class="btn"><i class="fa-regular fa-folder-open"></i>作業セット 1<i class="fa-solid fa-chevron-down small"></i></button><span class="spacer"></span>
+    <button class="btn btn--primary btn--lg"><i class="fa-solid fa-file-export"></i>82 行を出力する</button>
+    <button class="btn btn--ghost"><i class="fa-solid fa-circle-question"></i>使い方</button><button class="icon-btn"><i class="fa-solid fa-ellipsis-vertical"></i></button></header>
+  <div class="body"><nav class="rail" id="rail"></nav><aside class="panel" id="panel" hidden></aside><main class="main" id="main"></main></div>
+</div>
+<div id="overlay"></div>
+<div class="measure" id="measure"></div>
+<script src="../mock-common.js"></script>
+<script>
+/* 案 G：表の上の情報を「1 行の状態帯」にまとめる。
+ *   ・処理の流れ／② 一致しなかった行／前回との違い／元データの絞り込み／お知らせ は、帯をやめて札（チップ）にする。押すと今の帯と同じ内容・操作がポップオーバーで開く
+ *   ・適用中であることは札で常に見える（基本設計 1-13）。警告は警告色の札で残す
+ *   ・「出力できない列」は「列 n / m」ボタンの ⚠ 印に移す
+ *   ・知らせ（トースト）はページ送りの行の空きに出し、表を押し縮めない
+ *   全タブ（① / ② / 抽出結果 / ピボット / グラフ）で同じ部品・同じ並びにする */
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const RAIL = [['入力'], ['table', '①元データ'], ['list-check', '②照合表'], ['抽出'], ['code-compare', '抽出条件'], ['結果'], ['table-columns', '出力列'],
+    ['table-cells', 'ピボット'], ['chart-column', 'グラフ'], ['grow'], ['設定'], ['spell-check', '照合ルール'], ['clock-rotate-left', '履歴'], ['flask', 'サンプル']];
+  $('#rail').innerHTML = RAIL.map((r) => r[0] === 'grow' ? '<span class="grow"></span>' : r.length === 1 ? '<h6>' + r[0] + '</h6>'
+    : '<button><i class="fa-solid fa-' + r[0] + '"></i>' + r[1] + '</button>').join('');
+
+  const tabs = (on) => '<div class="tabbar"><nav class="tabs">' +
+    '<a class="' + (on === 'src' ? 'on' : '') + '"><span class="badge badge--src">①</span>元データ <span class="small muted">167 行</span> <i class="fa-solid fa-filter small" style="color:var(--color-primary)"></i></a>' +
+    '<a><span class="badge badge--cond">②</span>照合表 <span class="small muted">40 行</span></a><span class="sep"></span>' +
+    '<a class="' + (on === 'result' ? 'on' : '') + '"><i class="fa-solid fa-table-list"></i>抽出結果 <span class="small muted">82 行</span></a>' +
+    '<a><i class="fa-solid fa-table-cells"></i>ピボット</a><a><i class="fa-solid fa-chart-column"></i>グラフ</a></nav>' +
+    '<span class="tabtools"><button class="btn btn--sm"><i class="fa-solid fa-sliders"></i>抽出条件の設定</button>' +
+    '<button class="btn btn--sm" title="1 列は出力できません：② を差し替えたため"><i class="fa-solid fa-table-columns"></i>列 19 / 20' + (on === 'before' ? '' : '<i class="fa-solid fa-triangle-exclamation warn-dot"></i>') + '</button></span></div>';
+
+  const pagerLeft = '<span>‹ 1 / 1 ページ ›　表示件数 100 行／ページ</span>';
+  const pagerRight = '<span>1–82 行目 ／ 全 82 行</span>';
+  const table = (n) => '<div class="tbl-wrap">' + MOCK.table({ limit: n }) + '</div>';
+
+  /* 変更前：今の画面（帯を縦に積む） */
+  function before() {
+    return '<div class="summary" style="gap:14px"><b><i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i> 82 行が一致</b><span class="sub">① 100 行中 82.0%</span><span class="sub">表示 82 行 × 19 列</span><span class="sub">A：① 顧客ID ＝ ② 顧客ID</span><span class="spacer"></span>' +
+      '<button class="btn btn--sm"><i class="fa-solid fa-magnifying-glass"></i>抽出の内容</button><button class="btn btn--sm"><i class="fa-solid fa-not-equal"></i>前回と比べる</button></div>' +
+      '<div class="bands">' +
+      '<div class="band"><span class="badge badge--src">①</span><b>処理の流れ</b> 読み込み 2,000 行 <span class="pill">絞り込み −1,833</span> 使う行 167 行 → <b>抽出で該当 82 行</b><span class="spacer"></span><button class="btn btn--sm">設定</button></div>' +
+      '<div class="band"><span class="badge badge--cond">②</span><b>一致しなかった ② の行</b> 3 行（C0102・C0177・C0190）<span class="spacer"></span><button class="btn btn--sm">表示する</button></div>' +
+      '<div class="band"><b>前回との違い</b> 基準：先月の出力.xlsx <span class="pill">増えた行 +5</span><span class="pill">消えた行 −3</span><span class="pill">変わった行 4</span> 同じ 70 行<span class="spacer"></span><button class="btn btn--sm">設定</button></div>' +
+      '<div class="ftags"><span class="muted"><i class="fa-solid fa-filter"></i> 元データの絞り込み</span><span class="ftag">① 地域：東京・大阪 <i class="fa-solid fa-xmark"></i></span><span class="ftag">① 金額 が「30000」以上 <i class="fa-solid fa-xmark"></i></span></div>' +
+      '<div class="note"><i class="fa-solid fa-circle-info"></i><span>表示を選んでいる列のうち 1 列（規格）は出力できません：抽出したあとに ② を差し替えたため、この列の値がありません。</span></div>' +
+      '</div>' + table(22) +
+      '<div class="toastrow"><b>抽出が終わりました</b><span class="muted">82 行が一致（0.01 秒）</span><span class="spacer"></span><button class="btn btn--sm">元に戻す</button></div>' +
+      '<div class="pager">' + pagerLeft + pagerRight + '</div>';
+  }
+
+  /* 変更後：1 行の状態帯 */
+  const chips = (open) => '<span class="chips">' +
+    '<button class="chip' + (open === 'flow' ? ' is-open' : '') + '" title="① の処理の流れ：読み込み 2,000 → 絞り込み −1,833 → 使う行 167 → 抽出で該当 82"><span class="badge badge--src">①</span><span class="num">2,000 → 167</span><i class="fa-solid fa-chevron-down caret"></i></button>' +
+    '<button class="chip' + (open === 'filter' ? ' is-open' : '') + '" title="元データに掛けている絞り込み 2 件"><i class="fa-solid fa-filter"></i>絞り込み 2<i class="fa-solid fa-chevron-down caret"></i></button>' +
+    '<button class="chip chip--cond" title="一致しなかった ② の行 3 行"><span class="badge badge--cond">②</span>未一致 3<i class="fa-solid fa-chevron-down caret"></i></button>' +
+    '<button class="chip chip--muted" title="前回との違い（基準：先月の出力.xlsx）"><i class="fa-solid fa-not-equal"></i><span class="num">+5 −3 ~4</span><i class="fa-solid fa-chevron-down caret"></i></button>' +
+    '<button class="chip chip--warn" title="条件が変更され、表示中の結果は変更前のものです"><i class="fa-solid fa-triangle-exclamation"></i>未反映<i class="fa-solid fa-chevron-down caret"></i></button>' +
+    '</span>';
+  const strip = (open) => '<div class="strip"><span class="facts"><span class="main-fact"><i class="fa-solid fa-circle-check"></i>82 行が一致</span>' +
+    '<span class="opt">① 100 行中 82.0%</span><span class="opt">表示 82 行 × 19 列</span><span class="opt">A：① 顧客ID ＝ ② 顧客ID</span></span>' + chips(open) +
+    '<span class="actions"><button class="btn btn--sm"><i class="fa-solid fa-magnifying-glass"></i>抽出の内容</button><button class="btn btn--sm"><i class="fa-solid fa-not-equal"></i>前回と比べる</button></span></div>';
+  const foot = '<div class="foot">' + pagerLeft + '<span class="toast"><i class="fa-solid fa-circle-check" style="color:var(--color-ok)"></i><b>抽出が終わりました</b><span class="muted">82 行が一致（0.01 秒）</span><button class="btn">元に戻す</button></span>' + pagerRight + '</div>';
+
+  function after(open) {
+    return strip(open) + table(26) + foot;
+  }
+
+  /* 札を押したところ：今の帯と同じ内容・同じ操作 */
+  function popover() {
+    return '<div class="pop" style="left:560px;top:140px"><header><i class="fa-solid fa-filter"></i>元データの絞り込み（2 件）<span class="spacer"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header>' +
+      '<div class="body"><div class="row"><span class="ftag">① 地域：東京・大阪</span><span><button class="btn btn--sm">直す</button> <button class="btn btn--sm"><i class="fa-solid fa-xmark"></i>外す</button></span></div>' +
+      '<div class="row"><span class="ftag">① 金額 が「30000」以上</span><span><button class="btn btn--sm">直す</button> <button class="btn btn--sm"><i class="fa-solid fa-xmark"></i>外す</button></span></div>' +
+      '<div class="row"><span>表の見出し（▼）の一覧からも、外した値にチェックを入れて戻せます。</span><button class="btn btn--sm">すべて外す</button></div></div></div>';
+  }
+
+  /* ① タブ：同じ部品・同じ並び（読み込みの注意や「読み込み範囲」の説明も札に） */
+  function source() {
+    return '<div class="strip"><span class="facts"><span class="main-fact"><span class="badge badge--src">①</span>サンプル_受注.csv</span><span class="opt">2,000 行 × 8 列（使う行 167）</span><span class="opt">UTF-8・ヘッダー 1 行目</span></span>' +
+      '<span class="chips"><button class="chip"><i class="fa-solid fa-filter"></i>絞り込み 2<i class="fa-solid fa-chevron-down caret"></i></button>' +
+      '<button class="chip chip--muted"><i class="fa-solid fa-circle-info"></i>お知らせ 1<i class="fa-solid fa-chevron-down caret"></i></button></span>' +
+      '<span class="actions"><button class="btn btn--sm"><i class="fa-solid fa-table"></i>データ ／ 読み込み範囲</button></span></div>' + table(26) + foot;
+  }
+
+  /* 幅が狭いとき（パネルを開いた）：事実は省略記号で縮め、札と操作は 1 行に残す。札は × ではなく「+2」にまとめる */
+  function narrow() {
+    $('#panel').hidden = false;
+    $('#panel').innerHTML = '<header><i class="fa-solid fa-code-compare"></i>抽出条件<span class="spacer"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header><div class="scroll"><div class="note">（抽出条件の設定）</div></div>';
+    return '<div class="strip"><span class="facts"><span class="main-fact"><i class="fa-solid fa-circle-check"></i>82 行が一致</span><span class="opt">① 100 行中 82.0%</span><span class="opt">表示 82 行 × 19 列</span></span>' +
+      '<span class="chips"><button class="chip"><span class="badge badge--src">①</span>2,000 → 167</button><button class="chip"><i class="fa-solid fa-filter"></i>絞り込み 2</button>' +
+      '<button class="chip chip--warn"><i class="fa-solid fa-triangle-exclamation"></i>未反映</button><button class="chip chip--muted" title="② 未一致 3・前回比 +5 −3 ~4">+2</button></span>' +
+      '<span class="actions"><button class="icon-btn" title="抽出の内容"><i class="fa-solid fa-magnifying-glass"></i></button><button class="icon-btn" title="前回と比べる"><i class="fa-solid fa-not-equal"></i></button></span></div>' + table(26) + foot;
+  }
+
+  /* パネルをたたむ：幅 40px ほどの縦の帯に。パネル名と適用中の件数が見えたまま残り、押すと同じ状態で開き直す（Ctrl+B でも開閉） */
+  const PANEL = '<header><i class="fa-solid fa-code-compare"></i>抽出条件<span class="spacer"></span>' +
+    '<button class="icon-btn" title="たたむ（Ctrl+B）。入力中の内容はそのまま残ります"><i class="fa-solid fa-angles-left"></i></button><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header>' +
+    '<div class="scroll"><div class="note">抽出条件 1 件：A：① 顧客ID ＝ ② 顧客ID（入力中の内容）</div></div>';
+  function panelOpen() {
+    $('#panel').hidden = false;
+    $('#panel').className = 'panel';
+    $('#panel').innerHTML = PANEL;
+    return strip() + table(26) + foot;
+  }
+  function collapsed() {
+    $('#panel').hidden = false;
+    $('#panel').className = 'panel is-folded';
+    $('#panel').innerHTML = '<button class="fold" title="抽出条件パネルを開く（Ctrl+B）。たたむ前の状態のまま開きます"><i class="fa-solid fa-angles-right"></i>' +
+      '<span class="fold__title">抽出条件</span><span class="fold__count">1</span></button>';
+    return strip() + table(26) + foot;
+  }
+  /* 列の固定：見出しの一覧の「この列まで固定」。狭くなって横にスクロールしても、見分けに使う列が消えない（作業セットごとに記憶） */
+  function frozen() {
+    $('#panel').hidden = false;
+    $('#panel').className = 'panel';
+    $('#panel').innerHTML = PANEL;
+    setTimeout(() => {
+      const w = document.querySelector('.tbl-wrap');
+      if (w) w.scrollLeft = 160;
+    });
+    return strip() + '<div class="tbl-wrap is-frozen">' + MOCK.table({ limit: 26 }) + '</div>' + foot;
+  }
+  function freezeMenu() {
+    $('#panel').hidden = true;
+    return strip() + table(26) + foot;
+  }
+  const FREEZE_MENU = '<div class="pop" style="left:300px;top:186px;width:300px"><header><i class="fa-solid fa-filter"></i>商品コード<span class="spacer"></span><button class="icon-btn"><i class="fa-solid fa-xmark"></i></button></header>' +
+    '<div class="body"><div class="row"><span>この列を出力する</span><span class="pill">ON</span></div><div class="row"><button class="btn btn--sm">昇順</button><button class="btn btn--sm">降順</button>' +
+    '<button class="btn btn--sm is-hl"><i class="fa-solid fa-thumbtack"></i>この列まで固定</button></div><div class="small sub">（値の一覧・条件で絞る…）</div></div></div>';
+
+  const STATES = [['before', '変更前（今）'], ['after', '変更後'], ['popover', '変更後：札を押したところ'], ['source', '変更後：① タブ'], ['narrow', '変更後：パネルを開いて狭いとき'],
+    ['panel', 'パネル：開いた'], ['folded', 'パネル：たたんだ'], ['freezemenu', '列の固定：見出しの一覧'], ['frozen', '列の固定：狭くても見分けの列が残る']];
+  MOCK.boot(STATES, (st) => {
+    $('#panel').hidden = true;
+    const main = $('#main');
+    main.className = 'main' + (st === 'before' ? ' is-before' : '');
+    $('#panel').className = 'panel';
+    const html = st === 'before' ? before() : st === 'popover' ? after('filter') : st === 'source' ? source() : st === 'narrow' ? narrow()
+      : st === 'panel' ? panelOpen() : st === 'folded' ? collapsed() : st === 'frozen' ? frozen() : st === 'freezemenu' ? freezeMenu() : after();
+    main.innerHTML = tabs(st === 'source' ? 'src' : st === 'before' ? 'before' : 'result') + html;
+    $('#overlay').innerHTML = st === 'popover' ? popover() : st === 'freezemenu' ? FREEZE_MENU : '';
+    requestAnimationFrame(() => {
+      const t = main.querySelector('.tbl-wrap');
+      if (!t) return;
+      const r = t.getBoundingClientRect();
+      $('#measure').textContent = '表の高さ ' + Math.round(r.height) + 'px（画面の ' + Math.round(r.height / innerHeight * 100) + '%）';
+    });
+  });
+})();
+</script>
+</body>
+</html>

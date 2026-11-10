@@ -24,6 +24,12 @@
   };
 
   class MainView {
+    /** 「条件が変更され未反映」の注意（状態帯では警告色の「未反映」の札。どのタブでも同じ形） */
+    static staleNote(text) {
+      return LQ.StatusStrip.fold(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }), text])),
+        { id: 'stale', icon: 'triangle-exclamation', label: '未反映', tone: 'warn', priority: 100, heading: '条件の変更が結果に未反映です' });
+    }
+
     constructor(ctx) {
       this.ctx = ctx;
       this.state = ctx.state;
@@ -39,7 +45,9 @@
       this.gridwrap = h('div', { class: 'lq-gridwrap' });
       this.pager = h('div', { class: 'lq-pager' });
       this.condBar = new LQ.CondTableBar(ctx);
-      Dom.append(this.root, [h('div', { class: 'lq-tabbar' }, [this.tabs, this.tools]), this.info, this.gridwrap, this.pager]);
+      /* 下段：ページ送りと知らせを 1 行に置く（知らせが表を押し縮めない）。知らせは lq-app.js が foot に入れる */
+      this.foot = h('div', { class: 'lq-foot' }, [this.pager]);
+      Dom.append(this.root, [h('div', { class: 'lq-tabbar' }, [this.tabs, this.tools]), this.info, this.gridwrap, this.foot]);
       this.grid = new LQ.GridView(ctx, this.gridwrap, {
         onResultMenu: (key, anchor) => this.app.resultColumnMenu.open(anchor, key),
         onMove: (key, target, after) => this.state.moveColumn(key, target, after),
@@ -180,6 +188,7 @@
       else if (tab === 'aggregate') this.aggregate.render();
       else if (tab === 'chart') this.chart.render();
       else this._renderDataset(tab);
+      LQ.StatusStrip.layout(this.ctx, this.info);
       if (focusKey) this._restoreFocus(focusKey);
     }
 
@@ -275,7 +284,7 @@
       const all = view.resolveColumns(s.output.columns);
       const defs = all.filter((d) => d.available);
       const unavailable = all.filter((d) => !d.available && !d.silent);
-      this._renderResultTools(defs);
+      this._renderResultTools(defs, unavailable);
       this._renderSummary(view, defs);
       this._renderSourceFlow(view);
       this._renderReview(view);
@@ -284,15 +293,11 @@
       this._renderFilterBar(view);
       /* 抽出中は、終われば結果が入れ替わるため出さない（右上のボタンは「中止する」で、文と食い違うため） */
       if (s.isStale() && !(s.busy && s.busy.kind === 'run')) {
-        this.info.appendChild(UI.note('warn', h('span', {}, [h('strong', { text: '条件または照合ルールが変更されています。' }),
-          '表示中の結果は変更前のものです。右上のボタンで再抽出すると反映されます。'])));
+        this.info.appendChild(MainView.staleNote('表示中の結果は変更前のものです。右上のボタンで再抽出すると反映されます。'));
       }
       if (view.result.stats.truncated) {
-        this.info.appendChild(UI.note('warn', '組み合わせが 1,000,000 行に達したため、途中で打ち切りました。条件を絞るか「最初の 1 行のみ」にしてください。'));
-      }
-      if (unavailable.length) {
-        this.info.appendChild(UI.note('info', '表示を選んでいる列のうち ' + unavailable.length + ' 列（' +
-          unavailable.map((d) => d.name).join('、') + '）は出力できません：' + unavailable[0].reason + '。'));
+        this.info.appendChild(LQ.StatusStrip.fold(UI.note('warn', '組み合わせが 1,000,000 行に達したため、途中で打ち切りました。条件を絞るか「最初の 1 行のみ」にしてください。'),
+          { id: 'truncated', icon: 'scissors', label: '打ち切り', tone: 'warn', priority: 90, heading: '途中で打ち切りました' }));
       }
       if (!defs.length) {
         this.grid.showEmpty(this._emptyMessage('table-columns', '表示する列がありません', '左の「出力列」で表示する列を選んでください。',
@@ -332,7 +337,8 @@
       this._renderPager('result', view.length, paging);
     }
 
-    _renderResultTools(defs) {
+    /** 出力できない列は注意の帯にせず、「列 n / m」ボタンの ⚠ 印と説明に出す（表の面積を保つ） */
+    _renderResultTools(defs, unavailable) {
       const s = this.state;
       if (s.view.sort) {
         const name = LQ.ResultView.nameOf(s.view.sort.key);
@@ -348,8 +354,11 @@
         onclick: () => s.togglePanel('query') }, [Dom.icon('sliders'), '抽出条件の設定']));
       const counts = s.columnCounts();
       const total = counts['s:'].total + counts['c:'].total + counts['m:'].total;
-      this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm', type: 'button', title: '表示・出力する列を選ぶ／並べ替える', onclick: () => s.togglePanel('output') },
-        [Dom.icon('table-columns'), '列 ' + defs.length + ' / ' + total]));
+      const off = unavailable || [];
+      const why = off.length ? '\n⚠ 表示を選んでいる列のうち ' + off.length + ' 列（' + off.map((d) => d.name).join('、') + '）は出力できません：' + off[0].reason + '。' : '';
+      this.tools.appendChild(h('button', { class: 'lq-btn lq-btn--sm' + (off.length ? ' has-warn' : ''), type: 'button', title: '表示・出力する列を選ぶ／並べ替える' + why,
+        onclick: () => s.togglePanel('output') },
+      [Dom.icon('table-columns'), '列 ' + defs.length + ' / ' + total, off.length ? h('span', { class: 'lq-btn__warn' }, [Dom.icon('triangle-exclamation'), String(off.length)]) : null]));
     }
 
     _renderSummary(view, defs) {

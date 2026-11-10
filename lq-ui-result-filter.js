@@ -140,6 +140,7 @@
       this.current = current && current.mode === 'op' ? current : null;
       this.values = RF.distinct(this.view, this.key);
       const all = this.values.list.map((v) => v.value);
+      this._addExcluded(targets, name);
       this.f = { id: LQ.Util.uid('flt'), col: name, mode: 'values', op: this.current ? this.current.op : (this.date ? 'between' : 'eq'),
         value: this.current ? this.current.value : '', value2: this.current ? this.current.value2 : '', values: all.slice() };
       this.estimate = h('div', { class: 'lq-filter__estimate' });
@@ -153,7 +154,11 @@
       this.valuesBox = this._valuesBody();
       this.opDetails = this._opBody();
       const where = this.role === 'source' ? '① 元データ' : (targets.length > 1 ? '② 照合表 ' + targets.length + ' 件（' + targets.map((t) => t.label).join('・') + '）' : targets[0].label);
-      body.push(this.valuesBox, this.opDetails,
+      const offNote = this.offValues.length
+        ? h('p', { class: 'lq-field__hint' }, [Dom.icon('rotate-left'), '一覧の下のチェックのない ' + fmt(this.offValues.length) + ' 種類は、今この列の絞り込みで外している値です。チェックを入れて OK で戻せます（件数は ' +
+          (this.role === 'source' ? '①' : '②') + ' の行数）。'])
+        : null;
+      body.push(this.valuesBox, offNote, this.opDetails,
         h('p', { class: 'lq-field__hint lq-colmenu__where' }, [Dom.icon('link'), this.state.filterOnly
           ? 'OK で ' + where + ' に絞り込みを掛け、その場で結果に反映します（絞り込みだけ・照合なし）。'
           : 'OK で ' + where + ' にも同じ絞り込みを掛け、抽出し直します（結果と元データは常に同じ絞り込み）。']),
@@ -192,13 +197,45 @@
       ]);
     }
 
-    _removed() {
-      return this.f.mode === 'values' ? RF.unchecked(this.values.list.map((v) => v.value), this.f.values) : [];
+    /**
+     * 今この列の絞り込みで外している値を、一覧の終わりにチェックなしで足す（チェックすると戻せる）。
+     *   結果の値だけを並べると、一度外した値を見出しの一覧から戻せなくなるため
+     */
+    _addExcluded(targets, name) {
+      const norm = new LQ.Normalizer(LQ.Normalizer.DEFAULT_RULES);
+      const shown = new Set(this.values.list.map((v) => norm.text(v.value)));
+      const mark = this.role === 'source' ? '①' : '②';
+      this.offValues = RF.excluded(targets, name).filter((v) => !shown.has(norm.text(v.value))).map((v) => ({
+        value: v.value, count: v.count, off: true, offCount: mark + ' ' + fmt(v.count),
+        offTitle: '今この列の絞り込みで外している値（' + mark + ' の ' + fmt(v.count) + ' 行）。チェックを入れて OK で戻せます'
+      }));
+      this.values = { list: this.values.list.concat(this.offValues), total: this.values.total + this.offValues.length, rows: this.values.rows };
     }
 
-    /** 値の一覧ですべて選んでいるとき（絞り込みを変えない） */
+    /** 結果にある値のうち、選ばなかった値 */
+    _removed() {
+      if (this.f.mode !== 'values') return [];
+      return RF.unchecked(this.values.list.filter((v) => !v.off).map((v) => v.value), this.f.values);
+    }
+
+    /** 今外している値のうち、選び直した値 */
+    _restored() {
+      if (this.f.mode !== 'values') return [];
+      const on = new Set(this.f.values);
+      return this.offValues.filter((v) => on.has(v.value)).map((v) => v.value);
+    }
+
+    /** 値の一覧で、今の絞り込みから何も変えていないとき */
     _allChosen() {
-      return this.f.mode === 'values' && !this._removed().length;
+      return this.f.mode === 'values' && !this._removed().length && !this._restored().length;
+    }
+
+    /** 元の表ごとの新しい絞り込み（変わらない表は除く） */
+    _changes() {
+      const removed = this._removed();
+      const restored = this._restored();
+      const all = restored.length === this.offValues.length;
+      return this.targets.map((t) => ({ target: t, filters: RF.mergeInto(t.ds, this.f, removed, restored, all) })).filter((c) => c.filters);
     }
 
     _update() {
@@ -212,26 +249,31 @@
         return;
       }
       if (this._allChosen()) {
-        this.estimate.appendChild(UI.status('ok', 'すべての値を選んでいます（この列の絞り込みは変えません）'));
+        this.estimate.appendChild(UI.status('ok', this.offValues.length ? '今の絞り込みのままです（チェックのない値を選ぶと戻せます）' : 'すべての値を選んでいます（この列の絞り込みは変えません）'));
         return;
       }
       const removed = this._removed();
-      const kept = RF.estimate(this.view, this.key, this.f, removed);
+      const restored = this._restored();
+      let kept = RF.estimate(this.view, this.key, this.f, removed);
+      /* 絞り込みだけ（照合なし）なら、戻した値の行がそのまま結果に加わる。照合するときは抽出し直すまで分からない */
+      const back = this.offValues.filter((v) => restored.indexOf(v.value) !== -1).reduce((n, v) => n + v.count, 0);
+      if (this.state.filterOnly) kept += back;
       let text = '表示中の結果 ' + fmt(this.view.length) + ' 行 → 約 ' + fmt(kept) + ' 行';
+      if (!this.state.filterOnly && back) text += '＋戻した値のうち抽出条件に該当する行';
       if (this.role === 'source') {
-        const next = RF.mergeInto(this.ds, this.f, removed);
-        if (next) text += '・① 使う行 ' + fmt(this.ds.rowCount) + ' 行 → ' + fmt(this.ds.countWith(next)) + ' 行';
+        const change = this._changes()[0];
+        if (change) text += '・① 使う行 ' + fmt(this.ds.rowCount) + ' 行 → ' + fmt(this.ds.countWith(change.filters)) + ' 行';
       }
-      this.estimate.appendChild(UI.status(kept ? 'ok' : 'warn', text + '（目安。抽出し直して確定）'));
+      this.estimate.appendChild(UI.status(kept || back ? 'ok' : 'warn', text + '（目安。抽出し直して確定）'));
     }
 
     _apply() {
       if (this._problem()) return;
-      const removed = this._removed();
-      const changes = this.targets.map((t) => ({ target: t, filters: RF.mergeInto(t.ds, this.f, removed) })).filter((c) => c.filters);
+      const restoring = this._restored().length && !this._removed().length;
+      const changes = this._changes();
       this.ctx.popovers.close();
       if (!changes.length) return;
-      this.ctx.app.resultFilter.apply(this.role, changes, '「' + this.f.col + '」で絞り込みました', this.key);
+      this.ctx.app.resultFilter.apply(this.role, changes, '「' + this.f.col + '」' + (restoring ? 'で外していた値を戻しました' : 'で絞り込みました'), this.key);
     }
 
     _remove() {
@@ -269,11 +311,15 @@
           } }, Dom.icon('xmark'))
         ]);
       });
-      return h('div', { class: 'lq-filterbar lq-filterbar--rows', title: view.result.filterOnly
+      const broken = groups.some((g) => !g.ok);
+      return LQ.StatusStrip.fold(h('div', { class: 'lq-filterbar lq-filterbar--rows', title: view.result.filterOnly
         ? '① に掛けている絞り込みです（この行が結果になります）。結果の見出しを押しても同じ絞り込みを直せます。'
         : '抽出の前に元の表に掛けている絞り込みです。結果の見出しを押しても同じ絞り込みを直せます。' }, [
         h('span', { class: 'lq-filterbar__label' }, [Dom.icon('filter'), '元データの絞り込み']), tags
-      ].flat());
+      ].flat()), {
+        id: 'filters', icon: broken ? 'triangle-exclamation' : 'filter', label: '絞り込み ' + groups.length, tone: broken ? 'warn' : 'primary', priority: 50,
+        heading: '元データの絞り込み（' + groups.length + ' 件）', title: groups.map((g) => (g.role === 'source' ? '① ' : '② ') + LQ.RowFilter.describe(g.filter, false)).join('\n')
+      });
     },
 
     /** ① は 1 件ずつ、② は同じ列・同じ内容の絞り込みを 1 つのタグにまとめる */
